@@ -79,7 +79,9 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "elara",
           text = "Not 'bad week' doesn't work. 'Doesn't work' doesn't work. There's a number in the city with my name next to it and it's a lot bigger than this one." },
         { type = "dialogue", speaker = "elara",
-          text = "Why am I telling you this. *laughs* Because you don't say much. It's restful.",
+          text = "Why am I telling you this. *laughs* Because you don't say much. It's restful. And because you'd get it — you came back for your grandad's farm when your own dad ran the other way. I bolted from the city. Different roads, same stubborn hunt for a place that fits." },
+        { type = "dialogue", speaker = "elara",
+          text = "So. Be honest with a fellow transplant.",
           choices = {
             { label = "Then stay and make this one bigger.", next = "encourage" },
             { label = "Maybe the city's the right call.",    next = "honest" },

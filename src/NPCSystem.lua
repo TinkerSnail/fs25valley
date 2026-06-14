@@ -6,9 +6,9 @@ VLNPCSystem.__index = VLNPCSystem
 -- Authored villager definitions.
 -- personality: "hardworking"|"lazy"|"social"|"grumpy"|"generous"
 local VILLAGERS = {
-    { id = "elara",  name = "Elara",  personality = "social",      x = VLConfig.VILLAGER_SPAWNS.elara.x,  y = VLConfig.VILLAGER_SPAWNS.elara.y,  z = VLConfig.VILLAGER_SPAWNS.elara.z,  ry = VLConfig.VILLAGER_SPAWNS.elara.ry  },
-    { id = "henryk", name = "Henryk", personality = "hardworking", x = VLConfig.VILLAGER_SPAWNS.henryk.x, y = VLConfig.VILLAGER_SPAWNS.henryk.y, z = VLConfig.VILLAGER_SPAWNS.henryk.z, ry = VLConfig.VILLAGER_SPAWNS.henryk.ry },
-    { id = "marta",  name = "Marta",  personality = "generous",    x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,  z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry  },
+    { id = "elara",  name = "Elara",  personality = "social",      isFemale = true,  x = VLConfig.VILLAGER_SPAWNS.elara.x,  y = VLConfig.VILLAGER_SPAWNS.elara.y,  z = VLConfig.VILLAGER_SPAWNS.elara.z,  ry = VLConfig.VILLAGER_SPAWNS.elara.ry  },
+    { id = "henryk", name = "Henryk", personality = "hardworking", isFemale = false, x = VLConfig.VILLAGER_SPAWNS.henryk.x, y = VLConfig.VILLAGER_SPAWNS.henryk.y, z = VLConfig.VILLAGER_SPAWNS.henryk.z, ry = VLConfig.VILLAGER_SPAWNS.henryk.ry },
+    { id = "marta",  name = "Marta",  personality = "generous",    isFemale = true,  x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,  z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry  },
 }
 
 function VLNPCSystem.new()

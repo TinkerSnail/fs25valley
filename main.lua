@@ -29,17 +29,27 @@ source(modDir .. "src/content/Marta.lua")
 
 -- Mission lifecycle
 
-local function onMissionLoaded(mission)
-    if not g_currentMission or not g_currentMission:isa(FSCareerMission) then return end
+local function isCareerMission()
+    return g_currentMission ~= nil
+        and (FSCareerMission == nil or g_currentMission:isa(FSCareerMission))
+end
+
+local function onMissionLoaded(mission, node)
+    if g_valleyLife ~= nil then return end   -- guard against double-init
+    if not isCareerMission() then return end
+
     g_valleyLife = VLNPCSystem.new()
     g_valleyLife:initialize()
 
-    -- Load saved state if a savegame exists.
-    local saveFile = g_currentMission.missionInfo.savegameDirectory .. "/valleyLife.xml"
-    local xmlFile = XMLFile.loadIfExists("valleyLifeSave", saveFile, "valleyLife")
-    if xmlFile then
-        g_valleyLife:loadFromXML(xmlFile, "valleyLife")
-        xmlFile:delete()
+    -- Load saved state if a savegame exists (new games have no savegameDirectory yet).
+    local info = g_currentMission.missionInfo
+    if info ~= nil and info.savegameDirectory ~= nil then
+        local saveFile = info.savegameDirectory .. "/valleyLife.xml"
+        local xmlFile = XMLFile.loadIfExists("valleyLifeSave", saveFile, "valleyLife")
+        if xmlFile then
+            g_valleyLife:loadFromXML(xmlFile, "valleyLife")
+            xmlFile:delete()
+        end
     end
 end
 
@@ -56,6 +66,50 @@ local function onMissionUnload(mission)
     end
 end
 
-Mission00.onStartMission = Utils.appendedFunction(Mission00.onStartMission, onMissionLoaded)
-Mission00.update         = Utils.appendedFunction(Mission00.update,         onMissionUpdate)
-FSBaseMission.delete     = Utils.prependedFunction(FSBaseMission.delete,    onMissionUnload)
+-- Initialization hook: Mission00.loadMission00Finished is the proven entry point
+-- (fires once the map/terrain is ready), with g_currentMission as a fallback.
+if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
+    Mission00.loadMission00Finished = Utils.appendedFunction(Mission00.loadMission00Finished, onMissionLoaded)
+    print("[ValleyLife] Hooked Mission00.loadMission00Finished.")
+else
+    print("[ValleyLife] WARNING: Mission00.loadMission00Finished not found.")
+end
+
+-- Per-frame update lives on FSBaseMission.update (not Mission00.update).
+if FSBaseMission ~= nil and FSBaseMission.update ~= nil then
+    FSBaseMission.update = Utils.appendedFunction(FSBaseMission.update, onMissionUpdate)
+    print("[ValleyLife] Hooked FSBaseMission.update.")
+else
+    print("[ValleyLife] WARNING: FSBaseMission.update not found.")
+end
+
+if FSBaseMission ~= nil and FSBaseMission.delete ~= nil then
+    FSBaseMission.delete = Utils.prependedFunction(FSBaseMission.delete, onMissionUnload)
+end
+
+-- Console command: prints the player's current world position, formatted ready
+-- to paste into VLConfig.VILLAGER_SPAWNS. Stand where a villager should be and
+-- type "vlPos" in the developer console (~).
+function vlPrintPlayerPos()
+    local player = g_localPlayer or (g_currentMission ~= nil and g_currentMission.player) or nil
+    local node = player and player.rootNode
+    if node == nil then
+        local msg = "[ValleyLife] vlPos: no player found."
+        print(msg)
+        return msg
+    end
+    local x, y, z = getWorldTranslation(node)
+    local _, ry, _ = getWorldRotation(node)
+    local msg = string.format(
+        "[ValleyLife] vlPos -> { x = %.2f, y = %.2f, z = %.2f, ry = %.4f }",
+        x, y, z, ry)
+    print(msg)
+    return msg
+end
+
+if addConsoleCommand ~= nil then
+    addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "vlPrintPlayerPos", nil)
+    print("[ValleyLife] Console command 'vlPos' registered.")
+end
+
+print("[ValleyLife] main.lua loaded; lifecycle hooks installed.")

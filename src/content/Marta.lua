@@ -34,6 +34,8 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "marta",
           text = "And it's on the house. New folks eat free their first season. House rule." },
         { type = "dialogue", speaker = "marta",
+          text = "You're Walter's grandkid, aren't you — taking over his farm. Oh, that man used to sit right there and talk about you. Lit up like a porch lamp. He's so proud it's you keeping it in the family." },
+        { type = "dialogue", speaker = "marta",
           text = "Don't you dare reach for that wallet.",
           choices = {
             { label = "At least let me pay you back somehow.", next = "repay" },
