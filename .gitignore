@@ -1,0 +1,9 @@
+# Local editor / agent settings
+.claude/
+.cursor/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+*.zip

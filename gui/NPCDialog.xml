@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    NPC conversation dialog — layout stub.
+    TODO: replace with full layout referencing FS25 GUI profile system.
+    See NPCFavor's gui/NPCDialog.xml for the 3-layer Bitmap/Button/Text pattern.
+-->
+<NPCDialog>
+    <!-- Placeholder: layout to be designed when implementing Step 4 (press-E dialog). -->
+</NPCDialog>

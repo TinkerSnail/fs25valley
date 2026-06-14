@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<modDesc descVersion="79">
+    <author>Your Name</author>
+    <version>0.1.0.0</version>
+
+    <title>
+        <en>Valley Life</en>
+        <de>Valley Life</de>
+    </title>
+    <description>
+        <en>Authored villagers, relationships, and scripted heart events for Farming Simulator 25.
+Primary target map: Elmcreek. Singleplayer only.</en>
+    </description>
+
+    <multiplayer supported="false"/>
+
+    <iconFilename>icon.dds</iconFilename>
+
+    <sourceFiles>
+        <sourceFile filename="main.lua"/>
+    </sourceFiles>
+
+    <l10n filenamePrefix="translations/lang"/>
+</modDesc>

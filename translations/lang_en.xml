@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<l10n>
+    <text name="vl_interact_prompt">Press E to talk to %s</text>
+    <text name="vl_talk">Talk</text>
+    <text name="vl_give_gift">Give gift</text>
+    <text name="vl_relationship_info">Relationship</text>
+    <text name="vl_relationship_label">%s — %s (%d)</text>
+
+    <text name="vl_tier_stranger">Stranger</text>
+    <text name="vl_tier_acquaintance">Acquaintance</text>
+    <text name="vl_tier_friend">Friend</text>
+    <text name="vl_tier_good_friend">Good Friend</text>
+    <text name="vl_tier_close_friend">Close Friend</text>
+</l10n>
