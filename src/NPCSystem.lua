@@ -29,6 +29,7 @@ function VLNPCSystem:initialize()
         npc:spawn()
     end
     self:hookSaveLoad()
+    self.dialog:registerInput()
     print(string.format("[ValleyLife] %d villagers queued for spawn.", #VILLAGERS))
 end
 
@@ -88,6 +89,7 @@ function VLNPCSystem:loadFromXML(xmlFile, missionKey)
 end
 
 function VLNPCSystem:delete()
+    if self.dialog then self.dialog:removeInput() end
     for _, npc in pairs(self.npcs) do
         npc:delete()
     end

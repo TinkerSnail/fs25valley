@@ -20,5 +20,15 @@ Primary target map: Elmcreek. Singleplayer only.</en>
         <sourceFile filename="main.lua"/>
     </sourceFiles>
 
+    <actions>
+        <action name="VL_INTERACT" axisType="HALF"/>
+    </actions>
+
+    <inputBinding>
+        <actionBinding action="VL_INTERACT">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_e"/>
+        </actionBinding>
+    </inputBinding>
+
     <l10n filenamePrefix="translations/lang"/>
 </modDesc>

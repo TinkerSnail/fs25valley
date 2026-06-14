@@ -23,8 +23,9 @@ source(modDir .. "src/gui/NPCDialog.lua")
 source(modDir .. "src/NPCSystem.lua")
 
 -- 6. Authored content — registers heart events into the sequencer at load time.
---    (Henryk and Marta content files come next; Elara ships the vertical slice.)
 source(modDir .. "src/content/Elara.lua")
+source(modDir .. "src/content/Henryk.lua")
+source(modDir .. "src/content/Marta.lua")
 
 -- Mission lifecycle
 
