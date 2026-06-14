@@ -2,15 +2,24 @@
 --
 -- Henryk, 60s. The farmer whose land borders yours. Defined by relentless
 -- work — the farm is how he keeps from sitting still with his grief. Widowed.
--- His son is away at university (grad school) in the city; the boy isn't
--- estranged, but Henryk has quietly decided that once the degree's done he'll
--- never come home — so he grieves a loss that hasn't actually happened yet.
--- Distrusts newcomers on reflex, and you are a newcomer on his fence line.
 --
--- FUTURE ARC (not built yet — seed planted in beat 4): as the town comes back
--- to life — younger people choosing to stay, and that softening Henryk himself —
--- the son is heartened, and his return shifts from "never" to genuinely
--- uncertain. A later beat could pay off the son actually coming home for good.
+-- The son — a LAYERED REVEAL (you only learn the truth as you earn his trust):
+--   * Guarded version (beat 1): "off at grad school, gone for good." Sounds
+--     like distance and a chosen career.
+--   * The wound (beat 3): the resentment is really INSECURITY. Henryk fears the
+--     boy's leaving is a rejection not just of the farm but of HIM — that all
+--     that schooling taught his son to see his father as a dumb country bumpkin.
+--     The constant fighting has meant the son never got to give his side.
+--   * The truth (beat 4): the opposite is true. The son deeply respects his dad
+--     and went to school to make farming SAFER and more effective for people
+--     like Henryk. He can't do that work from the hometown yet, so he had to
+--     leave to do it — and he's desperately seeking a balance between city and
+--     countryside, a life that doesn't cut off his roots. Henryk had it backwards.
+-- Flaw: resentment born of insecurity. Arc: he sets it down and finally listens.
+--
+-- FUTURE ARC: the son could become a present NPC/beat — home for the harvest,
+-- the city/countryside-balance theme paying off as the revived town gives him a
+-- way to finally do his work closer to home.
 --
 -- Voice: gruff, clipped, allergic to thanks and to being caught being kind.
 -- Speaks in work and weather. The warmth is real but buried two layers down.
@@ -136,7 +145,13 @@ VLEventSequencer.registerEvent({
           text = "My father did it this way. His father before him. You read the wind off the tree line, not off a screen. Like so." },
         { type = "wait", duration = 1.5 },
         { type = "dialogue", speaker = "henryk",
-          text = "*quietly* I tried to show my boy this once. He's off at university — screens and spreadsheets now. Said the old way was dying. I figure once he's got that degree, that's the last of him." },
+          text = "*quietly* I tried to show my boy this once. He's off at university — screens and spreadsheets now. Said the old way was dying." },
+        { type = "dialogue", speaker = "henryk",
+          text = "*longer pause* ...That's the tidy version, the one I tell folks. Truth is, I couldn't stomach it — a boy of mine picking a desk and a degree over this dirt. And I let him know it. Every call, he heard it." },
+        { type = "dialogue", speaker = "henryk",
+          text = "And underneath that — the part I don't say out loud — I'm scared it's not the farm he's turning his back on. It's me. That all that book learning taught him his old man's just a dumb dirt-grubber who never read a thing worth reading. That he's ashamed of where he comes from." },
+        { type = "dialogue", speaker = "henryk",
+          text = "So we fought. Said things you don't take back. Haven't really spoken since the spring — and the quiet's let me imagine the worst of him. Resentment's a poor crop, friend. Grows fast and feeds no one." },
         { type = "dialogue", speaker = "henryk",
           text = "Here's the thing that's been nagging me. A carpetbagger doesn't learn the wind. Takes years to pay off — no use to a man who's selling. But you keep turning up to learn it anyway." },
         { type = "dialogue", speaker = "henryk",
@@ -161,9 +176,13 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "henryk",
           text = "First day, I called you a carpetbagger to your face. Figured you'd paint Walter's barn and flip it by autumn. *he shakes his head* You're still here. Survived a spring. Then another. You stayed." },
         { type = "dialogue", speaker = "henryk",
-          text = "And it got me thinking — if a stranger can come back to the land, maybe a son can too. I called my boy last week. First in a long while. He's coming for the harvest." },
+          text = "And it got me thinking. All this time I told myself I was angry he left. *shakes his head slow* No. I was angry he didn't want what I wanted for him. That's a father's failing, not a son's. The resentment was always mine to carry, not his to earn." },
         { type = "dialogue", speaker = "henryk",
-          text = "He sounded... lighter. Said he'd heard the town had young blood in it again — folks your age not giving up on the place. Said maybe it isn't the dead end he'd made it out to be. *gruffly, hiding hope* We'll see. He's coming to see his old man, that's enough. You taught me that's enough." },
+          text = "So I set it down and called him. First time since the spring. Picked up on the second ring, like he'd been waiting by the phone the whole while. And this time — I shut my mouth and let him talk." },
+        { type = "dialogue", speaker = "henryk",
+          text = "All this time I thought that degree meant he looked down on me. *his voice catches* Turns out the fool boy went and got it FOR me. Studying how to make this work safer, the machines less likely to take a man's arm, the soil last longer. For farms like mine. Old men like me. He can't do that work from here yet — so he had to go do it out there." },
+        { type = "dialogue", speaker = "henryk",
+          text = "Says he's been trying to figure how to have both — the work out there and his roots back here — and I was so busy being wounded I never once let him say it. Forty years a stubborn old fool. He's coming for the harvest. To see his old man. *quietly* That's more than enough. You taught me that's enough." },
         { type = "dialogue", speaker = "henryk",
           text = "So these don't go to him. He'd put them on a shelf. I want them used.",
           choices = {
