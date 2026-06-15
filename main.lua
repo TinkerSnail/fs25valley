@@ -58,6 +58,13 @@ local function onMissionUnload(mission)
     end
 end
 
+-- Renders the bottom-screen reply selector on top of the HUD each frame.
+local function onMissionDraw(mission)
+    if g_valleyLife and g_valleyLife.dialog then
+        g_valleyLife.dialog:draw()
+    end
+end
+
 -- Initialization hook: Mission00.loadMission00Finished is the proven entry point
 -- (fires once the map/terrain is ready), with g_currentMission as a fallback.
 if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
@@ -77,6 +84,12 @@ end
 
 if FSBaseMission ~= nil and FSBaseMission.delete ~= nil then
     FSBaseMission.delete = Utils.prependedFunction(FSBaseMission.delete, onMissionUnload)
+end
+
+-- Draw hook for the bottom-screen reply selector (renders on top of the HUD).
+if FSBaseMission ~= nil and FSBaseMission.draw ~= nil then
+    FSBaseMission.draw = Utils.appendedFunction(FSBaseMission.draw, onMissionDraw)
+    print("[ValleyLife] Hooked FSBaseMission.draw.")
 end
 
 -- Console command: prints the player's current world position, formatted ready
@@ -194,13 +207,59 @@ function VLConsole:printNearest()
     return msg
 end
 
+-- vlDlg: probe which native dialog/choice widgets this build exposes, so we can
+-- reuse the same one Walter's "anything I can help with?" menu uses instead of our
+-- hand-drawn reply box. Reports each candidate global, whether it's a table/class,
+-- and which show-style methods it carries.
+function VLConsole:probeDialogs()
+    local candidates = {
+        -- multi-option / list pickers (what we actually want for choices)
+        "MultiChoiceDialog", "SelectionDialog", "OptionDialog", "ListSelectionDialog",
+        "AnswerDialog", "DialogElement", "MessageDialog", "RadioButtonDialog",
+        -- known-good fallbacks already in use
+        "InfoDialog", "YesNoDialog", "TextInputDialog",
+        -- the helper / guided-tour systems that may own Walter's flow
+        "GuidedTourMission", "HelpMenuMission", "TutorialMission",
+    }
+    local methods = { "show", "new", "createFromExistingGui", "setTexts", "setOptions",
+                      "setMenuOptions", "setCallback", "setOptionTexts" }
+    print("[ValleyLife] ---- dialog widget probe ----")
+    for _, name in ipairs(candidates) do
+        local g = _G[name]
+        if g == nil then
+            print(string.format("  %-22s : (absent)", name))
+        else
+            local found = {}
+            for _, m in ipairs(methods) do
+                if type(g) == "table" and type(g[m]) == "function" then
+                    table.insert(found, m)
+                end
+            end
+            print(string.format("  %-22s : %s  methods=[%s]",
+                name, type(g), table.concat(found, ",")))
+        end
+    end
+    -- Also report what g_gui can open by name.
+    if g_gui ~= nil then
+        local guiMethods = {}
+        for _, m in ipairs({ "showDialog", "showInfoDialog", "showYesNoDialog",
+                             "showSelectionDialog", "showOptionDialog", "showMessageDialog" }) do
+            if type(g_gui[m]) == "function" then table.insert(guiMethods, m) end
+        end
+        print("  g_gui methods=[" .. table.concat(guiMethods, ",") .. "]")
+    end
+    print("[ValleyLife] ---- end probe (see above) ----")
+    return "[ValleyLife] Dialog probe written to log/console."
+end
+
 if addConsoleCommand ~= nil then
     addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "printPlayerPos", VLConsole)
     addConsoleCommand("vlRel", "Set villager relationship: vlRel <npcId> <value>", "setRelationship", VLConsole)
     addConsoleCommand("vlEvent", "Force-trigger next heart event: vlEvent <npcId>", "triggerEvent", VLConsole)
     addConsoleCommand("vlNear", "Report nearest villager + distance (proximity debug)", "printNearest", VLConsole)
     addConsoleCommand("vlReset", "Reset a villager's events + relationship: vlReset <npcId>", "resetNpc", VLConsole)
-    print("[ValleyLife] Console commands registered: vlPos, vlRel, vlEvent, vlNear, vlReset.")
+    addConsoleCommand("vlDlg", "Probe available native dialog/choice widgets", "probeDialogs", VLConsole)
+    print("[ValleyLife] Console commands registered: vlPos, vlRel, vlEvent, vlNear, vlReset, vlDlg.")
 end
 
 print("[ValleyLife] main.lua loaded; lifecycle hooks installed.")

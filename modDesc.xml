@@ -23,11 +23,19 @@ Primary target map: Riverbend Springs. Singleplayer only.</en>
 
     <actions>
         <action name="VL_INTERACT" axisType="HALF"/>
+        <action name="VL_UP" axisType="HALF"/>
+        <action name="VL_DOWN" axisType="HALF"/>
     </actions>
 
     <inputBinding>
         <actionBinding action="VL_INTERACT">
             <binding device="KB_MOUSE_DEFAULT" input="KEY_r"/>
+        </actionBinding>
+        <actionBinding action="VL_UP">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_up"/>
+        </actionBinding>
+        <actionBinding action="VL_DOWN">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_down"/>
         </actionBinding>
     </inputBinding>
 

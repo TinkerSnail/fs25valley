@@ -2,6 +2,8 @@
 <l10n>
     <texts>
         <text name="input_VL_INTERACT" text="Talk to villager" />
+        <text name="input_VL_UP" text="Previous reply" />
+        <text name="input_VL_DOWN" text="Next reply" />
 
         <text name="vl_interact_prompt" text="Press R to talk to %s" />
         <text name="vl_talk" text="Talk" />
