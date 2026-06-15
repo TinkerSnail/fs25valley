@@ -3,7 +3,7 @@
     <texts>
         <text name="input_VL_INTERACT" text="Talk to villager" />
 
-        <text name="vl_interact_prompt" text="Press E to talk to %s" />
+        <text name="vl_interact_prompt" text="Press R to talk to %s" />
         <text name="vl_talk" text="Talk" />
         <text name="vl_give_gift" text="Give gift" />
         <text name="vl_relationship_info" text="Relationship" />

@@ -1,19 +1,56 @@
--- Press-E interaction and heart-event dialogue rendering.
+-- Press-R interaction and heart-event dialogue rendering.
 --
--- Interaction is driven by the VL_INTERACT input action (KEY_e, declared in
+-- Interaction is driven by the VL_INTERACT input action (KEY_r, declared in
 -- modDesc.xml). When the player is within range of a villager we activate the
--- action event and show a "Press E to talk to <name>" prompt; pressing it opens
+-- action event and show a "Press R to talk to <name>" prompt; pressing it opens
 -- a conversation or hands off to the heart-event sequencer.
 --
 -- Heart-event dialogue is rendered with FS25's built-in dialogs: a plain line
--- uses an info dialog, and a two-choice step uses a yes/no dialog (every
--- authored choice is binary, so yes -> choice 1, no -> choice 2). If g_gui is
--- unavailable the layer falls back to console output so tests still complete.
+-- uses InfoDialog, and a two-choice step uses YesNoDialog (every authored choice
+-- is binary, so yes -> choice 1, no -> choice 2). This build exposes the dialog
+-- classes' static show() methods rather than g_gui convenience wrappers; if those
+-- are unavailable the layer falls back to console output so tests still complete.
 
 VLNPCDialog = {}
 VLNPCDialog.__index = VLNPCDialog
 
 VLNPCDialog.INPUT_ACTION = "VL_INTERACT"
+
+-- Show a single-line info box. onClose runs when the player dismisses it.
+-- Returns true if a real GUI dialog was shown.
+--   InfoDialog.show(text, callback, target, dialogType, okText, ...)
+local function showInfoBox(text, onClose)
+    onClose = onClose or function() end
+    if InfoDialog ~= nil and type(InfoDialog.show) == "function" then
+        InfoDialog.show(text, function() onClose() end)
+        return true
+    end
+    if g_gui ~= nil and type(g_gui.showInfoDialog) == "function" then
+        g_gui:showInfoDialog({ text = text, callback = onClose })
+        return true
+    end
+    return false
+end
+
+-- Show a two-choice box. onResult is called with 1 (first choice) or 2 (second).
+-- Returns true if a real GUI dialog was shown.
+--   YesNoDialog.show(callback, target, text, yesText, noText, ...) -> callback(yes)
+local function showChoiceBox(text, label1, label2, onResult)
+    if YesNoDialog ~= nil and type(YesNoDialog.show) == "function" then
+        YesNoDialog.show(function(yes) onResult(yes and 1 or 2) end, nil, text, label1, label2)
+        return true
+    end
+    if g_gui ~= nil and type(g_gui.showYesNoDialog) == "function" then
+        g_gui:showYesNoDialog({
+            text     = text,
+            yesText  = label1,
+            noText   = label2,
+            callback = function(yes) onResult(yes and 1 or 2) end,
+        })
+        return true
+    end
+    return false
+end
 
 function VLNPCDialog.new(npcSystem)
     local self = setmetatable({}, VLNPCDialog)
@@ -24,12 +61,26 @@ function VLNPCDialog.new(npcSystem)
     return self
 end
 
--- Register the VL_INTERACT action event. Called once the mission/player exist.
+-- Action events registered at mission-load land in the wrong input context and
+-- never fire/show during on-foot play. Instead we register on demand from the
+-- per-frame update (which runs in the active gameplay context) when the player
+-- enters range, and remove it when they leave.
 function VLNPCDialog:registerInput()
     if g_inputBinding == nil or InputAction == nil or InputAction.VL_INTERACT == nil then
-        print("[ValleyLife] Input binding unavailable; Press-E interaction disabled.")
+        print("[ValleyLife] Input binding unavailable; Press-R interaction disabled.")
+        self.inputAvailable = false
         return
     end
+    self.inputAvailable = true
+end
+
+function VLNPCDialog:removeInput()
+    self:unregisterActionEvent()
+end
+
+function VLNPCDialog:registerActionEvent(name)
+    if not self.inputAvailable then return end
+    self:unregisterActionEvent()
     local success, eventId = g_inputBinding:registerActionEvent(
         InputAction.VL_INTERACT, self, VLNPCDialog.onInteractInput,
         false,  -- triggerUp
@@ -39,16 +90,17 @@ function VLNPCDialog:registerInput()
     )
     if success then
         self.actionEventId = eventId
-        g_inputBinding:setActionEventActive(eventId, false)
-        g_inputBinding:setActionEventTextVisibility(eventId, false)
+        local label = string.format(g_i18n:getText("vl_interact_prompt"), name)
+        g_inputBinding:setActionEventText(eventId, label)
+        g_inputBinding:setActionEventTextVisibility(eventId, true)
         g_inputBinding:setActionEventTextPriority(eventId, GS_PRIO_HIGH)
-        print("[ValleyLife] VL_INTERACT action event registered.")
+        g_inputBinding:setActionEventActive(eventId, true)
     else
         print("[ValleyLife] Failed to register VL_INTERACT action event.")
     end
 end
 
-function VLNPCDialog:removeInput()
+function VLNPCDialog:unregisterActionEvent()
     if self.actionEventId and g_inputBinding then
         g_inputBinding:removeActionEvent(self.actionEventId)
         self.actionEventId = nil
@@ -72,19 +124,15 @@ function VLNPCDialog:update(dt)
     end
 end
 
--- Show/hide the "Press E to talk to <name>" action prompt.
+-- Show/hide the "Press R to talk to <name>" prompt by (re)registering the action
+-- event in the active gameplay context when the player enters/leaves range.
 function VLNPCDialog:setPrompt(name)
-    if self.actionEventId == nil or g_inputBinding == nil then return end
     if name == self.promptName then return end
     self.promptName = name
     if name then
-        local label = string.format(g_i18n:getText("vl_interact_prompt"), name)
-        g_inputBinding:setActionEventActive(self.actionEventId, true)
-        g_inputBinding:setActionEventText(self.actionEventId, label)
-        g_inputBinding:setActionEventTextVisibility(self.actionEventId, true)
+        self:registerActionEvent(name)
     else
-        g_inputBinding:setActionEventActive(self.actionEventId, false)
-        g_inputBinding:setActionEventTextVisibility(self.actionEventId, false)
+        self:unregisterActionEvent()
     end
 end
 
@@ -111,12 +159,7 @@ function VLNPCDialog:openConversation(npc)
     local relNow = g_valleyLife.relationships:get(npc.id)
     local body = string.format(g_i18n:getText("vl_relationship_label"), npc.name, tier.label, relNow)
 
-    if g_gui ~= nil and g_gui.showInfoDialog ~= nil then
-        g_gui:showInfoDialog({
-            text = body,
-            callback = function() end,
-        })
-    else
+    if not showInfoBox(body, function() end) then
         print(string.format("[ValleyLife] Talking to %s — %s (%d)", npc.name, tier.label, relNow))
     end
     npc.isTalking = false
@@ -129,16 +172,9 @@ function VLNPCDialog:showEventDialogue(step, sequencer)
 
     -- Two-choice step -> yes/no dialog (yes = choice 1, no = choice 2).
     if step.choices and #step.choices >= 2 then
-        if g_gui ~= nil and g_gui.showYesNoDialog ~= nil then
-            g_gui:showYesNoDialog({
-                text    = body,
-                yesText = step.choices[1].label,
-                noText  = step.choices[2].label,
-                callback = function(yes)
-                    sequencer:resolveDialogue(step, yes and 1 or 2)
-                end,
-            })
-        else
+        local shown = showChoiceBox(body, step.choices[1].label, step.choices[2].label,
+            function(choiceIndex) sequencer:resolveDialogue(step, choiceIndex) end)
+        if not shown then
             print(string.format("[ValleyLife][Event] %s: %s", speaker, step.text))
             for i, choice in ipairs(step.choices) do
                 print(string.format("  [%d] %s", i, choice.label))
@@ -148,13 +184,9 @@ function VLNPCDialog:showEventDialogue(step, sequencer)
         return
     end
 
-    -- Plain line -> info dialog (advance on dismiss).
-    if g_gui ~= nil and g_gui.showInfoDialog ~= nil then
-        g_gui:showInfoDialog({
-            text = body,
-            callback = function() sequencer:resolveDialogue(step, nil) end,
-        })
-    else
+    -- Plain line -> info box (advance on dismiss).
+    local shown = showInfoBox(body, function() sequencer:resolveDialogue(step, nil) end)
+    if not shown then
         print(string.format("[ValleyLife][Event] %s: %s", speaker, step.text))
         sequencer:resolveDialogue(step, nil)
     end

@@ -125,9 +125,62 @@ function VLConsole:printPlayerPos()
     return msg
 end
 
+-- vlRel <npcId> <value>: set a villager's relationship directly so heart-event
+-- thresholds (20/40/60/80) can be reached for testing. Then walk up and press R.
+function VLConsole:setRelationship(npcId, value)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    if npcId == nil then return "[ValleyLife] Usage: vlRel <npcId> <value>  (e.g. vlRel elara 20)" end
+    if g_valleyLife:getNPC(npcId) == nil then
+        return "[ValleyLife] Unknown villager '" .. tostring(npcId) .. "'. Try: elara, henryk, marta."
+    end
+    local v = math.max(VLConfig.REL_MIN, math.min(VLConfig.REL_MAX, tonumber(value) or 0))
+    g_valleyLife.relationships.values[npcId] = v
+    local msg = string.format("[ValleyLife] %s relationship set to %d.", npcId, v)
+    print(msg)
+    return msg
+end
+
+-- vlEvent <npcId>: force-start the next uncompleted heart event for a villager,
+-- bypassing proximity and relationship. Fastest way to test authored dialogue.
+function VLConsole:triggerEvent(npcId)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    npcId = npcId or "elara"
+    if g_valleyLife:getNPC(npcId) == nil then
+        return "[ValleyLife] Unknown villager '" .. tostring(npcId) .. "'. Try: elara, henryk, marta."
+    end
+    g_valleyLife.sequencer:checkTriggers(npcId, VLConfig.REL_MAX)
+    if g_valleyLife.sequencer.active then
+        local msg = "[ValleyLife] Triggered next event for " .. npcId .. "."
+        print(msg)
+        return msg
+    end
+    local msg = "[ValleyLife] No available event for " .. npcId .. " (all completed?)."
+    print(msg)
+    return msg
+end
+
+-- vlNear: report the player position, nearest villager, and distance, so we can
+-- verify the Press-R proximity detection.
+function VLConsole:printNearest()
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local px, py, pz = g_valleyLife:getPlayerPosition()
+    local nearest, dist = g_valleyLife:getNearestNPC()
+    local msg = string.format(
+        "[ValleyLife] player=(%s,%s,%s) nearest=%s dist=%.2f (interact<=%.1f)",
+        tostring(px and string.format("%.1f", px)),
+        tostring(py and string.format("%.1f", py)),
+        tostring(pz and string.format("%.1f", pz)),
+        nearest and nearest.name or "none", dist or -1, VLConfig.INTERACT_DISTANCE)
+    print(msg)
+    return msg
+end
+
 if addConsoleCommand ~= nil then
     addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "printPlayerPos", VLConsole)
-    print("[ValleyLife] Console command 'vlPos' registered.")
+    addConsoleCommand("vlRel", "Set villager relationship: vlRel <npcId> <value>", "setRelationship", VLConsole)
+    addConsoleCommand("vlEvent", "Force-trigger next heart event: vlEvent <npcId>", "triggerEvent", VLConsole)
+    addConsoleCommand("vlNear", "Report nearest villager + distance (proximity debug)", "printNearest", VLConsole)
+    print("[ValleyLife] Console commands registered: vlPos, vlRel, vlEvent, vlNear.")
 end
 
 print("[ValleyLife] main.lua loaded; lifecycle hooks installed.")

@@ -54,10 +54,26 @@ function VLNPCSystem:getNPC(id)
     return self.npcs[id]
 end
 
-function VLNPCSystem:getNearestNPC()
+-- Robust player world position. On this build the controlled player exposes its
+-- authoritative position via getPosition() (capsule controller); rootNode can be
+-- stale, so prefer getPosition() and fall back to the node only if needed.
+function VLNPCSystem:getPlayerPosition()
     local player = g_localPlayer or (g_currentMission and g_currentMission.player)
-    if not player then return nil, math.huge end
-    local px, _, pz = getWorldTranslation(player.rootNode)
+    if player == nil then return nil end
+    if type(player.getPosition) == "function" then
+        local ok, x, y, z = pcall(player.getPosition, player)
+        if ok and type(x) == "number" then return x, y, z end
+    end
+    local node = player.rootNode
+    if node ~= nil and node ~= 0 and entityExists(node) then
+        return getWorldTranslation(node)
+    end
+    return nil
+end
+
+function VLNPCSystem:getNearestNPC()
+    local px, _, pz = self:getPlayerPosition()
+    if px == nil then return nil, math.huge end
     local nearest, bestDist = nil, math.huge
     for _, npc in pairs(self.npcs) do
         if npc.isLoaded then
