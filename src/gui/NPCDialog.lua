@@ -19,9 +19,9 @@ VLNPCDialog.__index = VLNPCDialog
 
 VLNPCDialog.INPUT_ACTION = "VL_INTERACT"
 
--- White texture (tinted at draw time) used to paint the reply panel background, the
--- same technique the engine uses for its own HUD popup background.
-local VL_PIXEL = (g_currentModDirectory or "") .. "gui/vl_pixel.png"
+-- Rounded-rectangle texture (white + alpha, tinted at draw time) for the reply panel
+-- background, so the box has soft corners like the base game's dialog boxes.
+local VL_PANEL = (g_currentModDirectory or "") .. "gui/vl_panel.png"
 
 -- Rounded-rectangle mask (white + alpha) tinted lime at draw time to paint the
 -- highlight pill behind the selected reply, matching the base-game NPC menu.
@@ -156,9 +156,9 @@ function VLNPCDialog:showReplySelector(speaker, promptText, options, onResult)
     local bg = nil
     local pill = nil
     if Overlay ~= nil and Overlay.new ~= nil then
-        local okBg, ovBg = pcall(Overlay.new, VL_PIXEL, boxLeft, boxBottom, boxW, boxH)
+        local okBg, ovBg = pcall(Overlay.new, VL_PANEL, boxLeft, boxBottom, boxW, boxH)
         if okBg and ovBg ~= nil then
-            ovBg:setColor(0, 0, 0, 0.62)
+            ovBg:setColor(0, 0, 0, 0.85)   -- darker, to match the base dialog boxes
             bg = ovBg
         end
         local pillW, pillH = boxW - padX, rowH * 0.96
