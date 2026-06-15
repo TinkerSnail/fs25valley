@@ -159,6 +159,25 @@ function VLConsole:triggerEvent(npcId)
     return msg
 end
 
+-- vlReset <npcId>: clear a villager's completed heart events, reset their
+-- relationship to 0, and abort any in-progress scene, so the conversation/events
+-- can be replayed from the top during testing.
+function VLConsole:resetNpc(npcId)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    npcId = npcId or "elara"
+    if g_valleyLife:getNPC(npcId) == nil then
+        return "[ValleyLife] Unknown villager '" .. tostring(npcId) .. "'. Try: elara, henryk, marta."
+    end
+    local cleared = g_valleyLife.sequencer:resetNPC(npcId)
+    g_valleyLife.relationships.values[npcId] = 0
+    local npc = g_valleyLife:getNPC(npcId)
+    if npc then npc.isTalking = false end
+    local msg = string.format("[ValleyLife] Reset %s: cleared %d event(s), relationship -> 0.",
+        npcId, cleared)
+    print(msg)
+    return msg
+end
+
 -- vlNear: report the player position, nearest villager, and distance, so we can
 -- verify the Press-R proximity detection.
 function VLConsole:printNearest()
@@ -180,7 +199,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlRel", "Set villager relationship: vlRel <npcId> <value>", "setRelationship", VLConsole)
     addConsoleCommand("vlEvent", "Force-trigger next heart event: vlEvent <npcId>", "triggerEvent", VLConsole)
     addConsoleCommand("vlNear", "Report nearest villager + distance (proximity debug)", "printNearest", VLConsole)
-    print("[ValleyLife] Console commands registered: vlPos, vlRel, vlEvent, vlNear.")
+    addConsoleCommand("vlReset", "Reset a villager's events + relationship: vlReset <npcId>", "resetNpc", VLConsole)
+    print("[ValleyLife] Console commands registered: vlPos, vlRel, vlEvent, vlNear, vlReset.")
 end
 
 print("[ValleyLife] main.lua loaded; lifecycle hooks installed.")

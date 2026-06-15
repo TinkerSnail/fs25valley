@@ -34,10 +34,10 @@ VLEventSequencer.registerEvent({
           text = "*she closes a little book against her knee, too fast* It's nothing. Just... watching the light go." },
 
         { type = "dialogue", speaker = "elara",
-          text = "What was that you just shut?",
+          text = "*she tucks the book out of sight behind her knee* Anyway. Did you need something, farmer, or are you just here to watch me work?",
           choices = {
-            { label = "What were you drawing?", next = "curious" },
-            { label = "Sorry — didn't mean to pry.", next = "polite" },
+            { label = "What were you drawing in that book?", next = "curious" },
+            { label = "Sorry — didn't mean to pry.",         next = "polite" },
           }
         },
         -- (unreached: a choice always jumps to a branch)

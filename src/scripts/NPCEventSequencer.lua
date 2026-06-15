@@ -30,6 +30,23 @@ VLEventSequencer.__index = VLEventSequencer
 -- All authored heart events. Populated by separate content files (not yet written).
 local HEART_EVENTS = {}
 
+-- Run fn on the next frame. Opening a new dialog from inside another dialog's
+-- close callback conflicts with FS25's dialog teardown (the new dialog gets
+-- swallowed and the scene stalls), so we wait one frame for the old dialog to
+-- finish closing before advancing.
+local function nextFrame(fn)
+    if g_currentMission == nil or g_currentMission.addUpdateable == nil then
+        fn()
+        return
+    end
+    local updateable = {}
+    function updateable:update(dt)
+        g_currentMission:removeUpdateable(self)
+        fn()
+    end
+    g_currentMission:addUpdateable(updateable)
+end
+
 function VLEventSequencer.new(npcSystem)
     local self = setmetatable({}, VLEventSequencer)
     self.npcSystem    = npcSystem
@@ -96,20 +113,31 @@ end
 -- Called by the dialog when a dialogue step is dismissed. choiceIndex is the
 -- 1-based selected choice, or nil for a plain (choiceless) line.
 function VLEventSequencer:resolveDialogue(step, choiceIndex)
-    if step.choices and choiceIndex then
-        local choice = step.choices[choiceIndex]
-        if choice and choice.next then
-            self:gotoBranch(choice.next)
-            return
+    -- Defer one frame: this runs from inside the dismissed dialog's callback, and
+    -- the next step often opens a different dialog which would otherwise be eaten
+    -- by FS25 closing the current one.
+    nextFrame(function()
+        if not self.active then return end
+        if step.choices and choiceIndex then
+            local choice = step.choices[choiceIndex]
+            if choice and choice.next then
+                self:gotoBranch(choice.next)
+                return
+            end
         end
-    end
-    self:advanceStep()
+        self:advanceStep()
+    end)
 end
 
 function VLEventSequencer:executeStep(step)
     if step.type == "move_npc" then
         local npc = self.npcSystem:getNPC(step.npcId)
-        if npc then npc:setPosition(step.x, step.y, step.z, step.ry) end
+        -- Placeholder (0,0,0) marks aren't authored against the map yet; leave the
+        -- NPC where it stands so the scene plays in place instead of teleporting
+        -- the villager to the map origin.
+        if npc and not (step.x == 0 and step.z == 0) then
+            npc:setPosition(step.x, step.y, step.z, step.ry)
+        end
         self:advanceStep()
 
     elseif step.type == "camera" then
@@ -164,6 +192,26 @@ function VLEventSequencer:endEvent()
     if g_valleyLife and g_valleyLife.relationships then
         g_valleyLife.relationships:heartEventCompleted(event.npcId)
     end
+end
+
+-- Clear completion state for a villager's events so their scenes can be replayed
+-- (debug/testing). Also aborts an in-progress event for that villager so a stuck
+-- or half-played scene is unstuck.
+function VLEventSequencer:resetNPC(npcId)
+    if self.active and (self.currentEvent == nil or self.currentEvent.npcId == npcId) then
+        self.active       = false
+        self.currentEvent = nil
+        self.currentSteps = nil
+        self:releaseCameraControl()
+    end
+    local cleared = 0
+    for _, event in ipairs(HEART_EVENTS) do
+        if event.npcId == npcId and self.completed[event.id] then
+            self.completed[event.id] = nil
+            cleared = cleared + 1
+        end
+    end
+    return cleared
 end
 
 -- Persistence
