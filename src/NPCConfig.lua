@@ -23,14 +23,17 @@ VLConfig.REL_DELTA_HEART_EVENT = 10  -- awarded on first completion of a heart e
 -- Heart event trigger thresholds (relationship value required)
 VLConfig.HEART_EVENT_THRESHOLDS = { 20, 40, 60, 80 }
 
--- Elmcreek spawn points for each authored villager.
--- TODO: open GIANTS Editor on Elmcreek, click each intended spawn location,
---       read coordinates from the Transform panel, and paste here.
+-- Riverbend Springs spawn points for each authored villager.
+-- Captured in-game with the `vlPos` console command from the farmhouse area:
+--   player stood at { x = -707.46, y = 47.34, z = 138.98, ry = 0 }, facing +Z.
+-- The three villagers are clustered ~3 m apart, a few meters ahead of that spot
+-- (+Z), all facing back toward the player (ry = pi). y is auto-snapped to terrain
+-- at spawn, so the value here is just a reference.
 -- Format: { x, y, z, ry }  (ry = Y-axis rotation in radians, 0 = facing +Z)
 VLConfig.VILLAGER_SPAWNS = {
-    elara  = { x = 0,   y = 0, z = 0,   ry = 0 },   -- TODO: set real coords
-    henryk = { x = 10,  y = 0, z = 0,   ry = 0 },   -- TODO: set real coords
-    marta  = { x = -10, y = 0, z = 0,   ry = 0 },   -- TODO: set real coords
+    elara  = { x = -707.46, y = 47.34, z = 142.0, ry = math.pi },
+    henryk = { x = -704.46, y = 47.34, z = 142.0, ry = math.pi },
+    marta  = { x = -710.46, y = 47.34, z = 142.0, ry = math.pi },
 }
 
 -- Save file key prefix

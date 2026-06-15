@@ -1,7 +1,7 @@
 -- Authored heart events for Marta — "the one who holds everyone but is held by no one."
 --
 -- Marta, 40s-50s. Runs the general store / diner — the town's social hub and
--- information broker; organizes every Elmcreek event. Warm, maternal, generous
+-- information broker; organizes every Riverbend Springs event. Warm, maternal, generous
 -- to a fault, won't accept thanks. Everyone's confidante, nobody's priority:
 -- she keeps the whole community together and lives small and alone in the back
 -- room behind all that warmth. The loneliness of the connector.

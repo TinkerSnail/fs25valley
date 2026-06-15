@@ -6,7 +6,7 @@ VLNPCScheduler.__index = VLNPCScheduler
 
 -- Activity definitions per NPC id.
 -- Each entry: { start=hour, ["end"]=hour, location={x,z}, label="..." }
--- TODO: fill these in once Elmcreek spawn coordinates are confirmed.
+-- TODO: fill these in once Riverbend Springs spawn coordinates are confirmed.
 local SCHEDULES = {
     elara = {
         { start = 7,  ["end"] = 9,  label = "morning routine" },

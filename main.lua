@@ -42,15 +42,7 @@ local function onMissionLoaded(mission, node)
     g_valleyLife:initialize()
 
     -- Load saved state if a savegame exists (new games have no savegameDirectory yet).
-    local info = g_currentMission.missionInfo
-    if info ~= nil and info.savegameDirectory ~= nil then
-        local saveFile = info.savegameDirectory .. "/valleyLife.xml"
-        local xmlFile = XMLFile.loadIfExists("valleyLifeSave", saveFile, "valleyLife")
-        if xmlFile then
-            g_valleyLife:loadFromXML(xmlFile, "valleyLife")
-            xmlFile:delete()
-        end
-    end
+    g_valleyLife:loadFromFile(g_currentMission.missionInfo)
 end
 
 local function onMissionUpdate(mission, dt)
@@ -90,14 +82,40 @@ end
 -- Console command: prints the player's current world position, formatted ready
 -- to paste into VLConfig.VILLAGER_SPAWNS. Stand where a villager should be and
 -- type "vlPos" in the developer console (~).
-function vlPrintPlayerPos()
-    local player = g_localPlayer or (g_currentMission ~= nil and g_currentMission.player) or nil
-    local node = player and player.rootNode
+-- Console command target. FS25 runs each mod in its own environment, so a bare
+-- top-level function is NOT a true _G global and addConsoleCommand(..., nil)
+-- can't find it. Registering against an explicit target object makes the engine
+-- call target:method() directly, which works reliably.
+VLConsole = {}
+
+function VLConsole:printPlayerPos()
+    -- Collect every plausible player node source; FS25 builds vary on whether the
+    -- foot player lives on g_localPlayer, g_currentMission.player, or a graphics
+    -- component, so try them all and use the first that yields a valid node.
+    local candidates = {}
+    local p1 = g_localPlayer
+    local p2 = g_currentMission ~= nil and g_currentMission.player or nil
+    for _, p in ipairs({ p1, p2 }) do
+        if p ~= nil then
+            candidates[#candidates + 1] = p.rootNode
+            candidates[#candidates + 1] = p.graphicsComponent and p.graphicsComponent.graphicsRootNode or nil
+            candidates[#candidates + 1] = p.positionNode
+        end
+    end
+
+    local node
+    for _, n in ipairs(candidates) do
+        if n ~= nil and n ~= 0 and entityExists(n) then node = n; break end
+    end
+
     if node == nil then
-        local msg = "[ValleyLife] vlPos: no player found."
+        local msg = string.format(
+            "[ValleyLife] vlPos: no player node (g_localPlayer=%s, mission.player=%s).",
+            tostring(p1), tostring(p2))
         print(msg)
         return msg
     end
+
     local x, y, z = getWorldTranslation(node)
     local _, ry, _ = getWorldRotation(node)
     local msg = string.format(
@@ -108,7 +126,7 @@ function vlPrintPlayerPos()
 end
 
 if addConsoleCommand ~= nil then
-    addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "vlPrintPlayerPos", nil)
+    addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "printPlayerPos", VLConsole)
     print("[ValleyLife] Console command 'vlPos' registered.")
 end
 

@@ -1,6 +1,6 @@
 -- Authored heart events for Elara — "the one deciding whether to stay."
 --
--- Elara, late 20s. Runs the roadside produce stand at the edge of Elmcreek.
+-- Elara, late 20s. Runs the roadside produce stand at the edge of Riverbend Springs.
 -- Left a burned-out design career in the city; tells everyone the move is
 -- permanent, but keeps a sketchbook she won't show anyone and a half-packed
 -- suitcase under her bed. The player's first and most accessible relationship,
@@ -10,11 +10,11 @@
 -- Four-beat arc, one event per relationship threshold:
 --   20  The Sketchbook at Dusk   — caught drawing the fields; she deflects.
 --   40  The Numbers Don't Work   — admits the stand is failing; the city calls.
---   60  What's In the Book       — shows the sketchbook: it's all Elmcreek.
+--   60  What's In the Book       — shows the sketchbook: it's all Riverbend Springs.
 --   80  The Suitcase             — she unpacks. Branch: stay as friends / stay for you.
 --
 -- NOTE: move_npc / camera coordinates below are placeholders. Tune them in the
--- GIANTS Editor against Elmcreek once VLConfig.VILLAGER_SPAWNS.elara is filled in;
+-- GIANTS Editor against Riverbend Springs once VLConfig.VILLAGER_SPAWNS.elara is filled in;
 -- the dialogue is the authored content and does not depend on exact coords.
 
 -- ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ VLEventSequencer.registerEvent({
             { type = "dialogue", speaker = "elara",
               text = "*she grins, and there's relief in it* Good. A friend who shows up. That's the whole game out here, isn't it." },
             { type = "dialogue", speaker = "elara",
-              text = "Come on. First round of staying-in-Elmcreek coffee is on the failing produce stand." },
+              text = "Come on. First round of staying-in-Riverbend coffee is on the failing produce stand." },
             { type = "end" },
         },
         romance = {
