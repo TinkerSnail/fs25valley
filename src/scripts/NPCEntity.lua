@@ -107,47 +107,24 @@ local function configColorCount(cfg)
     return 0
 end
 
--- One-time deep dump of a config's fields + methods, so we can see exactly how
--- this build exposes its color list (the getNumColors-style probes return 0).
-local dumpedConfig = false
-local function dumpConfigOnce(cfg, name)
-    if dumpedConfig or type(cfg) ~= "table" then return end
-    dumpedConfig = true
-    local fields = {}
-    for k, v in pairs(cfg) do fields[#fields + 1] = string.format("%s:%s", tostring(k), type(v)) end
-    table.sort(fields)
-    print("[ValleyLife] DUMP " .. name .. " fields: " .. table.concat(fields, ", "))
-    local mt = getmetatable(cfg)
-    if mt and type(mt.__index) == "table" then
-        local methods = {}
-        for k, v in pairs(mt.__index) do
-            if type(v) == "function" then methods[#methods + 1] = tostring(k) end
-        end
-        table.sort(methods)
-        print("[ValleyLife] DUMP " .. name .. " methods: " .. table.concat(methods, ", "))
-    end
-end
-
 -- Apply a per-villager appearance to a PlayerStyle. Every step is guarded so a
 -- bad index or a missing config silently falls back to the default look rather
 -- than breaking the spawn. `spec` maps config name -> { item = n, color = n }.
-local function applyAppearance(style, spec, label)
+-- Item indices wrap to the available count; color indexes into the style's
+-- palette (hairColors / defaultClothingColors), which must be populated first.
+local function applyAppearance(style, spec)
     if type(style) ~= "table" or type(style.configs) ~= "table" or type(spec) ~= "table" then
         return
     end
     for name, choice in pairs(spec) do
         local cfg = style.configs[name]
         if type(cfg) == "table" then
-            if name == "hairStyle" then dumpConfigOnce(cfg, name) end
             local itemCount  = configItemCount(cfg)
             local colorCount = configColorCount(cfg)
             if choice.item and itemCount > 0 then
                 local idx = ((choice.item - 1) % itemCount) + 1
                 pcall(function() cfg.selectedItemIndex = idx end)
             end
-            -- Attempt the color directly (don't gate on colorCount, which reads 0
-            -- on this build). If colorCount is known, wrap; else pass as-is and let
-            -- the engine clamp. Read back what actually stuck for diagnostics.
             if choice.color then
                 local cidx = choice.color
                 if colorCount > 0 then cidx = ((choice.color - 1) % colorCount) + 1 end
@@ -159,27 +136,7 @@ local function applyAppearance(style, spec, label)
                     end
                 end)
             end
-            if label then
-                local gotColor
-                pcall(function()
-                    if type(cfg.getSelectedColorIndex) == "function" then
-                        gotColor = cfg:getSelectedColorIndex()
-                    else
-                        gotColor = cfg.selectedColorIndex
-                    end
-                end)
-                print(string.format("[ValleyLife]   %s.%s: items=%d colors=%d (set item=%s color=%s -> colorIdx=%s)",
-                    tostring(label), name, itemCount, colorCount,
-                    tostring(choice.item), tostring(choice.color), tostring(gotColor)))
-            end
         end
-    end
-    if label then
-        local names = {}
-        for name, _ in pairs(style.configs) do names[#names + 1] = name end
-        table.sort(names)
-        print(string.format("[ValleyLife] Appearance for %s; available configs: %s",
-            tostring(label), table.concat(names, ", ")))
     end
 end
 
@@ -238,34 +195,13 @@ function VLNPCEntity:buildAnimatedCharacter()
             if src ~= nil then
                 style.hairColors = src.hairColors
                 style.defaultClothingColors = src.defaultClothingColors
-                local nh = type(src.hairColors) == "table" and #src.hairColors or 0
-                local nc = type(src.defaultClothingColors) == "table" and #src.defaultClothingColors or 0
-                print(string.format("[ValleyLife] %s palettes: hairColors=%d clothingColors=%d",
-                    self.name, nh, nc))
-                if not VLNPCEntity._dumpedPalette and type(src.hairColors) == "table" then
-                    VLNPCEntity._dumpedPalette = true
-                    local function stringify(v, depth)
-                        if type(v) ~= "table" then return tostring(v) end
-                        if depth <= 0 then return "{...}" end
-                        local parts = {}
-                        for k, vv in pairs(v) do
-                            parts[#parts + 1] = string.format("%s=%s", tostring(k), stringify(vv, depth - 1))
-                        end
-                        return "{" .. table.concat(parts, ", ") .. "}"
-                    end
-                    for i, c in ipairs(src.hairColors) do
-                        print(string.format("[ValleyLife]   hairColor[%d] = %s", i, stringify(c, 2)))
-                    end
-                end
-            else
-                print("[ValleyLife] WARNING: no cached base style for " .. tostring(key))
             end
         end
     end)
 
     -- Give each villager a distinct look (guarded; falls back to default style).
     if self.appearance then
-        applyAppearance(style, self.appearance, self.name)
+        applyAppearance(style, self.appearance)
     end
 
     if gfx.setStyleAsync then
