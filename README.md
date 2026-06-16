@@ -26,8 +26,7 @@ Multiplayer is not supported (`modDesc.xml`).
 ## Requirements
 
 - Farming Simulator 25
-- Career save on a map where spawn coordinates are valid (developed on **Riverbend
-  Springs** near the farmhouse cluster at roughly `-707, 47, 142`)
+- **Riverbend Springs** map
 
 ## Install (players)
 
