@@ -56,6 +56,7 @@ local SPEECH_BODY_HINT_GAP = 0.006
 local REPLY_PILL_PAD_X = 0.022
 local REPLY_PILL_PAD_Y = 0.010
 local REPLY_MARKER_GAP = 0.014
+local REPLY_ROW_GAP_PX = 18   -- vertical space between choice rows (~px at 1080p)
 local REPLY_TRI_W = 0.009
 local REPLY_MARKER_W = 0.016
 local SPEECH_TEXT_SIZE = 0.017
@@ -611,7 +612,7 @@ function VLNPCDialog:showReplySelector(speaker, promptText, options, onResult)
     local markerX = blockLeft
     local textX = blockLeft + markerW + markerGap
 
-    local rowGap     = textSize * 0.55
+    local rowGap     = scaledScreenHeight(REPLY_ROW_GAP_PX)
     local rowContent = maxLines * lineH
     local rowH       = rowContent + rowGap
     local optionsH   = n * rowH
