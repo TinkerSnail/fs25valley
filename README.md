@@ -1,4 +1,4 @@
-# Valley Life (FS25)
+# Farm Sim Valley
 
 A Farming Simulator 25 mod that adds authored villagers, relationship progression,
 and scripted heart events to the social layer of the game. Built for **Riverbend
