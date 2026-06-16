@@ -202,6 +202,7 @@ function VLNPCSystem.new()
     self.relationships = VLRelationshipManager.new()
     self.scheduler     = VLNPCScheduler.new()
     self.sequencer     = VLEventSequencer.new(self)
+    self.casualDialogue = VLCasualDialogue.new()
     self.dialog        = VLNPCDialog.new(self)
     self._outfitCalendar = OutfitCalendar.new()
     return self
@@ -307,6 +308,9 @@ local function getSaveSchema()
     s:register(XMLValueType.INT,    root .. ".relationships.rel(?)#value")
     s:register(XMLValueType.INT,    root .. ".events#count")
     s:register(XMLValueType.STRING, root .. ".events.done(?)#id")
+    s:register(XMLValueType.INT,    root .. ".casual#count")
+    s:register(XMLValueType.STRING, root .. ".casual.state(?)#npcId")
+    s:register(XMLValueType.INT,    root .. ".casual.state(?)#rot")
     saveSchema = s
     return s
 end
@@ -375,12 +379,15 @@ function VLNPCSystem:saveToXML(xmlFile)
     xmlFile:setValue(key .. "#version", VLConfig.SAVE_VERSION)
     self.relationships:saveToXML(xmlFile, key)
     self.sequencer:saveToXML(xmlFile, key)
+    self.casualDialogue:saveToXML(xmlFile, key)
 end
 
 function VLNPCSystem:loadFromXML(xmlFile, missionKey)
     local key = missionKey or VLConfig.SAVE_KEY
     self.relationships:loadFromXML(xmlFile, key)
     self.sequencer:loadFromXML(xmlFile, key)
+    self.casualDialogue:loadFromXML(xmlFile, key)
+    self.casualDialogue:syncLegacyMet(self.relationships, self.sequencer)
 end
 
 function VLNPCSystem:delete()

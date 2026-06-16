@@ -174,3 +174,66 @@ VLEventSequencer.registerEvent({
         },
     },
 })
+
+-- ---------------------------------------------------------------------------
+-- Daily greetings (Press R when no heart event is pending)
+-- ---------------------------------------------------------------------------
+VLCasualDialogue.register("elara", {
+    firstMeet = "You must be Walter's grandkid - the new farmer. I'm Elara. I run the produce stand down the road.",
+
+    stranger = {
+        "Morning, farmer. Tomatoes are looking decent if you're interested.",
+        "Don't mind me - just watching the light on the fields. Old habit.",
+        "You're out early. Out here that counts for something.",
+        "The stand's open if you need anything. Fair warning: the margins are optimistic.",
+        "City people always look lost the first week. You'll find your rhythm.",
+    },
+
+    acquaintance = {
+        "Hey. You're becoming part of the landscape out here.",
+        "I saw you pass the stand twice yesterday. Busy already?",
+        "The light's good tonight. I almost grabbed the book again. Almost.",
+        "You're alright, you know. For a farmer.",
+        "Still here. Still opening the stand. Some days that's the whole victory.",
+    },
+
+    friend = {
+        "There you are. Was starting to think you forgot about the rest of us.",
+        "The stand still isn't working, by the way. But I keep opening it.",
+        "You ever notice how quiet it gets out here? I used to hate it. Still deciding.",
+        "Got a minute? I don't need fixing. Just company.",
+    },
+
+    goodFriend = {
+        "Almost showed someone the sketchbook today. Almost.",
+        "You're one of the reasons I'm still here, you know. Don't let that go to your head.",
+        "The numbers still don't work. But I opened anyway. That's new.",
+        "Hey. Good to see a face I actually trust.",
+    },
+
+    closeFriend = {
+        "Hey. The suitcase is in the closet where it belongs now.",
+        "Good to see you. Still the best part of most days out here.",
+        "I figured out what I was drawing. It was always this place. Just took me a while.",
+    },
+
+    alreadyTalked = {
+        "We already talked today, farmer. Go check the cows.",
+        "I'm still here. Same as this morning.",
+        "Save it for tomorrow - I might actually have news by then.",
+    },
+
+    afterEvent = {
+        elara_01 = {
+            "Still not showing anyone the book. Don't get ideas.",
+            "Caught me watching the light again. Old habit. Getting harder to quit.",
+        },
+        elara_02 = {
+            "The numbers still don't work. But I opened the stand anyway.",
+            "Some days the city number feels very far away. Today is one of them.",
+        },
+        elara_03 = {
+            "You want to see the sketchbook? ...Maybe. Not today. But maybe.",
+        },
+    },
+})

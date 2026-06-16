@@ -21,11 +21,11 @@ VLConfig.OUTFIT_HOLIDAYS = {
 VLConfig.REL_MIN  = 0
 VLConfig.REL_MAX  = 100
 VLConfig.REL_TIERS = {
-    { label = "Stranger",     min = 0  },
-    { label = "Acquaintance", min = 20 },
-    { label = "Friend",       min = 40 },
-    { label = "Good Friend",  min = 60 },
-    { label = "Close Friend", min = 80 },
+    { key = "stranger",     label = "Stranger",     min = 0  },
+    { key = "acquaintance", label = "Acquaintance", min = 20 },
+    { key = "friend",       label = "Friend",       min = 40 },
+    { key = "goodFriend",   label = "Good Friend",  min = 60 },
+    { key = "closeFriend",  label = "Close Friend", min = 80 },
 }
 
 -- Relationship deltas per interaction

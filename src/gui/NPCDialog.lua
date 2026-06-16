@@ -927,27 +927,32 @@ function VLNPCDialog:onInteractInput()
 end
 
 function VLNPCDialog:openConversation(npc)
-    npc.isTalking = true
     -- Check for a triggerable heart event first.
     local rel = g_valleyLife.relationships:get(npc.id)
     g_valleyLife.sequencer:checkTriggers(npc.id, rel)
     if g_valleyLife.sequencer.active then
-        -- Event sequencer took over; it drives dialogue step-by-step.
-        npc.isTalking = false
+        npc.isTalking = true
         return
     end
 
-    -- Normal conversation: relationship bump + a static line with the tier shown.
-    g_valleyLife.relationships:tryTalk(npc.id)
-    local tier = g_valleyLife.relationships:getTier(npc.id)
-    local relNow = g_valleyLife.relationships:get(npc.id)
-    local body = string.format("%s (%d)", tier.label, relNow)
+    local speaker = self:displayName(npc.id)
+    local text, awardRel = g_valleyLife.casualDialogue:pickLine(npc.id)
+    if text == nil then
+        g_valleyLife.relationships:tryTalk(npc.id)
+        return
+    end
 
-    if not self:showSpeechBox(npc.name, body, function()
+    npc.isTalking = true
+    local function onClose()
+        if awardRel then
+            g_valleyLife.relationships:tryTalk(npc.id)
+        end
         npc.isTalking = false
-    end) then
-        print(string.format("[ValleyLife] Talking to %s - %s (%d)", npc.name, tier.label, relNow))
-        npc.isTalking = false
+    end
+
+    if not self:showSpeechBox(speaker, text, onClose) then
+        print(string.format("[ValleyLife] %s: %s", speaker, text))
+        onClose()
     end
 end
 

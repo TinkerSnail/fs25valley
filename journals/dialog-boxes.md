@@ -154,8 +154,8 @@ set. Both tear down on `closeReply` / `closeSpeech`. Mission unload calls
 ## Integration points
 
 - **Heart events:** `NPCEventSequencer` → `VLNPCDialog:showEventDialogue(step, sequencer)`
-- **Casual talk:** `VLNPCDialog:openConversation(npc)` → `showSpeechBox` (clears
-  `isTalking` on dismiss callback)
+- **Casual talk:** `VLNPCDialog:openConversation(npc)` - heart events if ready;
+  otherwise tier greeting (first meet / daily / already-talked) via `VLCasualDialogue`
 - **Per-frame draw:** `FSBaseMission.draw` → `VLNPCDialog:draw()` (speech then reply)
 - **Per-frame logic:** `FSBaseMission.update` → `VLNPCDialog:update()` (proximity
   prompt, stale reply cleanup, input context recovery)

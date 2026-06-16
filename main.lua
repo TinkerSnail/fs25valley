@@ -17,6 +17,7 @@ source(modDir .. "src/scripts/NPCRelationshipManager.lua")
 source(modDir .. "src/scripts/NPCEntity.lua")
 source(modDir .. "src/scripts/NPCScheduler.lua")
 source(modDir .. "src/scripts/NPCEventSequencer.lua")
+source(modDir .. "src/scripts/NPCCasualDialogue.lua")
 
 -- 4. GUI (depends on subsystems)
 source(modDir .. "src/gui/NPCDialog.lua")
@@ -188,6 +189,7 @@ function VLConsole:resetNpc(npcId)
     end
     local cleared = g_valleyLife.sequencer:resetNPC(npcId)
     g_valleyLife.relationships.values[npcId] = 0
+    g_valleyLife.casualDialogue:resetNPC(npcId)
     local npc = g_valleyLife:getNPC(npcId)
     if npc then npc.isTalking = false end
     local msg = string.format("[ValleyLife] Reset %s: cleared %d event(s), relationship -> 0.",

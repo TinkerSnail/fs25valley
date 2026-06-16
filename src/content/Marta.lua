@@ -194,3 +194,64 @@ VLEventSequencer.registerEvent({
         },
     },
 })
+
+-- ---------------------------------------------------------------------------
+-- Daily greetings (Press R when no heart event is pending)
+-- ---------------------------------------------------------------------------
+VLCasualDialogue.register("marta", {
+    firstMeet = "Well, look who wandered in. You must be Walter's grandkid - I'm Marta. I run the store. If you're hungry, sit down before I decide for you.",
+
+    stranger = {
+        "Morning, sweetheart. Coffee's on if you need it.",
+        "You're up with the sun - I like that in a farmer.",
+        "New face in town. Riverbend Springs doesn't get many. Take care of each other out here.",
+        "Don't skip meals. I can tell when someone does.",
+        "Stop by the store when you need anything. I keep the good stuff in back.",
+    },
+
+    acquaintance = {
+        "There you are. I saved you a biscuit.",
+        "You're settling in. Good. Walter would be pleased.",
+        "Kenji came through grumbling this morning. That means he likes you.",
+        "Elara mentioned you stopped at the stand. About time someone did.",
+    },
+
+    friend = {
+        "Sit a minute. You look like you could use a break.",
+        "I'm fine, I'm fine - but thank you for asking.",
+        "Town's quiet today. Too quiet. Makes a person think.",
+        "You don't have to pay me back. You just have to stay.",
+    },
+
+    goodFriend = {
+        "Back room's a mess, but the front's open. Story of my life.",
+        "You showed up when I needed it. I haven't forgotten.",
+        "Someone has to hold this town together. Might as well be me.",
+        "Sweetheart, you look tired. When's the last time someone fed you?",
+    },
+
+    closeFriend = {
+        "Best thing that happened to this valley was you staying.",
+        "I got sat down at my own table once. Still thinking about it.",
+        "You found the thread that runs through all of us. Don't stop pulling.",
+    },
+
+    alreadyTalked = {
+        "We already talked today, sweetheart. Go on home.",
+        "I'm still here behind the counter. Same as always.",
+        "Save it for tomorrow - I'll have fresh gossip by then.",
+    },
+
+    afterEvent = {
+        marta_01 = {
+            "Still on the house, by the way. House rule.",
+            "Don't you dare reach for that wallet in here.",
+        },
+        marta_02 = {
+            "Back room's still small. But it's mine.",
+        },
+        marta_03 = {
+            "Next town event's on me. ...Mostly on me.",
+        },
+    },
+})

@@ -30,6 +30,12 @@ function VLRelationshipManager:getTier(npcId)
     return tier
 end
 
+function VLRelationshipManager:hasTalkedToday(npcId)
+    local today = TimeHelper.getDay()
+    if today ~= self.lastDay then return false end
+    return self.talkedToday[npcId] == true
+end
+
 function VLRelationshipManager:tryTalk(npcId)
     local today = TimeHelper.getDay()
     if today ~= self.lastDay then

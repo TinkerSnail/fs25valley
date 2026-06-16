@@ -209,3 +209,65 @@ VLEventSequencer.registerEvent({
         },
     },
 })
+
+-- ---------------------------------------------------------------------------
+-- Daily greetings (Press R when no heart event is pending)
+-- ---------------------------------------------------------------------------
+VLCasualDialogue.register("kenji", {
+    firstMeet = "You're the one on Walter's place. Kenji. I farm the next field over. We'll see how long you last.",
+
+    stranger = {
+        "Morning. Weather's turning - check your fence posts.",
+        "Don't block the lane with your equipment.",
+        "Land doesn't care who's on the deed. Treat it right.",
+        "Out early. Good. Lazy farmers don't last out here.",
+        "You need something, say it. I don't do small talk.",
+    },
+
+    acquaintance = {
+        "Morning. Saw your lights on late last night.",
+        "Fence line's holding on your side?",
+        "Rain's coming. You set your drainage?",
+        "You're still here. Didn't figure you for a flipper, but we'll see.",
+    },
+
+    friend = {
+        "Morning. Your south field could use another pass.",
+        "Son called. Didn't pick up. ...He'll call back.",
+        "Old tools last longer than new ones if you use them right.",
+        "You're not bad with your hands. There. I said it.",
+    },
+
+    goodFriend = {
+        "Fixed your gate again. Don't make a thing of it.",
+        "The boy respects me. Took me too long to hear it.",
+        "You stayed. That means something out here.",
+        "If you need the tractor, the key's on the hook. You know which one.",
+    },
+
+    closeFriend = {
+        "Good neighbor. Best I've had since Walter.",
+        "The toolbox stays on the bench. Your hands too, when you need them.",
+        "Son might come home for harvest. ...I'd like you to meet him.",
+    },
+
+    alreadyTalked = {
+        "Already talked today. Go do your chores.",
+        "Nothing new to say. Same weather, same fields.",
+        "Catch me tomorrow. I'll have something then, maybe.",
+    },
+
+    afterEvent = {
+        kenji_01 = {
+            "Still watching that fence line. Still here.",
+            "You didn't bolt. I'll give you that much.",
+        },
+        kenji_02 = {
+            "Gate's holding. Don't mention who fixed it.",
+            "Dawn's a good time to work. Fewer witnesses.",
+        },
+        kenji_03 = {
+            "Old way still works. Your father knew that.",
+        },
+    },
+})

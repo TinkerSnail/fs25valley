@@ -226,6 +226,9 @@ function VLEventSequencer:endEvent()
     self.active       = false
     self.currentEvent = nil
     self.currentSteps = nil
+    if g_valleyLife and g_valleyLife.dialog then
+        g_valleyLife.dialog:closeConversation()
+    end
     -- Award relationship bonus for completing this event.
     if g_valleyLife and g_valleyLife.relationships then
         g_valleyLife.relationships:heartEventCompleted(event.npcId)
