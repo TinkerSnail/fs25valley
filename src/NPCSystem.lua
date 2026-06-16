@@ -384,7 +384,7 @@ function VLNPCSystem:loadFromXML(xmlFile, missionKey)
 end
 
 function VLNPCSystem:delete()
-    if self.dialog then self.dialog:removeInput() end
+    if self.dialog then self.dialog:delete() end
     for _, npc in pairs(self.npcs) do
         npc:delete()
     end

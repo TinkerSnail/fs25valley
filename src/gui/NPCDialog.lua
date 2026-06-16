@@ -686,6 +686,9 @@ function VLNPCDialog:registerReplyInput()
     r.contextActive = pcall(function()
         g_inputBinding:setContext(VL_REPLY_CONTEXT, true, false)
     end)
+    if r.contextActive then
+        self._inReplyContext = true
+    end
 
     local function reg(action, callback)
         if action == nil then return end
@@ -717,6 +720,7 @@ function VLNPCDialog:closeReply()
         -- Leave the reply context and restore on-foot movement controls.
         if self.reply.contextActive then
             pcall(function() g_inputBinding:revertContext(true) end)
+            self._inReplyContext = false
         end
     end
     if self.reply.tri ~= nil and self.reply.tri.delete ~= nil then
@@ -865,6 +869,21 @@ function VLNPCDialog:unregisterActionEvent()
     end
 end
 
+function VLNPCDialog:restoreInputContextIfStuck()
+    if not self._inReplyContext or g_inputBinding == nil then return end
+    if self.reply ~= nil then return end
+    pcall(function() g_inputBinding:revertContext(true) end)
+    self._inReplyContext = false
+    print("[ValleyLife] Restored default input context (reply selector was stuck).")
+end
+
+function VLNPCDialog:delete()
+    self:closeReply()
+    self:closeSpeech()
+    self:unregisterActionEvent()
+    self:restoreInputContextIfStuck()
+end
+
 function VLNPCDialog:update(dt)
     -- Don't offer interaction while an event is playing.
     if self.npcSystem.sequencer.active then
@@ -872,13 +891,11 @@ function VLNPCDialog:update(dt)
         return
     end
 
-    -- Safety: if a reply selector is somehow still open with no active event
-    -- (e.g. the event was reset), tear it down.
+    self:restoreInputContextIfStuck()
+
+    -- Stale reply UI after an event reset/abort (speech closes via its own callback).
     if self.reply ~= nil then
         self:closeReply()
-    end
-    if self.speech ~= nil then
-        self:closeSpeech()
     end
 
     local nearest, dist = self.npcSystem:getNearestNPC()
@@ -926,10 +943,12 @@ function VLNPCDialog:openConversation(npc)
     local relNow = g_valleyLife.relationships:get(npc.id)
     local body = string.format("%s (%d)", tier.label, relNow)
 
-    if not self:showSpeechBox(npc.name, body, function() end) then
+    if not self:showSpeechBox(npc.name, body, function()
+        npc.isTalking = false
+    end) then
         print(string.format("[ValleyLife] Talking to %s — %s (%d)", npc.name, tier.label, relNow))
+        npc.isTalking = false
     end
-    npc.isTalking = false
 end
 
 -- Render one dialogue step from the heart-event sequencer.

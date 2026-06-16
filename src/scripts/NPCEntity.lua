@@ -105,6 +105,9 @@ function VLNPCEntity.new(data)
     self.isLoaded    = false
     self.modelLoaded = false
     self.isTalking   = false
+    self.useDirectAnimation = false
+    self.animCharSet = nil
+    self._animSetupRetries = 0
     return self
 end
 
@@ -663,9 +666,145 @@ function VLNPCEntity:reapplyAppearance(opts)
     return true
 end
 
+local function setAnimParam(param, value)
+    if param == nil or type(param.setValue) ~= "function" then return end
+    pcall(function() param:setValue(value) end)
+end
+
+local IDLE_CLIP_CANDIDATES_FEMALE = {
+    "idle1FemaleSource", "idle1Source", "idle2FemaleSource", "idle2Source", "idleSource",
+}
+local IDLE_CLIP_CANDIDATES_MALE = {
+    "idle1Source", "idle2Source", "idleSource", "idle1FemaleSource",
+}
+
+local function findAnimClip(charSet, candidates)
+    if charSet == nil or charSet == 0 or getAnimClipIndex == nil then return -1, nil end
+    for _, name in ipairs(candidates) do
+        local ok, idx = pcall(getAnimClipIndex, charSet, name)
+        if ok and type(idx) == "number" and idx >= 0 then
+            return idx, name
+        end
+    end
+    return -1, nil
+end
+
+local function resolveAnimCharacterSet(skeleton)
+    if skeleton == nil or skeleton == 0 or getAnimCharacterSet == nil then return 0 end
+    local charSet = 0
+    pcall(function()
+        charSet = getAnimCharacterSet(skeleton)
+        if charSet == 0 then
+            local child = getChildAt(skeleton, 0)
+            if child ~= nil and child ~= 0 then
+                charSet = getAnimCharacterSet(child)
+            end
+        end
+    end)
+    return charSet or 0
+end
+
+-- VehicleCharacter / NPCFavor pattern: clone character clips onto the skeleton and
+-- enable the idle track. The engine advances enabled tracks without gfx:update().
+function VLNPCEntity:setupDirectIdleAnimation()
+    local gfx = self.graphics
+    if gfx == nil or gfx.model == nil then return false end
+    local skeleton = gfx.model.skeleton
+    if skeleton == nil or skeleton == 0 then return false end
+
+    if g_animCache ~= nil and AnimationCache ~= nil and cloneAnimCharacterSet ~= nil then
+        pcall(function()
+            local animNode = g_animCache:getNode(AnimationCache.CHARACTER)
+            if animNode ~= nil and animNode ~= 0 then
+                local src = getChildAt(animNode, 0)
+                if src ~= nil and src ~= 0 then
+                    cloneAnimCharacterSet(src, skeleton)
+                end
+            end
+        end)
+    end
+
+    local charSet = resolveAnimCharacterSet(skeleton)
+    if charSet == 0 then return false end
+
+    local candidates = self.isFemale and IDLE_CLIP_CANDIDATES_FEMALE or IDLE_CLIP_CANDIDATES_MALE
+    local idleClip, idleName = findAnimClip(charSet, candidates)
+    if idleClip < 0 then return false end
+
+    local ok = pcall(function()
+        clearAnimTrackClip(charSet, 0)
+        assignAnimTrackClip(charSet, 0, idleClip)
+        setAnimTrackLoopState(charSet, 0, true)
+        enableAnimTrack(charSet, 0)
+        if disableAnimTrack ~= nil then
+            disableAnimTrack(charSet, 1)
+        end
+    end)
+    if not ok then return false end
+
+    self.useDirectAnimation = true
+    self.animCharSet = charSet
+    print(string.format("[ValleyLife] '%s' idle animation: %s (direct track)", self.name, idleName))
+    return true
+end
+
+function VLNPCEntity:applyIdleAnimationParameters()
+    local gfx = self.graphics
+    if gfx == nil or not self.modelLoaded then return end
+    local params = gfx.animationParameters
+    if type(params) ~= "table" then return end
+    setAnimParam(params.isNPC, true)
+    setAnimParam(params.isGrounded, true)
+    setAnimParam(params.isCloseToGround, true)
+    setAnimParam(params.isIdling, true)
+    setAnimParam(params.isWalking, false)
+    setAnimParam(params.isRunning, false)
+    setAnimParam(params.absSpeed, 0)
+    setAnimParam(params.distanceToGround, 0)
+    setAnimParam(params.relativeVelocityX, 0)
+    setAnimParam(params.relativeVelocityY, 0)
+    setAnimParam(params.relativeVelocityZ, 0)
+    setAnimParam(params.movementDirX, 0)
+    setAnimParam(params.movementDirZ, 0)
+    setAnimParam(params.rotationVelocity, 0)
+end
+
+function VLNPCEntity:updateGraphics(dt)
+    if not self.modelLoaded then return end
+
+    if not self.useDirectAnimation and (self._animSetupRetries or 0) < 8 then
+        self._animSetupRetries = (self._animSetupRetries or 0) + 1
+        self:setupDirectIdleAnimation()
+    end
+
+    -- Direct track mode: engine advances enabled clips; no per-frame gfx update.
+    if self.useDirectAnimation and self.animCharSet ~= nil then
+        return
+    end
+
+    local gfx = self.graphics
+    if gfx == nil then return end
+    self:applyIdleAnimationParameters()
+    -- Fallback: ConditionalAnimation via HumanGraphicsComponent (sounds off).
+    pcall(function()
+        gfx.soundsEnabled = false
+        if type(gfx.update) == "function" then
+            gfx:update(dt)
+        elseif gfx.animation ~= nil and type(gfx.animation.update) == "function" then
+            gfx.animation:update(dt)
+        end
+    end)
+end
+
 function VLNPCEntity:buildAnimatedCharacter()
+    self.useDirectAnimation = false
+    self.animCharSet = nil
+    self._animSetupRetries = 0
+    self.modelLoaded = false
+
     local gfx = HumanGraphicsComponent.new()
     gfx:initialize()
+    gfx.soundsEnabled = false
     if not gfx.graphicsRootNode or gfx.graphicsRootNode == 0 then
         error("graphicsRootNode creation failed")
     end
@@ -679,21 +818,8 @@ function VLNPCEntity:buildAnimatedCharacter()
     setTranslation(self.rootNode, self.position.x, y, self.position.z)
     setRotation(self.rootNode, 0, self.rotation.y, 0)
 
-    -- Idle, grounded NPC animation state. These params are optional hints;
-    -- on some builds they are raw handles (numbers) rather than objects, so
-    -- only call setValue when it's actually a settable parameter object.
-    local p = gfx.animationParameters
-    if type(p) == "table" then
-        local function setParam(param, value)
-            if type(param) == "table" and type(param.setValue) == "function" then
-                param:setValue(value)
-            end
-        end
-        setParam(p.isNPC, true)
-        setParam(p.isGrounded, true)
-        setParam(p.isCloseToGround, true)
-        setParam(p.isIdling, true)
-    end
+    -- Idle flags are refreshed every frame in updateGraphics; prime them before async load.
+    self:applyIdleAnimationParameters()
 
     -- Build a FRESH style per NPC (see buildStyle); falls back to default look.
     local style = buildStyle(self)
@@ -706,13 +832,17 @@ function VLNPCEntity:buildAnimatedCharacter()
             if loadingState == HumanModelLoadingState.OK then
                 self.modelLoaded = true
                 pcall(function() gfx:setModelVisibility(true) end)
+                self:applyIdleAnimationParameters()
+                if not self:setupDirectIdleAnimation() then
+                    print(string.format("[ValleyLife] '%s': direct idle setup deferred (retrying).", self.name))
+                end
                 print(string.format("[ValleyLife] Spawned NPC '%s' at (%.1f, %.1f, %.1f)",
                     self.name, self.position.x, self.position.y, self.position.z))
             else
                 print(string.format("[ValleyLife] Model load failed for '%s' (state=%s)",
                     self.name, tostring(loadingState)))
             end
-        end, self, nil, true, nil, false)
+        end, self, nil, false, nil, false)
     end
 
     self.isLoaded = true
@@ -724,6 +854,7 @@ function VLNPCEntity:update(dt)
     local y = terrainY(self.position.x, self.position.z, self.position.y or 0)
     self.position.y = y
     setTranslation(self.rootNode, self.position.x, y, self.position.z)
+    self:updateGraphics(dt)
 end
 
 function VLNPCEntity:setPosition(x, y, z, ry)
@@ -755,6 +886,8 @@ function VLNPCEntity:isNearPlayer(radius)
 end
 
 function VLNPCEntity:delete()
+    self.useDirectAnimation = false
+    self.animCharSet = nil
     if self.graphics then
         pcall(function() self.graphics:delete() end)
         self.graphics = nil

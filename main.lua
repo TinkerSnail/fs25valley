@@ -49,7 +49,10 @@ end
 
 local function onMissionUpdate(mission, dt)
     if g_valleyLife then
-        g_valleyLife:update(dt)
+        local ok, err = pcall(g_valleyLife.update, g_valleyLife, dt)
+        if not ok then
+            print("[ValleyLife] ERROR in update: " .. tostring(err))
+        end
     end
 end
 
@@ -998,4 +1001,4 @@ if addConsoleCommand ~= nil then
     print("[ValleyLife] Console commands registered (vlPos ... vlHatColor, vlFootwears, vlShoe, vlSock, vlFacegear, ...).")
 end
 
-print("[ValleyLife] Valley Life 0.1.0.39 loaded; lifecycle hooks installed.")
+print("[ValleyLife] Valley Life 0.1.0.42 loaded; lifecycle hooks installed.")
