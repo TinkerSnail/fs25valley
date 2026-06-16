@@ -6,7 +6,7 @@ Springs**, **singleplayer** career mode.
 
 **Current version:** 0.1.0.42 (`modDesc.xml`)
 
-## What it does
+## What it does (so far)
 
 - **Three villagers** - Elara, Kenji, and Marta - spawned as animated humans using
   the base-game character rig (`HumanGraphicsComponent`), with per-season work and
