@@ -6,7 +6,7 @@ console with **`~`** and type a command. Most print to the console **and**
 
 After code changes, run `./repack.sh` from the project root, then **fully quit
 and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
-`Valley Life 0.1.0.38 loaded`).
+`Valley Life 0.1.0.42 loaded`).
 
 `npcId` is one of: **`elara`**, **`kenji`**, **`marta`**.
 

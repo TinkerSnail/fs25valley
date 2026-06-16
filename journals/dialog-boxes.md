@@ -142,18 +142,29 @@ column is centred within the panel (left-aligned lines, centred block).
 | Custom Up/Down | Mod actions `VL_UP` / `VL_DOWN` in `modDesc.xml` (not stock `MENU_UP`/`MENU_DOWN` — those double-step) |
 | Enter closing speech instantly picks a reply | `nextFrame(openSelector)` after speech dismiss |
 | Continue on speech box | `MENU_ACCEPT` + `SKIP_MESSAGE_BOX` (mouse click) |
+| Stuck movement after dialog | `restoreInputContextIfStuck()` + `VLNPCDialog:delete()` on unload |
+| Mod update errors breaking game | `main.lua` wraps `g_valleyLife:update` in `pcall` |
 
 Reply selector registers input only while open; speech box has its own event
-set. Both tear down on close.
+set. Both tear down on `closeReply` / `closeSpeech`. Mission unload calls
+`dialog:delete()` (not just `removeInput`).
 
 ---
 
 ## Integration points
 
 - **Heart events:** `NPCEventSequencer` → `VLNPCDialog:showEventDialogue(step, sequencer)`
-- **Casual talk:** `VLNPCDialog:openConversation(npc)` → `showSpeechBox`
-- **Per-frame draw:** `VLNPCDialog:draw()` renders speech then reply (if active)
-- **Safety:** `update()` closes stray speech/reply if sequencer takes over
+- **Casual talk:** `VLNPCDialog:openConversation(npc)` → `showSpeechBox` (clears
+  `isTalking` on dismiss callback)
+- **Per-frame draw:** `FSBaseMission.draw` → `VLNPCDialog:draw()` (speech then reply)
+- **Per-frame logic:** `FSBaseMission.update` → `VLNPCDialog:update()` (proximity
+  prompt, stale reply cleanup, input context recovery)
+- **While event active:** `update()` hides Press-R and skips proximity prompt;
+  does **not** auto-close speech (event drives dialogue)
+- **After event abort/reset:** `update()` closes stray reply selector; speech
+  closes via its own callback or `abortActive()`
+
+Full hook chain: [lifecycle-and-hooks.md](lifecycle-and-hooks.md).
 
 ---
 

@@ -15,6 +15,10 @@ villager.
   - Male:   `dataS/character/playerM/playerM.xml`
   - Female: `dataS/character/playerF/playerF.xml`
 - `appearance` format: `configName = { item = <index>, color = <index> }`.
+- **Animation** — villagers use `HumanGraphicsComponent` for the mesh/outfit;
+  idle motion uses **direct anim tracks** on the skeleton (`setupDirectIdleAnimation`
+  in `NPCEntity.lua`). Do not rely on setting `isIdling` once at spawn without
+  enabling a clip. See [lifecycle-and-hooks.md](lifecycle-and-hooks.md#npc-spawn--animation-vlnpcentity).
 - **Work / leisure outfits** — see [outfits-and-schedule.md](outfits-and-schedule.md) for
   the full calendar rules, assignment matrix, birthdays, and testing loop.
   Summary:

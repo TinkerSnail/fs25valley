@@ -55,7 +55,7 @@ seasons (see `SEASON_WORK_FALLBACK` / `SEASON_LEISURE_FALLBACK` in
 
 **Face, hair, beard** always come from `appearanceBase` regardless of mode.
 
-**Mod version:** 0.1.0.38
+**Mod version:** 0.1.0.42
 
 ## Automatic outfit triggers (runtime)
 

@@ -15,12 +15,14 @@ internals (style configs, palettes, API quirks) every time.
 - [dialog-boxes.md](dialog-boxes.md) — bottom-screen narration popup and reply
   selector: `drawFilledRectRound`, layout constants, input handling, and what
   *not* to do (PNG 9-slice corners).
+- [lifecycle-and-hooks.md](lifecycle-and-hooks.md) — **mission hooks**,
+  per-frame update/draw chain, save/load, NPC spawn, idle animation.
 - [dumps/](dumps/) — raw captured output from in-game diagnostic commands.
 
 ## Conventions
 
-- Current mod version: **0.1.0.38** (check `modDesc.xml` / log line
-  `Valley Life 0.1.0.38 loaded`).
+- Current mod version: **0.1.0.42** (check `modDesc.xml` / log line
+  `Valley Life 0.1.0.42 loaded`).
 - When a diagnostic command (e.g. `vlStyle`, `vlHairColors`) produces output we
   want to keep, paste the raw log block into `journals/dumps/` with a dated
   filename, and summarize the takeaway in the relevant topic file.
