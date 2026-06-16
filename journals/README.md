@@ -1,23 +1,25 @@
-# Valley Life — Journals
+# Valley Life - Journals
 
 Reference notes captured during development so we don't have to re-derive game
 internals (style configs, palettes, API quirks) every time.
 
+For project overview, install, and controls, see the root [README.md](../README.md).
+
 ## Index
 
-- [outfits-and-schedule.md](outfits-and-schedule.md) — **work/leisure rules**,
+- [outfits-and-schedule.md](outfits-and-schedule.md) - **work/leisure rules**,
   holidays, seasons, birthdays, per-villager assignment matrix, baking checklist.
-- [character-appearance.md](character-appearance.md) — character style configs
+- [character-appearance.md](character-appearance.md) - character style configs
   (face/hair/beard/clothing), the `vlStyle` dump, palettes, and per-villager
   appearance item indices.
-- [console-commands.md](console-commands.md) — all `vl*` dev console commands,
+- [console-commands.md](console-commands.md) - all `vl*` dev console commands,
   **outfit testing loop**, and clothing-layer command tables.
-- [dialog-boxes.md](dialog-boxes.md) — bottom-screen narration popup and reply
+- [dialog-boxes.md](dialog-boxes.md) - bottom-screen narration popup and reply
   selector: `drawFilledRectRound`, layout constants, input handling, and what
   *not* to do (PNG 9-slice corners).
-- [lifecycle-and-hooks.md](lifecycle-and-hooks.md) — **mission hooks**,
+- [lifecycle-and-hooks.md](lifecycle-and-hooks.md) - **mission hooks**,
   per-frame update/draw chain, save/load, NPC spawn, idle animation.
-- [dumps/](dumps/) — raw captured output from in-game diagnostic commands.
+- [dumps/](dumps/) - raw captured output from in-game diagnostic commands.
 
 ## Conventions
 

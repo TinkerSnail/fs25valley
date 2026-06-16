@@ -1,24 +1,24 @@
--- Authored heart events for Elara — "the one deciding whether to stay."
+-- Authored heart events for Elara - "the one deciding whether to stay."
 --
 -- Elara, late 20s. Runs the roadside produce stand at the edge of Riverbend Springs.
 -- Left a burned-out design career in the city; tells everyone the move is
 -- permanent, but keeps a sketchbook she won't show anyone and a half-packed
 -- suitcase under her bed. The player's first and most accessible relationship,
--- and the ONLY romanceable villager — romance is a branch inside her beat 4,
+-- and the ONLY romanceable villager - romance is a branch inside her beat 4,
 -- not a separate meter.
 --
 -- Four-beat arc, one event per relationship threshold:
---   20  The Sketchbook at Dusk   — caught drawing the fields; she deflects.
---   40  The Numbers Don't Work   — admits the stand is failing; the city calls.
---   60  What's In the Book       — shows the sketchbook: it's all Riverbend Springs.
---   80  The Suitcase             — she unpacks. Branch: stay as friends / stay for you.
+--   20  The Sketchbook at Dusk   - caught drawing the fields; she deflects.
+--   40  The Numbers Don't Work   - admits the stand is failing; the city calls.
+--   60  What's In the Book       - shows the sketchbook: it's all Riverbend Springs.
+--   80  The Suitcase             - she unpacks. Branch: stay as friends / stay for you.
 --
 -- NOTE: move_npc / camera coordinates below are placeholders. Tune them in the
 -- GIANTS Editor against Riverbend Springs once VLConfig.VILLAGER_SPAWNS.elara is filled in;
 -- the dialogue is the authored content and does not depend on exact coords.
 
 -- ---------------------------------------------------------------------------
--- Beat 1 (threshold 20) — "The Sketchbook at Dusk"  [VERTICAL SLICE]
+-- Beat 1 (threshold 20) - "The Sketchbook at Dusk"  [VERTICAL SLICE]
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "elara_01",
@@ -29,7 +29,7 @@ VLEventSequencer.registerEvent({
         { type = "camera",   x = 0, y = 2, z = -5, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "elara",
-          text = "Oh — hey. You're quiet. I didn't hear you till you were right there." },
+          text = "Oh - hey. You're quiet. I didn't hear you till you were right there." },
         { type = "dialogue", speaker = "elara",
           text = "*she closes a little book against her knee, too fast* It's nothing. Just... watching the light go." },
 
@@ -37,7 +37,7 @@ VLEventSequencer.registerEvent({
           text = "*she tucks the book out of sight behind her knee* Anyway. Did you need something, farmer, or are you just here to watch me work?",
           choices = {
             { label = "What were you drawing in that book?", next = "curious" },
-            { label = "Sorry — didn't mean to pry.",         next = "polite" },
+            { label = "Sorry - didn't mean to pry.",         next = "polite" },
           }
         },
         -- (unreached: a choice always jumps to a branch)
@@ -64,7 +64,7 @@ VLEventSequencer.registerEvent({
 })
 
 -- ---------------------------------------------------------------------------
--- Beat 2 (threshold 40) — "The Numbers Don't Work"
+-- Beat 2 (threshold 40) - "The Numbers Don't Work"
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "elara_02",
@@ -79,7 +79,7 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "elara",
           text = "Not 'bad week' doesn't work. 'Doesn't work' doesn't work. There's a number in the city with my name next to it and it's a lot bigger than this one." },
         { type = "dialogue", speaker = "elara",
-          text = "Why am I telling you this. *laughs* Because you don't say much. It's restful. And because you'd get it — you came back for your grandad's farm when your own dad ran the other way. I bolted from the city. Different roads, same stubborn hunt for a place that fits." },
+          text = "Why am I telling you this. *laughs* Because you don't say much. It's restful. And because you'd get it - you came back for your grandad's farm when your own dad ran the other way. I bolted from the city. Different roads, same stubborn hunt for a place that fits." },
         { type = "dialogue", speaker = "elara",
           text = "So. Be honest with a fellow transplant.",
           choices = {
@@ -108,7 +108,7 @@ VLEventSequencer.registerEvent({
 })
 
 -- ---------------------------------------------------------------------------
--- Beat 3 (threshold 60) — "What's In the Book"
+-- Beat 3 (threshold 60) - "What's In the Book"
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "elara_03",
@@ -134,7 +134,7 @@ VLEventSequencer.registerEvent({
 })
 
 -- ---------------------------------------------------------------------------
--- Beat 4 (threshold 80) — "The Suitcase"   [romance branch lives here]
+-- Beat 4 (threshold 80) - "The Suitcase"   [romance branch lives here]
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "elara_04",

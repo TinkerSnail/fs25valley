@@ -136,7 +136,7 @@ function VLEventSequencer:gotoBranch(label)
     local branches = self.currentEvent and self.currentEvent.branches
     local steps = branches and branches[label]
     if not steps then
-        print("[ValleyLife] Missing branch '" .. tostring(label) .. "' — ending event.")
+        print("[ValleyLife] Missing branch '" .. tostring(label) .. "' - ending event.")
         self:endEvent()
         return
     end
@@ -184,7 +184,7 @@ function VLEventSequencer:executeStep(step)
         if g_valleyLife and g_valleyLife.dialog then
             g_valleyLife.dialog:showEventDialogue(step, self)
         else
-            print("[ValleyLife] ERROR: dialog system unavailable — skipping dialogue step.")
+            print("[ValleyLife] ERROR: dialog system unavailable - skipping dialogue step.")
             self:advanceStep()
         end
 

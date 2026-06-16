@@ -4,7 +4,7 @@ How Valley Life attaches to FS25 and what runs each frame. Implementation lives
 in `main.lua`, `src/NPCSystem.lua`, `src/scripts/NPCEntity.lua`, and
 `src/gui/NPCDialog.lua`.
 
-**Mod version:** 0.1.0.42 — confirm in log: `Valley Life 0.1.0.42 loaded`.
+**Mod version:** 0.1.0.42 - confirm in log: `Valley Life 0.1.0.42 loaded`.
 
 ---
 
@@ -13,12 +13,12 @@ in `main.lua`, `src/NPCSystem.lua`, `src/scripts/NPCEntity.lua`, and
 `main.lua` is the only `extraSourceFiles` entry in `modDesc.xml`. It `source()`s
 modules in dependency order:
 
-1. Utils — `VectorHelper`, `TimeHelper`, `BirthdayHelper`, `OutfitCalendar`
+1. Utils - `VectorHelper`, `TimeHelper`, `BirthdayHelper`, `OutfitCalendar`
 2. `NPCConfig.lua`
-3. Scripts — `NPCRelationshipManager`, `NPCEntity`, `NPCScheduler`, `NPCEventSequencer`
+3. Scripts - `NPCRelationshipManager`, `NPCEntity`, `NPCScheduler`, `NPCEventSequencer`
 4. `gui/NPCDialog.lua`
 5. `NPCSystem.lua`
-6. Content — `Elara.lua`, `Kenji.lua`, `Marta.lua` (register heart events)
+6. Content - `Elara.lua`, `Kenji.lua`, `Marta.lua` (register heart events)
 
 Console commands register at the bottom of `main.lua` (`VLConsole` + `addConsoleCommand`).
 
@@ -36,7 +36,7 @@ the base function outright).
 | `FSBaseMission.draw` | Every frame (HUD pass) | `onMissionDraw` | `g_valleyLife.dialog:draw()` |
 | `FSBaseMission.delete` | Mission teardown (**prepended**) | `onMissionUnload` | `g_valleyLife:delete()` → `g_valleyLife = nil` |
 
-**Not hooked:** `Mission00.update` — per-frame work uses `FSBaseMission.update`.
+**Not hooked:** `Mission00.update` - per-frame work uses `FSBaseMission.update`.
 
 **Career guard:** `onMissionLoaded` only runs when `g_currentMission` is a
 `FSCareerMission` (or `FSCareerMission` is undefined). Menu / non-career maps
@@ -62,7 +62,7 @@ FSBaseMission.update(dt)
             ├─ OutfitCalendar:poll() → applyOutfitCalendarChange on season/mode transition
             ├─ for each NPC: VLNPCEntity:update(dt)
             │     ├─ terrain snap (rootNode Y)
-            │     └─ updateGraphics(dt) — idle animation (see below)
+            │     └─ updateGraphics(dt) - idle animation (see below)
             └─ VLNPCDialog:update(dt)
                   ├─ if heart event active: hide Press-R prompt, return
                   ├─ restoreInputContextIfStuck()
@@ -80,7 +80,7 @@ FSBaseMission.update(dt)
 FSBaseMission.draw()
   └─ onMissionDraw
        └─ VLNPCDialog:draw()
-            ├─ drawSpeech() — narration panel + continue hints
+            ├─ drawSpeech() - narration panel + continue hints
             └─ reply selector panel (if open)
 ```
 
@@ -97,7 +97,7 @@ Dialog is drawn in normalized screen space (`0–1`, bottom-left origin), not vi
 | Game save | same file | `FSCareerMissionInfo.saveToXMLFile` appended in `VLNPCSystem:hookSaveLoad()` |
 
 Persisted: relationship values, completed heart events (`VLConfig.SAVE_KEY` in
-`NPCConfig.lua`). NPC positions and outfits are **not** saved yet — they come
+`NPCConfig.lua`). NPC positions and outfits are **not** saved yet - they come
 from `VILLAGERS` spawn data + live calendar.
 
 ---
@@ -109,7 +109,7 @@ from `VILLAGERS` spawn data + live calendar.
 
 **Mesh:** `HumanGraphicsComponent.new()` → `initialize()` → `setStyleAsync(style, …)`.
 - `isTempStyle = false`, `isOwner = false` (matches working NPC mod pattern).
-- `gfx.soundsEnabled = false` — NPCs do not run footstep / HumanSounds updates.
+- `gfx.soundsEnabled = false` - NPCs do not run footstep / HumanSounds updates.
 
 **Idle animation (0.1.0.42):** direct anim-track mode (NPCFavor / VehicleCharacter
 pattern), not per-frame `gfx:update()` alone:
@@ -117,7 +117,7 @@ pattern), not per-frame `gfx:update()` alone:
 1. On model load OK: `cloneAnimCharacterSet` from `g_animCache` (`AnimationCache.CHARACTER`)
    onto `gfx.model.skeleton`.
 2. Find idle clip (`idle1Source`, `idle1FemaleSource`, …).
-3. `assignAnimTrackClip` on track 0 → `enableAnimTrack` — engine advances enabled
+3. `assignAnimTrackClip` on track 0 → `enableAnimTrack` - engine advances enabled
    tracks automatically; **no** `gfx:update()` needed in direct mode.
 
 Log on success:
@@ -130,7 +130,7 @@ Log on success:
 params (`isIdling`, `isNPC`, …) and call `gfx:update(dt)` with sounds still off.
 
 **Do not** call full `gfx:update()` on every NPC every frame without `soundsEnabled =
-false` — `HumanSounds:update` inside `gfx:update` caused broken player controls on
+false` - `HumanSounds:update` inside `gfx:update` caused broken player controls on
 some builds (0.1.0.40).
 
 **Outfit reload:** `reapplyAppearance()` → `delete()` → `buildAnimatedCharacter()` again
@@ -142,7 +142,7 @@ some builds (0.1.0.40).
 
 | Action | Binding | When active |
 |--------|---------|-------------|
-| `VL_INTERACT` | `KEY_r` | Near villager — dynamic `registerActionEvent` from `dialog:update` |
+| `VL_INTERACT` | `KEY_r` | Near villager - dynamic `registerActionEvent` from `dialog:update` |
 | `VL_UP` / `VL_DOWN` | Arrow keys | Reply selector only (`modDesc.xml` + reply context) |
 | `MENU_ACCEPT` / `SKIP_MESSAGE_BOX` | Enter / click | Speech box or reply confirm |
 

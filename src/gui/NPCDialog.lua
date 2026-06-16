@@ -946,7 +946,7 @@ function VLNPCDialog:openConversation(npc)
     if not self:showSpeechBox(npc.name, body, function()
         npc.isTalking = false
     end) then
-        print(string.format("[ValleyLife] Talking to %s — %s (%d)", npc.name, tier.label, relNow))
+        print(string.format("[ValleyLife] Talking to %s - %s (%d)", npc.name, tier.label, relNow))
         npc.isTalking = false
     end
 end

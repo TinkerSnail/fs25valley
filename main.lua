@@ -1,5 +1,5 @@
 -- ValleyLife: social and narrative layer for FS25.
--- Entry point — sources all modules in dependency order, hooks mission lifecycle.
+-- Entry point - sources all modules in dependency order, hooks mission lifecycle.
 
 local modDir = g_currentModDirectory
 
@@ -24,7 +24,7 @@ source(modDir .. "src/gui/NPCDialog.lua")
 -- 5. Main coordinator (references all subsystems)
 source(modDir .. "src/NPCSystem.lua")
 
--- 6. Authored content — registers heart events into the sequencer at load time.
+-- 6. Authored content - registers heart events into the sequencer at load time.
 source(modDir .. "src/content/Elara.lua")
 source(modDir .. "src/content/Kenji.lua")
 source(modDir .. "src/content/Marta.lua")
@@ -440,7 +440,7 @@ function VLConsole:listFootwear(npcId, mode)
             print("[ValleyLife] ---- try vlFacegear for facegear slot; vlSock for footwear sock names ----")
         end
         if shown == 0 then
-            print("[ValleyLife] No sock-named footwear found — run vlFootwears for the full list.")
+            print("[ValleyLife] No sock-named footwear found - run vlFootwears for the full list.")
         end
     end
     if mode == "shoe" then
@@ -483,7 +483,7 @@ function VLConsole:setStyleConfigItem(npcId, configName, item, setCmd)
         local itemCount = styleConfigItemCount(cfg)
         if itemCount == 0 then
             local hint = configName == "facegear"
-                and " Base FS25 facegear is empty — use vlShoe/vlFootwears instead."
+                and " Base FS25 facegear is empty - use vlShoe/vlFootwears instead."
                 or ""
             local msg = string.format(
                 "[ValleyLife] %s: %s has 0 items; index %d ignored.%s",
@@ -681,7 +681,7 @@ function VLConsole:setBeard(npcId, item)
     return msg
 end
 
--- vlBeardColor <npcId> <hairColor> <beardColor>: EXPERIMENTAL — apply hair and
+-- vlBeardColor <npcId> <hairColor> <beardColor>: EXPERIMENTAL - apply hair and
 -- beard colors separately (hair first, beard second, no engine unification).
 -- Tests whether FS25 can render different shades, e.g. vlBeardColor kenji 23 24.
 function VLConsole:setBeardColor(npcId, hairColor, beardColor)

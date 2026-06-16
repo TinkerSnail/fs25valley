@@ -26,10 +26,10 @@ Configured in `src/NPCConfig.lua`:
 
 **Fixed** (`VLConfig.OUTFIT_HOLIDAYS`):
 
-- Jan 1 — New Year's Day
-- Jul 4 — Independence Day
-- Dec 25 — Christmas
-- Dec 26 — Day after Christmas
+- Jan 1 - New Year's Day
+- Jul 4 - Independence Day
+- Dec 25 - Christmas
+- Dec 26 - Day after Christmas
 
 **Auto-detected** (`TimeHelper.isHoliday`):
 
@@ -93,7 +93,7 @@ Birthdays do not yet trigger leisure all day or special events.
 
 ## Assignment matrix (what's baked)
 
-Legend: ✓ baked · — missing (uses fallback) · (all) = same outfit every season
+Legend: ✓ baked · - missing (uses fallback) · (all) = same outfit every season
 
 ### Elara
 

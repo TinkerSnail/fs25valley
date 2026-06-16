@@ -7,7 +7,7 @@ villager.
 
 - Every human (player, helpers, story NPCs like Grandpa Walter) is the **same
   shared character rig** driven by a `PlayerStyle`. There is **no unique mesh**
-  per named character — they differ only by style preset (face, hair, beard,
+  per named character - they differ only by style preset (face, hair, beard,
   clothing) and colors.
 - We build a fresh `PlayerStyle` per villager from the base-game player XML and
   apply a per-villager `appearance` spec. See
@@ -15,16 +15,16 @@ villager.
   - Male:   `dataS/character/playerM/playerM.xml`
   - Female: `dataS/character/playerF/playerF.xml`
 - `appearance` format: `configName = { item = <index>, color = <index> }`.
-- **Animation** — villagers use `HumanGraphicsComponent` for the mesh/outfit;
+- **Animation** - villagers use `HumanGraphicsComponent` for the mesh/outfit;
   idle motion uses **direct anim tracks** on the skeleton (`setupDirectIdleAnimation`
   in `NPCEntity.lua`). Do not rely on setting `isIdling` once at spawn without
   enabling a clip. See [lifecycle-and-hooks.md](lifecycle-and-hooks.md#npc-spawn--animation-vlnpcentity).
-- **Work / leisure outfits** — see [outfits-and-schedule.md](outfits-and-schedule.md) for
+- **Work / leisure outfits** - see [outfits-and-schedule.md](outfits-and-schedule.md) for
   the full calendar rules, assignment matrix, birthdays, and testing loop.
   Summary:
-  - `appearanceBase` — face, hair, beard (always on).
-  - `appearanceWork` / `appearanceLeisure` — year-round defaults.
-  - `appearanceSummerWork`, `appearanceFallLeisure`, etc. — per-season overrides.
+  - `appearanceBase` - face, hair, beard (always on).
+  - `appearanceWork` / `appearanceLeisure` - year-round defaults.
+  - `appearanceSummerWork`, `appearanceFallLeisure`, etc. - per-season overrides.
   - Mode: **work** Mon–Fri 5:30 AM–4:30 PM (excl. holidays); **leisure** otherwise.
   - Console: `vlOutfit <npcId> work|leisure`, `vlSeason`, clothing `vlTop` / `vlBottom` …
 - Item indices wrap to the available count; color indexes into the style's
@@ -45,7 +45,7 @@ self.configs.hairStyle:setSelectedColorIndex(self.configs.hairStyle:getSelectedC
 This runs in `PlayerStyle.new`, `copyFrom`, `copySelectionFrom`, and
 `readStream`. Consequences for us:
 
-- Setting a separate `beard.color` is **pointless** — it gets overridden, and a
+- Setting a separate `beard.color` is **pointless** - it gets overridden, and a
   beard left "uncolored" renders as a washed-out, semi-transparent **"ghost
   chin"**. That was the bug behind Kenji's doubled/odd beard color.
 - Fix: in `applyAppearance` (`src/scripts/NPCEntity.lua`), after applying all
@@ -56,7 +56,7 @@ This runs in `PlayerStyle.new`, `copyFrom`, `copySelectionFrom`, and
 
 Other useful palette facts:
 - `style.hairColors` entries are `{ primary = <color>, secondary = <color> }`,
-  not flat `{r,g,b}` — see `journals/dumps/2026-06-15-vlHairColors.md`.
+  not flat `{r,g,b}` - see `journals/dumps/2026-06-15-vlHairColors.md`.
 - Beard config colors are loaded from the same `hairColors` palette.
 
 ## Face-specific beards (white / ghost chin)
@@ -70,7 +70,7 @@ jaw. With `vlBeard kenji 0`, if white remains, it's **baked into the head mesh**
 ## Hair on hair (baked scalp + hairStyle wig)
 
 Some **head meshes include baked scalp/hair geometry** that does not take the
-hairStyle color. Adding a full `hairStyle` wig on top produces **hair on hair** —
+hairStyle color. Adding a full `hairStyle` wig on top produces **hair on hair** -
 often a white/default under-layer plus the tinted wig on top. When cycling faces
 with `vlFace`, logs show only `mHeadXX.i3d` reloading, not a separate
 `hairStyles/*.i3d`, which suggests the under-layer stays while the wig may not
@@ -94,7 +94,7 @@ Confirmed in-game (character creation UI + `vlStyle` dump):
 | `playerM.xml` / `vlStyle` config | **10** items total | **6** items |
 
 So male items **7–10** exist in the style config but are **not** the normal wardrobe
-faces — they behave like **preset / story-style heads** with baked hair and/or
+faces - they behave like **preset / story-style heads** with baked hair and/or
 facial hair (limited or no modular `hairStyle` / `beard` support). Female has no
 extra faces; all 6 are customizable.
 
@@ -109,11 +109,11 @@ extra faces; all 6 are customizable.
 | 5 | `mHead05` | Yes | Yes |
 | 6 | `mHead06` | Yes | Yes (partial) |
 | 7 | `mHead??` | No | Baked / limited |
-| 8 | `mHead07` / `head07` | No | **Kenji's pick — white jaw, hair-on-hair issues** |
+| 8 | `mHead07` / `head07` | No | **Kenji's pick - white jaw, hair-on-hair issues** |
 | 9–10 | (not fully logged) | No | Baked / limited |
 
 **Story NPC heads** (`npcQG01`, `npcFisherman`, Walter's `grandpa.xml`) are a
-**fourth** category — not in the creation picker at all.
+**fourth** category - not in the creation picker at all.
 
 **For authored villagers:** use face items **1–6** only, then layer
 `hairStyle` + compatible `beard` + color like character creation does. Avoid
@@ -130,7 +130,7 @@ Columns: `items` = selectable presets, `colors` = swatches (−1 means the
 per-config color getter isn't exposed; colors come from the shared palette),
 `selected` = default index.
 
-### MALE — `dataS/character/playerM/playerM.xml`
+### MALE - `dataS/character/playerM/playerM.xml`
 
 | config    | items | colors | default |
 |-----------|------:|-------:|--------:|
@@ -146,7 +146,7 @@ per-config color getter isn't exposed; colors come from the shared palette),
 | onepiece  | 20    | −1     | 0       |
 | top       | 62    | −1     | 0       |
 
-### FEMALE — `dataS/character/playerF/playerF.xml`
+### FEMALE - `dataS/character/playerF/playerF.xml`
 
 | config    | items | colors | default |
 |-----------|------:|-------:|--------:|
@@ -168,7 +168,7 @@ per-config color getter isn't exposed; colors come from the shared palette),
 
 Defined in `src/NPCSystem.lua` (`VILLAGERS`).
 
-### Elara (female, late 20s — younger)
+### Elara (female, late 20s - younger)
 
 **Summer work look** (Jun–Aug):
 - `top = { item = 3 }` (topTankTop)
@@ -195,7 +195,7 @@ Defined in `src/NPCSystem.lua` (`VILLAGERS`).
 - `gloves = { item = 4, color = 9 }` (leather)
 - `glasses = { item = 7 }` (vintage)
 
-**Leisure look** (default — seasons without seasonal leisure):
+**Leisure look** (default - seasons without seasonal leisure):
 - `top = { item = 5, color = 9 }` (topLightSweater)
 - `bottom = { item = 11, color = 9 }` (botModernSkirt01)
 - `footwear = { item = 13, color = 1 }` (sandalF04)
@@ -210,11 +210,11 @@ Defined in `src/NPCSystem.lua` (`VILLAGERS`).
 **Winter leisure look** (Dec–Feb off-hours):
 - Same as winter work (puffy jacket, cargo, footwear 17, leather gloves, vintage glasses)
 
-### Kenji (male, ~58 — older)
+### Kenji (male, ~58 - older)
 
 **Base:** `face = { item = 8 }`, `hairStyle = { item = 9, color = 22 }`, `beard = { item = 0 }`
 
-**Summer work look** (baked — active Jun–Aug):
+**Summer work look** (baked - active Jun–Aug):
 - `top = { item = 1 }` (topTShirt01)
 - `bottom = { item = 9, color = 2 }` (botCargoShorts)
 - `footwear = { item = 11, color = 0 }` (sandalM02)
@@ -226,7 +226,7 @@ Defined in `src/NPCSystem.lua` (`VILLAGERS`).
 - `footwear = { item = 4, color = 1 }` (galoshes)
 - `gloves = { item = 5 }` (glovesMechanic)
 
-**Spring work look** (Mar–May — same as fall):
+**Spring work look** (Mar–May - same as fall):
 - `onepiece = { item = 6, color = 3 }` (onePieceMechanic)
 - `footwear = { item = 4, color = 1 }` (galoshes)
 - `gloves = { item = 5 }` (glovesMechanic)
@@ -274,7 +274,7 @@ Defined in `src/NPCSystem.lua` (`VILLAGERS`).
 Note: face item 8 is outside the 6 character-creation heads; baked stubble on the mesh
 can cause white jaw / hair-on-hair with some hair styles. Revisit if it becomes visible.
 
-### Marta (female, ~55 — older)
+### Marta (female, ~55 - older)
 
 **Base:** `face = { item = 5 }`, `hairStyle = { item = 16, color = 23 }`
 
@@ -297,7 +297,7 @@ can cause white jaw / hair-on-hair with some hair styles. Revisit if it becomes 
 - `gloves = { item = 3 }` (glovesKevlar)
 - `glasses = { item = 0 }` (none)
 
-**Work look** (fallback — seasons without seasonal work):
+**Work look** (fallback - seasons without seasonal work):
 - Same as summer work
 
 **Summer leisure look** (Jun–Aug off-hours):
@@ -306,7 +306,7 @@ can cause white jaw / hair-on-hair with some hair styles. Revisit if it becomes 
 - `footwear = { item = 12 }` (sandalF03)
 - `glasses = { item = 1 }` (aviator)
 
-**Leisure look** (default — seasons without seasonal leisure):
+**Leisure look** (default - seasons without seasonal leisure):
 - Same as work except `glasses = { item = 0 }`
 
 **Spring leisure look** (Mar–May off-hours):
@@ -322,7 +322,7 @@ can cause white jaw / hair-on-hair with some hair styles. Revisit if it becomes 
 - `glasses = { item = 1 }` (aviator)
 
 **Winter leisure look** (Dec–Feb off-hours):
-- `top = { item = 10 }` (topLeatherJacket — may need `color` if jacket invisible)
+- `top = { item = 10 }` (topLeatherJacket - may need `color` if jacket invisible)
 - `bottom = { item = 5 }` (mesh not confirmed in logs)
 - `footwear = { item = 9 }` (leatherChelsea02)
 - `gloves = { item = 3 }` (glovesKevlar)

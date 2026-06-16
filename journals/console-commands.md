@@ -13,10 +13,10 @@ and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
 ## Outfit testing (start here)
 
 1. **Relaunch** after repack; check mod version in log.
-2. **`vlSeason`** — calendar month, season, hour, active **work/leisure** mode, and why.
-3. **`vlOutfit <npcId> work`** or **`vlOutfit <npcId> leisure`** — preview a slot (pauses
+2. **`vlSeason`** - calendar month, season, hour, active **work/leisure** mode, and why.
+3. **`vlOutfit <npcId> work`** or **`vlOutfit <npcId> leisure`** - preview a slot (pauses
    calendar auto-switch for that NPC). **`vlOutfit <npcId> auto`** resumes calendar.
-4. **Tweak clothing** — each command reloads the NPC immediately:
+4. **Tweak clothing** - each command reloads the NPC immediately:
    - `vlTop`, `vlTopColor`
    - `vlBottom`, `vlBottomColor`
    - `vlOnepiece`, `vlOnepieceColor`
@@ -24,10 +24,10 @@ and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
    - `vlGlove`, `vlGlovesColor`
    - `vlGlass`, `vlGlassesColor`
    - `vlHat`, `vlHatColor`
-5. **List indices** — `vlTops`, `vlBottoms`, `vlOnepieces`, `vlShoes`, `vlGloves`,
+5. **List indices** - `vlTops`, `vlBottoms`, `vlOnepieces`, `vlShoes`, `vlGloves`,
    `vlGlasses`, `vlHats`, `vlStyle`.
 6. **Base appearance** (not outfit slots): `vlFace`, `vlHair`, `vlHairColor`, `vlBeard`.
-7. **Bake** — copy `item` / `color` into the right key in `src/NPCSystem.lua`
+7. **Bake** - copy `item` / `color` into the right key in `src/NPCSystem.lua`
    (`appearanceSummerWork`, `appearanceFallLeisure`, etc.), then repack.
 
 Clothing commands always edit the **active outfit mode** (work or leisure) for the
@@ -46,8 +46,8 @@ Watch `log.txt` for mesh paths (e.g. `tweedSportsJacket.i3d`) after each change.
 
 **Automatic outfit mode** (`TimeHelper.getOutfitMode`):
 
-- **Work** — Mon–Fri, 5:30 AM–4:30 PM, not a holiday.
-- **Leisure** — before 5:30 AM, from 4:30 PM, all weekend, all holidays.
+- **Work** - Mon–Fri, 5:30 AM–4:30 PM, not a holiday.
+- **Leisure** - before 5:30 AM, from 4:30 PM, all weekend, all holidays.
 
 Holidays: fixed dates in `VLConfig.OUTFIT_HOLIDAYS` plus Memorial Day, Labor Day,
 Thanksgiving (see `character-appearance.md`). Birthdays are tracked but do **not**
@@ -76,20 +76,20 @@ yet change outfit mode.
 | `vlHairColors` | `vlHairColors` | Print hair color palette (index → RGB). |
 | `vlDlg` | `vlDlg` | Probe native dialog/choice widgets. |
 
-### Face, hair, beard (base — always worn)
+### Face, hair, beard (base - always worn)
 
 | Command | Usage |
 |---|---|
-| `vlFace` | `vlFace <npcId> <index>` — male 1–10, female 1–6 |
+| `vlFace` | `vlFace <npcId> <index>` - male 1–10, female 1–6 |
 | `vlHair` | `vlHair <npcId> <item>` (0 = none) |
 | `vlHairs` | `vlHairs <npcId>` |
-| `vlHairsForHat` | `vlHairsForHat <npcId>` — hair that works under hats |
+| `vlHairsForHat` | `vlHairsForHat <npcId>` - hair that works under hats |
 | `vlBeard` | `vlBeard <npcId> <item>` (0 = none, males only) |
-| `vlBeards` | `vlBeards <npcId>` — compatible with current face |
-| `vlHairColor` | `vlHairColor <npcId> <index>` — hair + beard unified |
-| `vlBeardColor` | `vlBeardColor <npcId> <hair> <beard>` — experimental split |
+| `vlBeards` | `vlBeards <npcId>` - compatible with current face |
+| `vlHairColor` | `vlHairColor <npcId> <index>` - hair + beard unified |
+| `vlBeardColor` | `vlBeardColor <npcId> <hair> <beard>` - experimental split |
 
-### Clothing layers (outfit slot — use after `vlOutfit`)
+### Clothing layers (outfit slot - use after `vlOutfit`)
 
 | Layer | List | Set | Color |
 |---|---|---|---|
@@ -102,11 +102,11 @@ yet change outfit mode.
 | Headgear | `vlHats` | `vlHat` | `vlHatColor` |
 | Socks | `vlSocks` | `vlSock` | `vlSockColor` |
 
-`vlFacegear` / `vlFacegears` — empty in base FS25; socks may route through footwear.
+`vlFacegear` / `vlFacegears` - empty in base FS25; socks may route through footwear.
 
 ## Notes
 
-- Console tweaks are **live only** — they do not persist. Bake into
+- Console tweaks are **live only** - they do not persist. Bake into
   `src/NPCSystem.lua` (`VILLAGERS` table).
 - **Galoshes** and some tops need both `item` and `color` in the baked spec
   (e.g. `footwear = { item = 4, color = 1 }`); without color the mesh may not load.

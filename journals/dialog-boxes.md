@@ -1,7 +1,7 @@
 # Bottom-screen dialog boxes
 
 How Valley Life draws its narration popup and reply selector at the bottom of
-the screen — the approach that actually worked in FS25.
+the screen - the approach that actually worked in FS25.
 
 **Implementation:** `src/gui/NPCDialog.lua`  
 **Draw hook:** `main.lua` → `FSBaseMission.draw` → `g_valleyLife.dialog:draw()`
@@ -18,7 +18,7 @@ Mod-callable alternatives:
 
 | API | Problem |
 |-----|---------|
-| `YesNoDialog` / `MultiOptionDialog` | Centred modal — covers the villager's face |
+| `YesNoDialog` / `MultiOptionDialog` | Centred modal - covers the villager's face |
 | `HUDPopupMessage:showMessage` | Good for one line + continue, but truncates long text and has no inline choice list |
 | GUI XML (`RoundCornerElement`) | Lives in the menu/GUI system, not the on-foot mission draw pass |
 
@@ -45,10 +45,10 @@ Heart event step
                                                      Up/Down + Enter
 ```
 
-**Speech box** — black rounded panel, speaker name, wrapped body text, continue
+**Speech box** - black rounded panel, speaker name, wrapped body text, continue
 hint row (`Enter` / mouse glyphs via `InputGlyphElement`).
 
-**Reply selector** — same panel placement and width; optional question header
+**Reply selector** - same panel placement and width; optional question header
 (often omitted when the line was already spoken); list of options; selected row
 gets a lime capsule + ▶ marker; nav hint row (`↑↓` + `Enter`).
 
@@ -92,8 +92,8 @@ the same way.
 
 | Value passed | What you get |
 |--------------|--------------|
-| `0.026` (mistakenly treating 28px as screen fraction) | ~0.5px radius — looks square |
-| `1.4` (`28 / 20`) | 28px radius — correct |
+| `0.026` (mistakenly treating 28px as screen fraction) | ~0.5px radius - looks square |
+| `1.4` (`28 / 20`) | 28px radius - correct |
 
 Always convert: `cornerSize = pixels / 20`.
 
@@ -139,7 +139,7 @@ column is centred within the panel (left-aligned lines, centred block).
 | Concern | Solution |
 |---------|----------|
 | Arrow keys walking the player | Dedicated input context `FS25_ValleyLife_REPLY` while selector is open (`setContext` / `revertContext`) |
-| Custom Up/Down | Mod actions `VL_UP` / `VL_DOWN` in `modDesc.xml` (not stock `MENU_UP`/`MENU_DOWN` — those double-step) |
+| Custom Up/Down | Mod actions `VL_UP` / `VL_DOWN` in `modDesc.xml` (not stock `MENU_UP`/`MENU_DOWN` - those double-step) |
 | Enter closing speech instantly picks a reply | `nextFrame(openSelector)` after speech dismiss |
 | Continue on speech box | `MENU_ACCEPT` + `SKIP_MESSAGE_BOX` (mouse click) |
 | Stuck movement after dialog | `restoreInputContextIfStuck()` + `VLNPCDialog:delete()` on unload |
@@ -170,8 +170,8 @@ Full hook chain: [lifecycle-and-hooks.md](lifecycle-and-hooks.md).
 
 ## Testing
 
-- `vlEvent <npcId>` — force-play the next heart event (see [console-commands.md](console-commands.md))
-- `vlDlg` — probe which dialog APIs exist in the current build
+- `vlEvent <npcId>` - force-play the next heart event (see [console-commands.md](console-commands.md))
+- `vlDlg` - probe which dialog APIs exist in the current build
 - Repack `FS25_ValleyLife.zip` into the mods folder after changes; the game
   loads the zip, not the Dropbox folder directly
 

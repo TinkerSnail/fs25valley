@@ -533,7 +533,7 @@ end
 -- Item indices wrap to the available count; color indexes into the style's
 -- palette (hairColors / defaultClothingColors), which must be populated first.
 -- opts.splitHairBeardColors: apply hair color first, then beard color, and skip
--- the engine's unification step (experimental — tests whether different shades stick).
+-- the engine's unification step (experimental - tests whether different shades stick).
 local function applyAppearance(style, spec, opts)
     if type(style) ~= "table" or type(style.configs) ~= "table" or type(spec) ~= "table" then
         return
@@ -564,7 +564,7 @@ local function applyAppearance(style, spec, opts)
     end
     -- Only apply clothing layers explicitly listed in appearance. Unset layers keep
     -- loadConfigurationXML defaults (selectedItemIndex 0 = no shirt/pants mesh).
-    -- Underwear is NOT a top/bottom catalog item — it is bodyParts on the base
+    -- Underwear is NOT a top/bottom catalog item - it is bodyParts on the base
     -- player i3d, shown when no clothing is selected. Do not force item 0 here;
     -- that bypasses updateDisabledOptions and can leave body parts hidden (transparent).
     for name, choice in pairs(spec) do
@@ -585,7 +585,7 @@ local function applyAppearance(style, spec, opts)
 end
 
 -- Build a FRESH PlayerStyle for this villager. PlayerStyle.defaultStyle() is a
--- shared singleton — mutating it makes every NPC (and the player) look identical
+-- shared singleton - mutating it makes every NPC (and the player) look identical
 -- and race on async load. loadConfigurationXML populates configs from the base
 -- player XML, but NOT the color palettes (hairColors / defaultClothingColors), so
 -- we copy those from the game's cached base style or per-config color lists fail.

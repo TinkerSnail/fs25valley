@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    NPC conversation dialog — layout stub.
+    NPC conversation dialog - layout stub.
     TODO: replace with full layout referencing FS25 GUI profile system.
     See NPCFavor's gui/NPCDialog.xml for the 3-layer Bitmap/Button/Text pattern.
 -->

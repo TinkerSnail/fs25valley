@@ -1,4 +1,4 @@
-# Raw dump: `vlHairColors` — 2026-06-15
+# Raw dump: `vlHairColors` - 2026-06-15
 
 Source: `log.txt` after running `vlHairColors` in the developer console.
 
@@ -41,4 +41,4 @@ Source: `log.txt` after running `vlHairColors` in the developer console.
 - Until RGB is readable, find grey visually with the live cycler:
   `vlHairColor henryk <1..24>`.
 - Note: Henryk was previously set to `color = 22`, which renders **white**, so
-  grey is likely a slightly lower index — try the high-teens / low-20s first.
+  grey is likely a slightly lower index - try the high-teens / low-20s first.

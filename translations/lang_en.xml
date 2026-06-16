@@ -15,7 +15,7 @@
         <text name="vl_talk" text="Talk" />
         <text name="vl_give_gift" text="Give gift" />
         <text name="vl_relationship_info" text="Relationship" />
-        <text name="vl_relationship_label" text="%s — %s (%d)" />
+        <text name="vl_relationship_label" text="%s - %s (%d)" />
 
         <text name="vl_tier_stranger" text="Stranger" />
         <text name="vl_tier_acquaintance" text="Acquaintance" />

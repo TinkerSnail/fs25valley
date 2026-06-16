@@ -1,25 +1,25 @@
--- Authored heart events for Marta — "the one who holds everyone but is held by no one."
+-- Authored heart events for Marta - "the one who holds everyone but is held by no one."
 --
--- Marta, 40s-50s. Runs the general store / diner — the town's social hub and
+-- Marta, 40s-50s. Runs the general store / diner - the town's social hub and
 -- information broker; organizes every Riverbend Springs event. Warm, maternal, generous
 -- to a fault, won't accept thanks. Everyone's confidante, nobody's priority:
 -- she keeps the whole community together and lives small and alone in the back
 -- room behind all that warmth. The loneliness of the connector.
 --
--- As the town's connective tissue, her arc ties the cast together — her finale
+-- As the town's connective tissue, her arc ties the cast together - her finale
 -- is the one scene that can put the newcomer (Elara) and the elder (Kenji) in
 -- the same room.
 --
 -- Four-beat arc (the question: who takes care of the caretaker?):
---   20  On the House       — she over-helps you and refuses to be thanked.
---   40  The Back Room      — you glimpse the small, solitary life behind the store.
---   60  When It Falls Apart — her town event collapses and YOU step in for her.
---   80  Her Turn           — she lets you throw HER a celebration, and it gathers the valley.
+--   20  On the House       - she over-helps you and refuses to be thanked.
+--   40  The Back Room      - you glimpse the small, solitary life behind the store.
+--   60  When It Falls Apart - her town event collapses and YOU step in for her.
+--   80  Her Turn           - she lets you throw HER a celebration, and it gathers the valley.
 --
--- NOTE: move_npc / camera coordinates are placeholders — tune in the GIANTS Editor.
+-- NOTE: move_npc / camera coordinates are placeholders - tune in the GIANTS Editor.
 
 -- ---------------------------------------------------------------------------
--- Beat 1 (threshold 20) — "On the House"
+-- Beat 1 (threshold 20) - "On the House"
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "marta_01",
@@ -30,11 +30,11 @@ VLEventSequencer.registerEvent({
         { type = "camera",   x = 0, y = 1.8, z = -4, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "marta",
-          text = "Oh, you look half-starved, sweetheart. Sit. No, sit — I've already got a plate coming. Don't argue with me, I run a diner." },
+          text = "Oh, you look half-starved, sweetheart. Sit. No, sit - I've already got a plate coming. Don't argue with me, I run a diner." },
         { type = "dialogue", speaker = "marta",
           text = "And it's on the house. New folks eat free their first season. House rule." },
         { type = "dialogue", speaker = "marta",
-          text = "You're Walter's grandkid, aren't you — taking over his farm. Oh, that man used to sit right there and talk about you. Lit up like a porch lamp. He's so proud it's you keeping it in the family." },
+          text = "You're Walter's grandkid, aren't you - taking over his farm. Oh, that man used to sit right there and talk about you. Lit up like a porch lamp. He's so proud it's you keeping it in the family." },
         { type = "dialogue", speaker = "marta",
           text = "Don't you dare reach for that wallet.",
           choices = {
@@ -56,14 +56,14 @@ VLEventSequencer.registerEvent({
             { type = "dialogue", speaker = "marta",
               text = "*she beams, genuinely pleased* There. Was that so hard? Most folks fight me on it." },
             { type = "dialogue", speaker = "marta",
-              text = "You're going to do just fine here. I can always tell. Now — eat." },
+              text = "You're going to do just fine here. I can always tell. Now - eat." },
             { type = "end" },
         },
     },
 })
 
 -- ---------------------------------------------------------------------------
--- Beat 2 (threshold 40) — "The Back Room"
+-- Beat 2 (threshold 40) - "The Back Room"
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "marta_02",
@@ -74,7 +74,7 @@ VLEventSequencer.registerEvent({
         { type = "camera",   x = 0, y = 1.8, z = -4, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "marta",
-          text = "Oh — you weren't supposed to see back here. *she steps half in front of the doorway* It's nothing. Just where I sleep." },
+          text = "Oh - you weren't supposed to see back here. *she steps half in front of the doorway* It's nothing. Just where I sleep." },
         { type = "dialogue", speaker = "marta",
           text = "A cot, a kettle, one chair. Doesn't take much when it's only you. The store's the big room; this is plenty." },
         { type = "dialogue", speaker = "marta",
@@ -91,21 +91,21 @@ VLEventSequencer.registerEvent({
             { type = "dialogue", speaker = "marta",
               text = "*the brightness slips for just a second* ...It is. Some nights it's very lonely. I don't say that out loud, usually." },
             { type = "dialogue", speaker = "marta",
-              text = "Don't worry about me, sweetheart. I worry about the whole town — somebody has to. Go on, before I get maudlin." },
+              text = "Don't worry about me, sweetheart. I worry about the whole town - somebody has to. Go on, before I get maudlin." },
             { type = "end" },
         },
         light = {
             { type = "dialogue", speaker = "marta",
               text = "*she takes the kindness in the spirit it's offered* Cozy. Yes. Let's call it cozy." },
             { type = "dialogue", speaker = "marta",
-              text = "You're sweet to a tired woman. Off you go — I've got a town to feed." },
+              text = "You're sweet to a tired woman. Off you go - I've got a town to feed." },
             { type = "end" },
         },
     },
 })
 
 -- ---------------------------------------------------------------------------
--- Beat 3 (threshold 60) — "When It Falls Apart"
+-- Beat 3 (threshold 60) - "When It Falls Apart"
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "marta_03",
@@ -118,11 +118,11 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "marta",
           text = "*she's surrounded by half-built fair stalls, flour on her sleeve, near tears and hiding it* The caterer cancelled. The bunting's tangled. And I'm one woman, and the fair is tonight." },
         { type = "dialogue", speaker = "marta",
-          text = "I always manage. I'll manage. I just — *her voice catches* — I just need a minute where nobody needs anything from me." },
+          text = "I always manage. I'll manage. I just - *her voice catches* - I just need a minute where nobody needs anything from me." },
         { type = "dialogue", speaker = "marta",
           text = "I'm sorry. You shouldn't see me like this. Forget you did.",
           choices = {
-            { label = "Sit down. I've got the stalls — tell me what goes where.", next = "step_in" },
+            { label = "Sit down. I've got the stalls - tell me what goes where.", next = "step_in" },
             { label = "Then take the minute. I'll hold the fort.",                next = "relieve" },
           }
         },
@@ -133,7 +133,7 @@ VLEventSequencer.registerEvent({
             { type = "dialogue", speaker = "marta",
               text = "*she stares at you like the words don't compute* You'd... but the fair isn't yours to fix." },
             { type = "dialogue", speaker = "marta",
-              text = "*and then, slowly, she lets you take the hammer* ...Bunting on the left. Bless you. Nobody's ever just — taken it from my hands before." },
+              text = "*and then, slowly, she lets you take the hammer* ...Bunting on the left. Bless you. Nobody's ever just - taken it from my hands before." },
             { type = "end" },
         },
         relieve = {
@@ -147,7 +147,7 @@ VLEventSequencer.registerEvent({
 })
 
 -- ---------------------------------------------------------------------------
--- Beat 4 (threshold 80) — "Her Turn"   [the cast converges here]
+-- Beat 4 (threshold 80) - "Her Turn"   [the cast converges here]
 -- ---------------------------------------------------------------------------
 VLEventSequencer.registerEvent({
     id        = "marta_04",
@@ -161,7 +161,7 @@ VLEventSequencer.registerEvent({
         { type = "camera",   x = 0, y = 2, z = -5, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "marta",
-          text = "What is — *she stops in her own doorway* — the lights are mine. The good plates are out. Is that... my name on the bunting?" },
+          text = "What is - *she stops in her own doorway* - the lights are mine. The good plates are out. Is that... my name on the bunting?" },
         { type = "dialogue", speaker = "elara",
           text = "Don't look at me, I just hung what they handed me. *grinning* Okay, I drew the banner. Fine." },
         { type = "dialogue", speaker = "kenji",
@@ -189,7 +189,7 @@ VLEventSequencer.registerEvent({
             { type = "dialogue", speaker = "marta",
               text = "Only set the date. *she shakes her head, smiling* That's the most anyone's done for me in twenty years, and you'll call it nothing. You and Kenji, two of a kind." },
             { type = "dialogue", speaker = "elara",
-              text = "Alright, enough — the food's getting cold and the connector finally gets to sit at her own table. Marta. The head seat's yours." },
+              text = "Alright, enough - the food's getting cold and the connector finally gets to sit at her own table. Marta. The head seat's yours." },
             { type = "end" },
         },
     },

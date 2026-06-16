@@ -1,5 +1,5 @@
 -- Daily schedule: where each NPC is and what they're doing at a given hour.
--- Stub — will drive NPC pathfinding once the road spline system is wired up.
+-- Stub - will drive NPC pathfinding once the road spline system is wired up.
 
 VLNPCScheduler = {}
 VLNPCScheduler.__index = VLNPCScheduler
