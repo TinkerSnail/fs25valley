@@ -6,12 +6,16 @@ Springs**, **singleplayer** career mode. More developments are on their way.
 
 **Current version:** 0.1.0.42 (`modDesc.xml`)
 
+![Press R to talk to Elara — first-meet greeting on Riverbend Springs](docs/screenshots/elara-first-meet.png)
+
+*Elara's first-meet line, bottom-screen dialogue, and the Press R prompt (Riverbend Springs, winter).*
+
 ## What it does (so far)
 
 - **Three villagers** - Elara, Kenji, and Marta - spawned as animated humans using
   the base-game character rig (`HumanGraphicsComponent`), with per-season work and
   leisure outfits.
-- **Press R to talk** when you are within range. Casual chat bumps relationship;
+- **Press R to talk** when you are within range. Daily greetings build relationship;
   higher tiers unlock **heart events** (branching dialogue scenes).
 - **Calendar-driven outfits** - work clothes Mon–Fri 5:30 AM–4:30 PM (excluding
   holidays); leisure on evenings, weekends, and holidays. Season changes swap
