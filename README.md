@@ -10,11 +10,7 @@ Springs**, **singleplayer** career mode. More developments are on their way.
 
 ![Press R to talk to Elara — first-meet greeting on Riverbend Springs](docs/screenshots/elara-first-meet.png)
 
-*First meet — Elara introduces herself (Riverbend Springs, winter outfit).*
-
 ![Kenji — already talked today](docs/screenshots/kenji-already-talked.png)
-
-*Repeat talk same day — Kenji's "already talked" pool, no extra relationship points.*
 
 ## What it does (so far)
 
