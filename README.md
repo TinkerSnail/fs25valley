@@ -1,8 +1,8 @@
 # Farm Sim Valley 🌅
 
-A Farming Simulator 25 mod that adds authored villagers, relationship progression,
+A Farming Simulator 25 mod that aims to recreate the experience of some of our favorite games like Harvest Moon and Stardew Valley where farming is integrated into a living narrative. This mod adds authored villagers, relationship progression,
 and scripted heart events to the social layer of the game. Built for **Riverbend
-Springs**, **singleplayer** career mode.
+Springs**, **singleplayer** career mode. More developments are on their way.
 
 **Current version:** 0.1.0.42 (`modDesc.xml`)
 
