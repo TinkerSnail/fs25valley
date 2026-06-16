@@ -19,8 +19,8 @@ internals (style configs, palettes, API quirks) every time.
 
 ## Conventions
 
-- Current mod version: **0.1.0.37** (check `modDesc.xml` / log line
-  `Valley Life 0.1.0.37 loaded`).
+- Current mod version: **0.1.0.38** (check `modDesc.xml` / log line
+  `Valley Life 0.1.0.38 loaded`).
 - When a diagnostic command (e.g. `vlStyle`, `vlHairColors`) produces output we
   want to keep, paste the raw log block into `journals/dumps/` with a dated
   filename, and summarize the takeaway in the relevant topic file.

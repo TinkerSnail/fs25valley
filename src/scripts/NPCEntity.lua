@@ -95,6 +95,7 @@ function VLNPCEntity.new(data)
         self.seasonalWorkOutfits.summer = self.appearanceWork
     end
     self._outfitMode = "work"
+    self._outfitCalendarLocked = false
     self.appearance = {}
     self:refreshMergedAppearance()
     self.position    = { x = data.x, y = data.y, z = data.z }
@@ -263,6 +264,53 @@ function VLNPCEntity:updateOutfitForTime()
     if want ~= self._outfitMode then
         self:setOutfitMode(want)
     end
+end
+
+-- Apply calendar-driven work/leisure mode and/or seasonal outfit layers; reapply model once.
+function VLNPCEntity:applyCalendarOutfit(change)
+    if type(change) ~= "table" then return false end
+    local needReapply = false
+
+    if not self._outfitCalendarLocked and change.modeChanged then
+        local want = self:desiredOutfitMode()
+        if want ~= self._outfitMode then
+            self._outfitMode = want
+            needReapply = true
+        end
+    end
+
+    if change.seasonChanged or needReapply then
+        self:refreshMergedAppearance()
+        if self.graphics ~= nil or self.isLoaded then
+            self:reapplyAppearance()
+            return true
+        end
+    end
+    return needReapply
+end
+
+function VLNPCEntity:setOutfitCalendarLocked(locked)
+    self._outfitCalendarLocked = locked == true
+end
+
+function VLNPCEntity:isOutfitCalendarLocked()
+    return self._outfitCalendarLocked == true
+end
+
+function VLNPCEntity:syncOutfitToCalendar()
+    if self._outfitCalendarLocked then
+        self._outfitCalendarLocked = false
+    end
+    local want = self:desiredOutfitMode()
+    local modeChanged = want ~= self._outfitMode
+    if modeChanged then
+        self._outfitMode = want
+    end
+    self:refreshMergedAppearance()
+    if self.graphics ~= nil or self.isLoaded then
+        return self:reapplyAppearance()
+    end
+    return modeChanged
 end
 
 function VLNPCEntity:spawn()

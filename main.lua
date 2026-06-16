@@ -7,6 +7,7 @@ local modDir = g_currentModDirectory
 source(modDir .. "src/utils/VectorHelper.lua")
 source(modDir .. "src/utils/TimeHelper.lua")
 source(modDir .. "src/utils/BirthdayHelper.lua")
+source(modDir .. "src/utils/OutfitCalendar.lua")
 
 -- 2. Config (depends on nothing)
 source(modDir .. "src/NPCConfig.lua")
@@ -911,20 +912,36 @@ function VLConsole:setOutfitMode(npcId, mode)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
     local npc = npcId and g_valleyLife:getNPC(npcId)
     if npc == nil then
-        return "[ValleyLife] Usage: vlOutfit <npcId> <work|leisure>  (preview work/leisure outfit)"
+        return "[ValleyLife] Usage: vlOutfit <npcId> <work|leisure|auto>  (auto = resume calendar)"
     end
     local m = type(mode) == "string" and string.lower(mode) or nil
+    if m == "auto" then
+        if type(npc.syncOutfitToCalendar) ~= "function" then
+            return "[ValleyLife] Calendar outfit sync unavailable on this NPC."
+        end
+        npc:syncOutfitToCalendar()
+        local season = TimeHelper.getSeason()
+        local outfit = TimeHelper.getOutfitMode()
+        local msg = string.format(
+            "[ValleyLife] %s outfit -> calendar (%s, %s %s look).",
+            npcId, outfit, season, outfit == "work" and "work" or "leisure")
+        print(msg)
+        return msg
+    end
     if m ~= "work" and m ~= "leisure" then
-        return "[ValleyLife] Usage: vlOutfit " .. tostring(npcId) .. " <work|leisure>"
+        return "[ValleyLife] Usage: vlOutfit " .. tostring(npcId) .. " <work|leisure|auto>"
     end
     if type(npc.setOutfitMode) ~= "function" then
         return "[ValleyLife] Outfit modes unavailable on this NPC."
     end
     npc:setOutfitMode(m, { force = true })
+    if type(npc.setOutfitCalendarLocked) == "function" then
+        npc:setOutfitCalendarLocked(true)
+    end
     local season = TimeHelper.getSeason()
     local seasonLabel = m == "work" and season or (season .. " leisure")
     local msg = string.format(
-        "[ValleyLife] %s outfit -> %s (clothing commands edit %s look).",
+        "[ValleyLife] %s outfit -> %s (preview; calendar paused). Clothing commands edit %s look.",
         npcId, m, seasonLabel)
     print(msg)
     return msg
@@ -933,7 +950,7 @@ end
 if addConsoleCommand ~= nil then
     addConsoleCommand("vlSeason", "Print in-game season (for seasonal outfit tuning)", "printSeason", VLConsole)
     addConsoleCommand("vlBirthdays", "List villager birthdays", "printBirthdays", VLConsole)
-    addConsoleCommand("vlOutfit", "Preview work/leisure outfit: vlOutfit <npcId> <work|leisure>", "setOutfitMode", VLConsole)
+    addConsoleCommand("vlOutfit", "Preview work/leisure or resume calendar: vlOutfit <npcId> <work|leisure|auto>", "setOutfitMode", VLConsole)
     addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "printPlayerPos", VLConsole)
     addConsoleCommand("vlRel", "Set villager relationship: vlRel <npcId> <value>", "setRelationship", VLConsole)
     addConsoleCommand("vlEvent", "Force-trigger next heart event: vlEvent <npcId>", "triggerEvent", VLConsole)
@@ -981,4 +998,4 @@ if addConsoleCommand ~= nil then
     print("[ValleyLife] Console commands registered (vlPos ... vlHatColor, vlFootwears, vlShoe, vlSock, vlFacegear, ...).")
 end
 
-print("[ValleyLife] Valley Life 0.1.0.37 loaded; lifecycle hooks installed.")
+print("[ValleyLife] Valley Life 0.1.0.39 loaded; lifecycle hooks installed.")

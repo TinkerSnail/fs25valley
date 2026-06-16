@@ -203,6 +203,9 @@ Defined in `src/NPCSystem.lua` (`VILLAGERS`).
 - `footwear = { item = 6, color = 3 }` (riding)
 - `glasses = { item = 7 }` (vintage)
 
+**Winter leisure look** (Dec–Feb off-hours):
+- Same as winter work (puffy jacket, cargo, footwear 17, leather gloves, vintage glasses)
+
 ### Kenji (male, ~58 — older)
 
 **Base:** `face = { item = 8 }`, `hairStyle = { item = 9, color = 22 }`, `beard = { item = 0 }`
@@ -326,7 +329,7 @@ can cause white jaw / hair-on-hair with some hair styles. Revisit if it becomes 
 - [ ] Confirm Kenji's beard renders correctly with face 8.
 - [x] Pick Marta's face and hair (face 5 / fHead05, hair16 color 23).
 - [x] Capture the `vlHairColors` palette dump into `journals/dumps/`.
-- [ ] Elara: spring/summer/winter **seasonal leisure** (fall leisure baked).
+- [ ] Elara: spring/summer **seasonal leisure** (fall + winter leisure baked).
 - [x] Kenji: all seasonal work and leisure slots baked.
 - [x] Marta: all seasonal work and leisure slots baked.
 - [ ] Marta winter leisure: verify top 10 / bottom 5 render in-game.

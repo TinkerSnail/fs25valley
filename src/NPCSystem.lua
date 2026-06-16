@@ -54,6 +54,13 @@ local VILLAGERS = {
         footwear = { item = 6, color = 3 },
         glasses = { item = 7 },
       },
+      appearanceWinterLeisure = {
+        top = { item = 21, color = 1 },
+        bottom = { item = 3, color = 7 },
+        footwear = { item = 17 },
+        gloves = { item = 4, color = 9 },
+        glasses = { item = 7 },
+      },
       x = VLConfig.VILLAGER_SPAWNS.elara.x,  y = VLConfig.VILLAGER_SPAWNS.elara.y,
       z = VLConfig.VILLAGER_SPAWNS.elara.z,  ry = VLConfig.VILLAGER_SPAWNS.elara.ry  },
     -- Kenji: summer work = t-shirt, cargo shorts, sandals, reading glasses.
@@ -196,9 +203,7 @@ function VLNPCSystem.new()
     self.scheduler     = VLNPCScheduler.new()
     self.sequencer     = VLEventSequencer.new(self)
     self.dialog        = VLNPCDialog.new(self)
-    self._lastOutfitCheckHour = nil
-    self._lastOutfitCheckDay = nil
-    self._lastOutfitCheckSeason = nil
+    self._outfitCalendar = OutfitCalendar.new()
     return self
 end
 
@@ -212,30 +217,32 @@ function VLNPCSystem:initialize()
     end
     self:hookSaveLoad()
     self.dialog:registerInput()
-    self._lastOutfitCheckSeason = TimeHelper.getSeason()
+    self._outfitCalendar:sync()
     print(string.format("[ValleyLife] %d villagers queued for spawn.", #VILLAGERS))
 end
 
-function VLNPCSystem:update(dt)
-    local hour = TimeHelper.getHour()
-    local day = TimeHelper.getDay()
-    if hour ~= self._lastOutfitCheckHour or day ~= self._lastOutfitCheckDay then
-        self._lastOutfitCheckHour = hour
-        self._lastOutfitCheckDay = day
-        for _, npc in pairs(self.npcs) do
-            if npc.isLoaded then
-                npc:updateOutfitForTime()
-            end
+function VLNPCSystem:applyOutfitCalendarChange(change)
+    if change.seasonChanged then
+        print(string.format(
+            "[ValleyLife] Season -> %s (month %d); refreshing villager outfits.",
+            change.season, change.month))
+    end
+    if change.modeChanged then
+        print(string.format(
+            "[ValleyLife] Outfit mode -> %s (%s).",
+            change.mode, change.reason))
+    end
+    for _, npc in pairs(self.npcs) do
+        if npc.isLoaded then
+            npc:applyCalendarOutfit(change)
         end
     end
-    local season = TimeHelper.getSeason()
-    if season ~= self._lastOutfitCheckSeason then
-        self._lastOutfitCheckSeason = season
-        for _, npc in pairs(self.npcs) do
-            if npc.isLoaded then
-                npc:refreshSeasonalOutfit()
-            end
-        end
+end
+
+function VLNPCSystem:update(dt)
+    local change = self._outfitCalendar:poll()
+    if change.seasonChanged or change.modeChanged then
+        self:applyOutfitCalendarChange(change)
     end
     for _, npc in pairs(self.npcs) do
         if npc.isLoaded then

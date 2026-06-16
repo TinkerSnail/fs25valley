@@ -6,7 +6,7 @@ console with **`~`** and type a command. Most print to the console **and**
 
 After code changes, run `./repack.sh` from the project root, then **fully quit
 and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
-`Valley Life 0.1.0.37 loaded`).
+`Valley Life 0.1.0.38 loaded`).
 
 `npcId` is one of: **`elara`**, **`kenji`**, **`marta`**.
 
@@ -14,8 +14,8 @@ and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
 
 1. **Relaunch** after repack; check mod version in log.
 2. **`vlSeason`** — calendar month, season, hour, active **work/leisure** mode, and why.
-3. **`vlOutfit <npcId> work`** or **`vlOutfit <npcId> leisure`** — pick which outfit
-   slot clothing commands will edit (does not change the calendar; forces preview).
+3. **`vlOutfit <npcId> work`** or **`vlOutfit <npcId> leisure`** — preview a slot (pauses
+   calendar auto-switch for that NPC). **`vlOutfit <npcId> auto`** resumes calendar.
 4. **Tweak clothing** — each command reloads the NPC immediately:
    - `vlTop`, `vlTopColor`
    - `vlBottom`, `vlBottomColor`
@@ -41,7 +41,7 @@ Watch `log.txt` for mesh paths (e.g. `tweedSportsJacket.i3d`) after each change.
 | Command | Usage | What it does |
 |---|---|---|
 | `vlSeason` | `vlSeason` | Month, season, hour, outfit mode (work/leisure), reason. |
-| `vlOutfit` | `vlOutfit <npcId> <work\|leisure>` | Force preview of work or leisure slot for tuning. |
+| `vlOutfit` | `vlOutfit <npcId> <work\|leisure\|auto>` | Preview work/leisure (pauses calendar) or `auto` to resume. |
 | `vlBirthdays` | `vlBirthdays` | List villager birthdays; marks **(today!)** when applicable. |
 
 **Automatic outfit mode** (`TimeHelper.getOutfitMode`):

@@ -55,7 +55,28 @@ seasons (see `SEASON_WORK_FALLBACK` / `SEASON_LEISURE_FALLBACK` in
 
 **Face, hair, beard** always come from `appearanceBase` regardless of mode.
 
-**Mod version:** 0.1.0.37
+**Mod version:** 0.1.0.38
+
+## Automatic outfit triggers (runtime)
+
+Outfits refresh automatically each frame via `OutfitCalendar` (`src/utils/OutfitCalendar.lua`)
+polled from `VLNPCSystem:update` (hooked on `FSBaseMission.update`).
+
+| Trigger | Detection | NPC action |
+|---|---|---|
+| **Work ↔ leisure** | `TimeHelper.getOutfitMode()` changes (work hours, weekend, holiday) | Swap `appearance*Work` vs `appearance*Leisure` for current season; `reapplyAppearance()` |
+| **Season change** | Calendar month changes → `TimeHelper.getSeason()` updates | Re-resolve seasonal slot (`appearanceSummerWork`, etc.); `reapplyAppearance()` |
+
+Log lines when triggers fire:
+
+- `Outfit mode -> leisure (after work hours).`
+- `Season -> winter (month 12); refreshing villager outfits.`
+
+**Work hours** (`VLConfig.OUTFIT_WORK_START_HOUR` / `OUTFIT_WORK_END_HOUR`): Mon–Fri
+5:30 AM–4:30 PM, excluding holidays. Weekends and holidays are leisure all day.
+
+**Console preview** (`vlOutfit <npc> work|leisure`) pauses calendar auto-switch for that
+NPC until `vlOutfit <npc> auto` resumes calendar-driven mode + seasonal layers.
 
 ## Birthdays
 
@@ -79,7 +100,7 @@ Legend: ✓ baked · — missing (uses fallback) · (all) = same outfit every se
 | Slot | Spring | Summer | Fall | Winter |
 |---|---|---|---|---|
 | **Work** | ✓ tweed/equestrian | ✓ tank/shorts | ✓ sweater/skirt | ✓ puffy/cargo |
-| **Leisure** | (default) sweater/skirt | | ✓ wool coat/equestrian | (default) sweater/skirt |
+| **Leisure** | (default) sweater/skirt | | ✓ wool coat/equestrian | ✓ puffy/cargo |
 
 **Base:** face 4, hair 8 c3
 
@@ -105,7 +126,7 @@ Plus **default leisure** (synthetic onepiece) if no seasonal leisure matches.
 
 ## Gaps (TODO)
 
-- Elara: spring/summer/winter **seasonal leisure**
+- Elara: spring/summer **seasonal leisure**
 - Birthday → leisure or event hooks
 
 ## Baking checklist
