@@ -32,7 +32,7 @@ VLConfig.HEART_EVENT_THRESHOLDS = { 20, 40, 60, 80 }
 -- Format: { x, y, z, ry }  (ry = Y-axis rotation in radians, 0 = facing +Z)
 VLConfig.VILLAGER_SPAWNS = {
     elara  = { x = -707.46, y = 47.34, z = 142.0, ry = math.pi },
-    henryk = { x = -704.46, y = 47.34, z = 142.0, ry = math.pi },
+    kenji = { x = -704.46, y = 47.34, z = 142.0, ry = math.pi },
     marta  = { x = -710.46, y = 47.34, z = 142.0, ry = math.pi },
 }
 

@@ -19,16 +19,10 @@ VLNPCDialog.__index = VLNPCDialog
 
 VLNPCDialog.INPUT_ACTION = "VL_INTERACT"
 
--- Rounded-rectangle texture (white + alpha, tinted at draw time) for the reply panel
--- background, so the box has soft corners like the base game's dialog boxes.
-local VL_PANEL = (g_currentModDirectory or "") .. "gui/vl_panel.png"
-
--- Rounded-rectangle mask (white + alpha) tinted lime at draw time to paint the
--- highlight pill behind the selected reply, matching the base-game NPC menu.
-local VL_PILL = (g_currentModDirectory or "") .. "gui/vl_pill.png"
+local modGui = (g_currentModDirectory or "") .. "gui/"
 
 -- Right-pointing triangle mask (the font has no ▶ glyph, so we draw it as a texture).
-local VL_TRI = (g_currentModDirectory or "") .. "gui/vl_tri.png"
+local VL_TRI = modGui .. "vl_tri.png"
 
 -- Dedicated input context entered while the reply selector is open. Switching to a
 -- fresh context (the same technique text-input fields use) suspends on-foot player
@@ -51,6 +45,222 @@ local function nextFrame(fn)
     g_currentMission:addUpdateable(updateable)
 end
 
+-- Layout shared by the narration popup and reply selector (normalized screen coords).
+local SPEECH_BOX_W     = 0.58
+local SPEECH_BOX_BOTTOM = 0.052
+local SPEECH_PAD_X   = 0.022
+local SPEECH_PAD_Y   = 0.016
+local SPEECH_PAD_TOP = 0.032
+local SPEECH_PAD_BOTTOM = 0.024
+local SPEECH_BODY_HINT_GAP = 0.006
+local REPLY_PILL_PAD_X = 0.022
+local REPLY_PILL_PAD_Y = 0.010
+local REPLY_MARKER_GAP = 0.014
+local REPLY_TRI_W = 0.009
+local REPLY_MARKER_W = 0.016
+local SPEECH_TEXT_SIZE = 0.017
+local SPEECH_LINE_H  = SPEECH_TEXT_SIZE * 1.25
+local SPEECH_TITLE_SIZE = 0.0185
+local SPEECH_HINT_SIZE  = 0.014
+local SPEECH_HINT_COLOR = { 0.72, 0.72, 0.72, 1 }
+
+-- Visual styling (pixel values for corner radius).
+-- drawFilledRectRound uses engine units: cornerSize 1.0 = 20px (see RoundCornerElement).
+local ENGINE_CORNER_PX = 20
+local DIALOG_PANEL_CORNER_PX = 28   -- main speech / reply box; try 16–40
+local REPLY_PILL_CORNER_PX   = nil  -- nil = full capsule (half the pill height)
+
+local function cornerSizeFromPx(px)
+    return px / ENGINE_CORNER_PX
+end
+
+local function normalizedHeightToPx(nh)
+    if g_pixelSizeY ~= nil and g_pixelSizeY > 0 then
+        return nh / g_pixelSizeY
+    end
+    return nh * 1080
+end
+
+local function scaledScreenHeight(px)
+    if g_currentMission ~= nil and g_currentMission.scalePixelToScreenHeight ~= nil then
+        local ok, scaled = pcall(g_currentMission.scalePixelToScreenHeight, g_currentMission, px)
+        if ok and type(scaled) == "number" then return scaled end
+    end
+    return px / 1080
+end
+
+local function hudDrawAvailable()
+    return drawFilledRectRound ~= nil or drawFilledRect ~= nil
+end
+
+local function panelCornerSize(_w, _h)
+    return cornerSizeFromPx(DIALOG_PANEL_CORNER_PX)
+end
+
+local function pillCornerSize(w, h)
+    if REPLY_PILL_CORNER_PX ~= nil then
+        return cornerSizeFromPx(REPLY_PILL_CORNER_PX)
+    end
+    return cornerSizeFromPx(normalizedHeightToPx(h) * 0.5)
+end
+
+local function renderRoundedPanel(left, bottom, w, h, r, g, b, a)
+    if drawFilledRectRound ~= nil then
+        drawFilledRectRound(left, bottom, w, h, panelCornerSize(w, h), r, g, b, a)
+        return true
+    end
+    if drawFilledRect ~= nil then
+        drawFilledRect(left, bottom, w, h, r, g, b, a)
+        return true
+    end
+    return false
+end
+
+local function renderPill(left, bottom, w, h, r, g, b, a)
+    if drawFilledRectRound ~= nil then
+        drawFilledRectRound(left, bottom, w, h, pillCornerSize(w, h), r, g, b, a)
+        return true
+    end
+    if drawFilledRect ~= nil then
+        drawFilledRect(left, bottom, w, h, r, g, b, a)
+        return true
+    end
+    return false
+end
+
+local function l10n(key, fallback)
+    if g_i18n ~= nil then
+        local text = g_i18n:getText(key)
+        if text ~= nil and text ~= "" and text ~= key
+        and not text:lower():match("^missing ") then
+            return text
+        end
+    end
+    return fallback
+end
+
+local function speechHintOrText()
+    return l10n("vl_dialog_continue_or", "or")
+end
+
+local function speechHintSuffix()
+    return l10n("vl_dialog_continue_suffix", "to continue")
+end
+
+local function speechHintFallback()
+    return l10n("vl_dialog_continue_fallback", "Press Enter or left click to continue")
+end
+
+local function scaledHintGlyphSize()
+    if g_currentMission ~= nil and g_currentMission.scalePixelToScreenVector ~= nil then
+        local ok, w, h = pcall(g_currentMission.scalePixelToScreenVector, g_currentMission, 36, 36)
+        if ok and type(w) == "number" then return w, h end
+    end
+    return 0.015, 0.022
+end
+
+-- Shared vertical layout for the continue hint row. InputGlyphElement uses posY as
+-- the icon bottom; hint text shares the row center with the glyphs.
+local function hintRowLayout()
+    local _, glyphH = scaledHintGlyphSize()
+    local rowH = math.max(glyphH, SPEECH_HINT_SIZE * 1.25)
+    local rowBottom = SPEECH_BOX_BOTTOM + SPEECH_PAD_BOTTOM
+    local rowCenter = rowBottom + rowH * 0.5
+    local glyphY = rowCenter - glyphH * 0.5
+    local textY = rowCenter - SPEECH_HINT_SIZE * 0.35
+    return glyphH, rowH, glyphY, textY
+end
+
+-- Greedy word-wrap: split text into lines that each fit within maxW (normalized
+-- screen width) at the given text size. Falls back to a single line if the engine's
+-- text measurement isn't available. A lone word wider than maxW is left on its own
+-- line (it'll overflow slightly rather than vanish).
+local function wrapText(text, size, maxW)
+    text = tostring(text or "")
+    if getTextWidth == nil or maxW == nil or maxW <= 0 then return { text } end
+    local lines, cur = {}, nil
+    for word in text:gmatch("%S+") do
+        if cur == nil then
+            cur = word
+        else
+            local try = cur .. " " .. word
+            if getTextWidth(size, try) <= maxW then
+                cur = try
+            else
+                lines[#lines + 1] = cur
+                cur = word
+            end
+        end
+    end
+    if cur ~= nil then lines[#lines + 1] = cur end
+    if #lines == 0 then lines[1] = "" end
+    return lines
+end
+
+-- Widest rendered line in a set (used to center a left-aligned text column).
+local function maxTextWidth(lines, size, extraLine, extraSize)
+    local maxW = 0
+    if getTextWidth == nil then return 0 end
+    if extraLine ~= nil and extraSize ~= nil then
+        maxW = getTextWidth(extraSize, tostring(extraLine)) or 0
+    end
+    for _, line in ipairs(lines) do
+        local w = getTextWidth(size, line) or 0
+        if w > maxW then maxW = w end
+    end
+    return maxW
+end
+
+-- Widest reply row (marker + gap + label), optionally including a prompt line above.
+local function maxReplyBlockWidth(wrapped, textSize, markerW, markerGap, innerW, promptLabel, promptSize)
+    local maxW = markerW + markerGap
+    if getTextWidth ~= nil and promptLabel ~= nil and #promptLabel > 0 then
+        maxW = math.max(maxW, getTextWidth(promptSize, promptLabel) or 0)
+    end
+    for _, lines in ipairs(wrapped) do
+        for _, line in ipairs(lines) do
+            maxW = math.max(maxW, markerW + markerGap + (getTextWidth(textSize, line) or 0))
+        end
+    end
+    return math.min(maxW, innerW + markerW + markerGap)
+end
+
+local function replyRowContentWidth(lines, textSize, markerW, markerGap)
+    local maxLineW = 0
+    if getTextWidth ~= nil then
+        for _, line in ipairs(lines) do
+            maxLineW = math.max(maxLineW, getTextWidth(textSize, line) or 0)
+        end
+    end
+    return markerW + markerGap + maxLineW
+end
+
+local function centeredBlockLeft(boxLeft, boxW, blockW)
+    return boxLeft + (boxW - blockW) * 0.5
+end
+
+local function navRowLayout(panelBottom)
+    local _, glyphH = scaledHintGlyphSize()
+    local rowH = math.max(glyphH, SPEECH_HINT_SIZE * 1.25)
+    local rowBottom = panelBottom + SPEECH_PAD_BOTTOM
+    local rowCenter = rowBottom + rowH * 0.5
+    local glyphY = rowCenter - glyphH * 0.5
+    local textY = rowCenter - SPEECH_HINT_SIZE * 0.35
+    return rowH, glyphY, textY
+end
+
+local function replyChooseSuffix()
+    return l10n("vl_dialog_reply_choose", "to choose")
+end
+
+local function replyConfirmSuffix()
+    return l10n("vl_dialog_reply_confirm", "to confirm")
+end
+
+local function replyNavFallback()
+    return l10n("vl_dialog_reply_nav_fallback", "↑↓ to choose · Enter to confirm")
+end
+
 -- The bottom-center HUD popup (HUDPopupMessage). Field casing varies by build.
 local function getPopup()
     local hud = g_currentMission and g_currentMission.hud
@@ -58,19 +268,235 @@ local function getPopup()
     return hud.ingameMessage or hud.inGameMessage
 end
 
--- Show one spoken line as a Walter-style bottom popup: title = speaker name,
--- body = line. A negative duration keeps it up until the player presses Continue
--- (MENU_ACCEPT / SKIP_MESSAGE_BOX), then onClose advances the scene. Returns true
--- if a surface was shown.
-local function showSpeechBox(speaker, text, onClose)
+-- Show one spoken line in our bottom panel with word wrap. Falls back to the
+-- native HUD popup (which truncates long lines) only if drawFilledRectRound is unavailable.
+function VLNPCDialog:closeSpeech()
+    if self.speech == nil then return end
+    if g_inputBinding ~= nil then
+        for _, id in ipairs(self.speech.eventIds or {}) do
+            g_inputBinding:removeActionEvent(id)
+        end
+    end
+    self:destroySpeechHintGlyphs(self.speech.hintGlyphs)
+    self.speech = nil
+end
+
+function VLNPCDialog:destroySpeechHintGlyphs(glyphs)
+    if glyphs == nil then return end
+    if glyphs.enter ~= nil then pcall(function() glyphs.enter:delete() end) end
+    if glyphs.mouse ~= nil then pcall(function() glyphs.mouse:delete() end) end
+    if glyphs.up ~= nil then pcall(function() glyphs.up:delete() end) end
+    if glyphs.down ~= nil then pcall(function() glyphs.down:delete() end) end
+end
+
+function VLNPCDialog:createReplyNavGlyphs()
+    if InputGlyphElement == nil or g_inputDisplayManager == nil or InputAction == nil then
+        return nil
+    end
+    local ok, glyphs = pcall(function()
+        local gw, gh = scaledHintGlyphSize()
+        local up = InputGlyphElement.new(g_inputDisplayManager, gw, gh)
+        up:setAction(InputAction.VL_UP, nil, SPEECH_HINT_SIZE, true)
+        up:setKeyboardGlyphColor(SPEECH_HINT_COLOR, { 0, 0, 0, 0.80 })
+
+        local down = InputGlyphElement.new(g_inputDisplayManager, gw, gh)
+        down:setAction(InputAction.VL_DOWN, nil, SPEECH_HINT_SIZE, true)
+        down:setKeyboardGlyphColor(SPEECH_HINT_COLOR, { 0, 0, 0, 0.80 })
+
+        local enter = InputGlyphElement.new(g_inputDisplayManager, gw, gh)
+        enter:setAction(InputAction.MENU_ACCEPT, nil, SPEECH_HINT_SIZE, true)
+        enter:setKeyboardGlyphColor(SPEECH_HINT_COLOR, { 0, 0, 0, 0.80 })
+        return { up = up, down = down, enter = enter }
+    end)
+    if ok then return glyphs end
+    return nil
+end
+
+function VLNPCDialog:drawReplyNavHint(r)
+    setTextColor(unpack(SPEECH_HINT_COLOR))
+    local hintSize = SPEECH_HINT_SIZE
+    local textY = r.navTextY
+    local glyphY = r.navGlyphY
+    local centerX = r.boxCenterX or (r.boxLeft + r.boxW * 0.5)
+
+    if r.navGlyphs ~= nil and r.navGlyphs.up ~= nil and r.navGlyphs.down ~= nil
+    and r.navGlyphs.enter ~= nil then
+        local sep = " · "
+        local chooseText = " " .. replyChooseSuffix()
+        local confirmText = sep .. replyConfirmSuffix()
+        local upW = r.navGlyphs.up:getGlyphWidth()
+        local downW = r.navGlyphs.down:getGlyphWidth()
+        local enterW = r.navGlyphs.enter:getGlyphWidth()
+        local chooseW = getTextWidth(hintSize, chooseText) or 0
+        local confirmW = getTextWidth(hintSize, confirmText) or 0
+        local totalW = upW + downW + chooseW + enterW + confirmW
+        local x = centerX - totalW * 0.5
+
+        r.navGlyphs.up:setPosition(x, glyphY)
+        r.navGlyphs.up:draw()
+        x = x + upW
+
+        r.navGlyphs.down:setPosition(x, glyphY)
+        r.navGlyphs.down:draw()
+        x = x + downW
+
+        setTextAlignment(RenderText.ALIGN_LEFT)
+        renderText(x, textY, hintSize, chooseText)
+        x = x + chooseW
+
+        r.navGlyphs.enter:setPosition(x, glyphY)
+        r.navGlyphs.enter:draw()
+        x = x + enterW
+
+        renderText(x, textY, hintSize, confirmText)
+    else
+        local fallback = replyNavFallback()
+        local fbW = getTextWidth(hintSize, fallback) or 0
+        setTextAlignment(RenderText.ALIGN_LEFT)
+        renderText(centerX - fbW * 0.5, textY, hintSize, fallback)
+    end
+end
+
+function VLNPCDialog:createSpeechHintGlyphs()
+    if InputGlyphElement == nil or g_inputDisplayManager == nil or InputAction == nil then
+        return nil
+    end
+    local ok, glyphs = pcall(function()
+        local gw, gh = scaledHintGlyphSize()
+        local enter = InputGlyphElement.new(g_inputDisplayManager, gw, gh)
+        enter:setAction(InputAction.MENU_ACCEPT, nil, SPEECH_HINT_SIZE, true)
+        enter:setKeyboardGlyphColor(SPEECH_HINT_COLOR, { 0, 0, 0, 0.80 })
+
+        local mouse = InputGlyphElement.new(g_inputDisplayManager, gw, gh)
+        mouse:setAction(InputAction.SKIP_MESSAGE_BOX, nil, SPEECH_HINT_SIZE, true)
+        mouse:setButtonGlyphColor(SPEECH_HINT_COLOR)
+        return { enter = enter, mouse = mouse }
+    end)
+    if ok then return glyphs end
+    return nil
+end
+
+function VLNPCDialog:drawSpeechHint(s)
+    setTextColor(unpack(SPEECH_HINT_COLOR))
+    local hintSize = s.hintSize
+    local textY = s.hintTextY or s.hintY
+    local glyphY = s.hintGlyphY or textY
+    local centerX = s.boxCenterX or (s.boxLeft + s.boxW * 0.5)
+
+    if s.hintGlyphs ~= nil and s.hintGlyphs.enter ~= nil and s.hintGlyphs.mouse ~= nil then
+        local orText = " " .. speechHintOrText() .. " "
+        local suffix = " " .. speechHintSuffix()
+        local enterW = s.hintGlyphs.enter:getGlyphWidth()
+        local mouseW = s.hintGlyphs.mouse:getGlyphWidth()
+        local orW = getTextWidth(hintSize, orText) or 0
+        local suffixW = getTextWidth(hintSize, suffix) or 0
+        local totalW = enterW + orW + mouseW + suffixW
+        local x = centerX - totalW * 0.5
+
+        s.hintGlyphs.enter:setPosition(x, glyphY)
+        s.hintGlyphs.enter:draw()
+        x = x + enterW
+
+        setTextAlignment(RenderText.ALIGN_LEFT)
+        renderText(x, textY, hintSize, orText)
+        x = x + orW
+
+        s.hintGlyphs.mouse:setPosition(x, glyphY)
+        s.hintGlyphs.mouse:draw()
+        x = x + mouseW
+
+        renderText(x, textY, hintSize, suffix)
+    else
+        local fallback = speechHintFallback()
+        local fbW = getTextWidth(hintSize, fallback) or 0
+        setTextAlignment(RenderText.ALIGN_LEFT)
+        renderText(centerX - fbW * 0.5, textY, hintSize, fallback)
+    end
+end
+
+function VLNPCDialog:onSpeechConfirm()
+    local s = self.speech
+    if s == nil then return end
+    local cb = s.onClose
+    self:closeSpeech()
+    if cb then cb() end
+end
+
+function VLNPCDialog:registerSpeechInput()
+    local s = self.speech
+    if s == nil or g_inputBinding == nil then return end
+    s.eventIds = {}
+    local function reg(action, callback)
+        if action == nil then return end
+        local ok, id = g_inputBinding:registerActionEvent(action, self, callback,
+            false, true, false, true)
+        if ok then
+            g_inputBinding:setActionEventTextVisibility(id, false)
+            table.insert(s.eventIds, id)
+        end
+    end
+    reg(InputAction.MENU_ACCEPT,      VLNPCDialog.onSpeechConfirm)
+    reg(InputAction.SKIP_MESSAGE_BOX, VLNPCDialog.onSpeechConfirm)
+end
+
+function VLNPCDialog:showSpeechBox(speaker, text, onClose)
+    onClose = onClose or function() end
+    text = tostring(text or "")
+    speaker = tostring(speaker or "")
+
+    self:closeSpeech()
+
+    local boxW     = SPEECH_BOX_W
+    local boxLeft  = (1.0 - boxW) * 0.5
+    local boxCenterX = boxLeft + boxW * 0.5
+    local innerW   = boxW - SPEECH_PAD_X * 2
+
+    if not hudDrawAvailable() then
+        return self:showSpeechBoxNative(speaker, text, onClose)
+    end
+
+    local lines = wrapText(text, SPEECH_TEXT_SIZE, innerW)
+    local contentW = math.min(maxTextWidth(lines, SPEECH_TEXT_SIZE, speaker, SPEECH_TITLE_SIZE), innerW)
+    local textX = boxLeft + (boxW - contentW) * 0.5
+    local titleH = SPEECH_TITLE_SIZE * 1.35
+    local bodyH  = #lines * SPEECH_LINE_H
+    local _, hintRowH, hintGlyphY, hintTextY = hintRowLayout()
+    local boxH   = SPEECH_PAD_TOP + titleH + bodyH + SPEECH_BODY_HINT_GAP
+        + hintRowH + SPEECH_PAD_BOTTOM
+    local boxTop = SPEECH_BOX_BOTTOM + boxH
+
+    self.speech = {
+        speaker    = speaker,
+        lines      = lines,
+        onClose    = onClose,
+        eventIds   = {},
+        boxLeft     = boxLeft,
+        boxBottom   = SPEECH_BOX_BOTTOM,
+        boxW        = boxW,
+        boxH        = boxH,
+        boxCenterX  = boxCenterX,
+        textX       = textX,
+        titleY      = boxTop - SPEECH_PAD_TOP - SPEECH_TITLE_SIZE,
+        firstLineY  = boxTop - SPEECH_PAD_TOP - titleH - SPEECH_TEXT_SIZE,
+        hintGlyphY  = hintGlyphY,
+        hintTextY   = hintTextY,
+        hintGlyphs  = self:createSpeechHintGlyphs(),
+        textSize    = SPEECH_TEXT_SIZE,
+        titleSize  = SPEECH_TITLE_SIZE,
+        hintSize   = SPEECH_HINT_SIZE,
+        lineH      = SPEECH_LINE_H,
+    }
+    self:registerSpeechInput()
+    return true
+end
+
+function VLNPCDialog:showSpeechBoxNative(speaker, text, onClose)
     onClose = onClose or function() end
     local popup = getPopup()
     if popup ~= nil and type(popup.showMessage) == "function" then
-        -- duration < 0 -> stays until acknowledged; callback fires on confirm.
         popup:showMessage(speaker or "", text or "", -1, nil, function() onClose() end, nil)
         return true
     end
-    -- Fallback: modal info dialog (centered, but keeps the scene playable).
     local body = speaker and (speaker .. ":\n" .. (text or "")) or (text or "")
     if InfoDialog ~= nil and type(InfoDialog.show) == "function" then
         InfoDialog.show(body, function() onClose() end)
@@ -83,9 +509,34 @@ local function showSpeechBox(speaker, text, onClose)
     return false
 end
 
+function VLNPCDialog:drawSpeech()
+    local s = self.speech
+    if s == nil then return end
+
+    renderRoundedPanel(s.boxLeft, s.boxBottom, s.boxW, s.boxH, 0, 0, 0, 0.85)
+
+    setTextAlignment(RenderText.ALIGN_LEFT)
+    setTextBold(true)
+    setTextColor(1, 1, 1, 1)
+    renderText(s.textX, s.titleY, s.titleSize, s.speaker)
+    setTextBold(false)
+
+    local y = s.firstLineY
+    for _, line in ipairs(s.lines) do
+        renderText(s.textX, y, s.textSize, line)
+        y = y - s.lineH
+    end
+
+    self:drawSpeechHint(s)
+
+    setTextColor(1, 1, 1, 1)
+    setTextBold(false)
+    setTextWrapWidth(0)
+    setTextAlignment(RenderText.ALIGN_LEFT)
+end
+
 -- Show a two-choice box. onResult is called with 1 (first choice) or 2 (second).
 -- Returns true if a real GUI dialog was shown.
---   YesNoDialog.show(callback, target, text, yesText, noText, ...) -> callback(yes)
 local function showChoiceBox(text, label1, label2, onResult)
     if YesNoDialog ~= nil and type(YesNoDialog.show) == "function" then
         YesNoDialog.show(function(yes) onResult(yes and 1 or 2) end, nil, text, label1, label2)
@@ -110,6 +561,7 @@ function VLNPCDialog.new(npcSystem)
     self.actionEventId  = nil
     self.promptName     = nil   -- name currently shown in the action prompt
     self.reply          = nil   -- active reply-selector state (see showReplySelector)
+    self.speech         = nil   -- active narration panel (see showSpeechBox)
     return self
 end
 
@@ -131,47 +583,51 @@ function VLNPCDialog:showReplySelector(speaker, promptText, options, onResult)
         return showChoiceBox(body, options[1], options[2], onResult)
     end
 
-    -- Layout (normalized screen coords, origin bottom-left), styled after the base
-    -- game's NPC menu: a dark panel sitting along the bottom (horizontally centered to
-    -- line up with the narration popup), left-aligned replies, and a lime highlight
-    -- pill behind the selected one. An optional question line sits above the replies
-    -- (omitted when the line was already spoken via popup).
+    -- Layout matches the narration popup: same panel width, padding, centered
+    -- left-aligned text column, lime pill on the selected row, nav hint below.
     local n        = #options
     local hasQ     = promptText ~= nil and #promptText > 0
-    local padX     = 0.013
-    local padY     = 0.016
-    local rowH     = 0.034
-    local qH       = hasQ and 0.040 or 0.0
-    local boxW     = 0.46
-    local boxLeft  = (1.0 - boxW) * 0.5   -- centered horizontally
-    local boxBottom = 0.052
-    local boxH     = padY * 2 + qH + n * rowH
-    local boxTop   = boxBottom + boxH
+    local boxW     = SPEECH_BOX_W
+    local boxLeft  = (1.0 - boxW) * 0.5
+    local boxBottom = SPEECH_BOX_BOTTOM
+    local boxCenterX = boxLeft + boxW * 0.5
 
-    local textSize = 0.0175
-    local textX    = boxLeft + padX + 0.014   -- leave room for the ▶ marker
-    -- Baseline of the first (top) reply, then step downward by rowH.
-    local firstOptY = boxTop - padY - qH - (rowH - textSize) * 0.5 - textSize
+    local textSize = SPEECH_TEXT_SIZE
+    local lineH    = SPEECH_LINE_H
+    local markerW  = REPLY_MARKER_W
+    local markerGap = REPLY_MARKER_GAP
+    local innerW   = boxW - SPEECH_PAD_X * 2 - markerW - markerGap
 
-    local bg = nil
-    local pill = nil
-    if Overlay ~= nil and Overlay.new ~= nil then
-        local okBg, ovBg = pcall(Overlay.new, VL_PANEL, boxLeft, boxBottom, boxW, boxH)
-        if okBg and ovBg ~= nil then
-            ovBg:setColor(0, 0, 0, 0.85)   -- darker, to match the base dialog boxes
-            bg = ovBg
-        end
-        local pillW, pillH = boxW - padX, rowH * 0.96
-        local okP, ovP = pcall(Overlay.new, VL_PILL, boxLeft + padX * 0.5, boxBottom, pillW, pillH)
-        if okP and ovP ~= nil then
-            ovP:setColor(0.62, 0.80, 0.10, 0.92)   -- lime, like Walter's highlight
-            pill = ovP
-        end
+    local wrapped, maxLines = {}, 1
+    for i = 1, n do
+        wrapped[i] = wrapText(options[i], textSize, innerW)
+        if #wrapped[i] > maxLines then maxLines = #wrapped[i] end
     end
+
+    local promptLabel = hasQ and ((speaker and (speaker .. ": ") or "") .. promptText) or nil
+    local blockW = maxReplyBlockWidth(wrapped, textSize, markerW, markerGap, innerW,
+        promptLabel, SPEECH_TITLE_SIZE)
+    local blockLeft = centeredBlockLeft(boxLeft, boxW, blockW)
+    local markerX = blockLeft
+    local textX = blockLeft + markerW + markerGap
+
+    local rowGap     = textSize * 0.55
+    local rowContent = maxLines * lineH
+    local rowH       = rowContent + rowGap
+    local optionsH   = n * rowH
+    local qH         = hasQ and (SPEECH_TITLE_SIZE * 1.35 + 0.008) or 0
+    local navRowH, navGlyphY, navTextY = navRowLayout(boxBottom)
+    local boxH       = SPEECH_PAD_TOP + qH + optionsH + SPEECH_BODY_HINT_GAP
+        + navRowH + SPEECH_PAD_BOTTOM
+    local boxTop     = boxBottom + boxH
+    local firstOptY  = boxTop - SPEECH_PAD_TOP - qH - rowGap * 0.5 - textSize
+    local questionY  = boxTop - SPEECH_PAD_TOP - SPEECH_TITLE_SIZE
+
+    local bg = hudDrawAvailable()
 
     local tri = nil
     if Overlay ~= nil and Overlay.new ~= nil then
-        local okT, ovT = pcall(Overlay.new, VL_TRI, boxLeft + padX, boxBottom, 0.009, 0.016)
+        local okT, ovT = pcall(Overlay.new, VL_TRI, markerX, boxBottom, REPLY_TRI_W, 0.016)
         if okT and ovT ~= nil then
             ovT:setColor(0.07, 0.10, 0.0, 1)   -- dark, sits on the lime pill
             tri = ovT
@@ -179,23 +635,40 @@ function VLNPCDialog:showReplySelector(speaker, promptText, options, onResult)
     end
 
     self.reply = {
-        speaker   = speaker,
-        prompt    = promptText,
-        options   = options,
-        index     = 1,
-        onResult  = onResult,
-        eventIds  = {},
-        bg        = bg,
-        pill      = pill,
-        tri       = tri,
-        boxLeft   = boxLeft,
-        padX      = padX,
-        textX     = textX,
-        textSize  = textSize,
-        questionY = boxTop - padY - 0.018,
-        firstOptY = firstOptY,
-        rowH      = rowH,
-        pillH     = rowH * 0.96,
+        speaker    = speaker,
+        prompt     = promptText,
+        options    = options,
+        lines      = wrapped,
+        index      = 1,
+        onResult   = onResult,
+        eventIds   = {},
+        bg         = bg,
+        tri        = tri,
+        boxLeft    = boxLeft,
+        boxBottom  = boxBottom,
+        boxW       = boxW,
+        boxH       = boxH,
+        boxCenterX = boxCenterX,
+        blockLeft  = blockLeft,
+        blockW     = blockW,
+        pillPadX   = REPLY_PILL_PAD_X,
+        pillPadY   = REPLY_PILL_PAD_Y,
+        markerGap  = markerGap,
+        markerW    = markerW,
+        markerX    = markerX,
+        textX      = textX,
+        textSize   = textSize,
+        lineH      = lineH,
+        innerW     = innerW,
+        questionY  = questionY,
+        firstOptY  = firstOptY,
+        rowH       = rowH,
+        rowGap     = rowGap,
+        rowContent = rowContent,
+        pillH      = rowContent + REPLY_PILL_PAD_Y * 2,
+        navGlyphY  = navGlyphY,
+        navTextY   = navTextY,
+        navGlyphs  = self:createReplyNavGlyphs(),
     }
     self:registerReplyInput()
     return true
@@ -245,15 +718,10 @@ function VLNPCDialog:closeReply()
             pcall(function() g_inputBinding:revertContext(true) end)
         end
     end
-    if self.reply.bg ~= nil and self.reply.bg.delete ~= nil then
-        pcall(function() self.reply.bg:delete() end)
-    end
-    if self.reply.pill ~= nil and self.reply.pill.delete ~= nil then
-        pcall(function() self.reply.pill:delete() end)
-    end
     if self.reply.tri ~= nil and self.reply.tri.delete ~= nil then
         pcall(function() self.reply.tri:delete() end)
     end
+    self:destroySpeechHintGlyphs(self.reply.navGlyphs)
     self.reply = nil
 end
 
@@ -282,53 +750,62 @@ end
 
 -- Drawn every frame from the mission draw hook.
 function VLNPCDialog:draw()
+    self:drawSpeech()
+
     local r = self.reply
     if r == nil then return end
 
-    if r.bg ~= nil then
-        r.bg:render()
+    if r.bg then
+        renderRoundedPanel(r.boxLeft, r.boxBottom, r.boxW, r.boxH, 0, 0, 0, 0.85)
     end
 
     setTextAlignment(RenderText.ALIGN_LEFT)
 
-    -- Optional question line above the replies (omitted when already spoken).
+    -- Optional prompt above the replies (omitted when already spoken via popup).
     if r.prompt and #r.prompt > 0 then
         local label = (r.speaker and (r.speaker .. ": ") or "") .. r.prompt
         setTextBold(true)
-        setTextWrapWidth(r.bg and 0.44 or 0)
         setTextColor(1, 1, 1, 1)
-        renderText(r.boxLeft + r.padX, r.questionY, 0.0165, label)
-        setTextWrapWidth(0)
+        renderText(r.blockLeft, r.questionY, SPEECH_TITLE_SIZE, label)
         setTextBold(false)
     end
 
     -- Reply options; the selected one gets the lime pill, a ▶ marker, and dark text.
     local y = r.firstOptY
-    for i, opt in ipairs(r.options) do
+    for i, lines in ipairs(r.lines) do
         local selected = (i == r.index)
         if selected then
-            if r.pill ~= nil then
-                local pillY = y - (r.pillH - r.textSize) * 0.5
-                r.pill:setPosition(r.boxLeft + r.padX * 0.5, pillY)
-                r.pill:render()
-            end
+            local contentW = replyRowContentWidth(lines, r.textSize, r.markerW, r.markerGap)
+            local pillW = contentW + r.pillPadX * 2
+            local pillH = r.pillH
+            local pillLeft = r.blockLeft - r.pillPadX
+            local lineCount = #lines
+            local textMidY = y - (math.max(lineCount, 1) - 1) * r.lineH * 0.5
+            local pillY = textMidY - pillH * 0.5 + r.textSize * 0.35
+            renderPill(pillLeft, pillY, pillW, pillH, 0.62, 0.80, 0.10, 0.92)
             if r.tri ~= nil then
-                r.tri:setPosition(r.boxLeft + r.padX, y + r.textSize * 0.05)
+                r.tri:setPosition(r.markerX, y + r.textSize * 0.05)
                 r.tri:render()
             end
             setTextColor(0.07, 0.10, 0.0, 1)
-            renderText(r.textX, y, r.textSize, opt)
         else
             setTextColor(0.93, 0.93, 0.93, 1)
-            renderText(r.textX, y, r.textSize, opt)
+        end
+        local ly = y
+        for _, line in ipairs(lines) do
+            renderText(r.textX, ly, r.textSize, line)
+            ly = ly - r.lineH
         end
         y = y - r.rowH
     end
+
+    self:drawReplyNavHint(r)
 
     -- Reset render state so we don't leak settings into other HUD draws.
     setTextColor(1, 1, 1, 1)
     setTextBold(false)
     setTextWrapWidth(0)
+    setTextAlignment(RenderText.ALIGN_LEFT)
 end
 
 -- Action events registered at mission-load land in the wrong input context and
@@ -399,6 +876,9 @@ function VLNPCDialog:update(dt)
     if self.reply ~= nil then
         self:closeReply()
     end
+    if self.speech ~= nil then
+        self:closeSpeech()
+    end
 
     local nearest, dist = self.npcSystem:getNearestNPC()
     if nearest and dist <= VLConfig.INTERACT_DISTANCE then
@@ -445,7 +925,7 @@ function VLNPCDialog:openConversation(npc)
     local relNow = g_valleyLife.relationships:get(npc.id)
     local body = string.format("%s (%d)", tier.label, relNow)
 
-    if not showSpeechBox(npc.name, body, function() end) then
+    if not self:showSpeechBox(npc.name, body, function() end) then
         print(string.format("[ValleyLife] Talking to %s — %s (%d)", npc.name, tier.label, relNow))
     end
     npc.isTalking = false
@@ -470,7 +950,7 @@ function VLNPCDialog:showEventDialogue(step, sequencer)
             end
         end
         if step.text and #step.text > 0 then
-            if not showSpeechBox(speaker, step.text, function() nextFrame(openSelector) end) then
+            if not self:showSpeechBox(speaker, step.text, function() nextFrame(openSelector) end) then
                 print(string.format("[ValleyLife][Event] %s: %s", speaker, step.text))
                 openSelector()
             end
@@ -481,7 +961,7 @@ function VLNPCDialog:showEventDialogue(step, sequencer)
     end
 
     -- Plain line -> bottom-center speech popup (advance on Continue).
-    local shown = showSpeechBox(speaker, step.text, function() sequencer:resolveDialogue(step, nil) end)
+    local shown = self:showSpeechBox(speaker, step.text, function() sequencer:resolveDialogue(step, nil) end)
     if not shown then
         print(string.format("[ValleyLife][Event] %s: %s", speaker, step.text))
         sequencer:resolveDialogue(step, nil)
@@ -499,6 +979,7 @@ function VLNPCDialog:displayName(speakerId)
 end
 
 function VLNPCDialog:closeConversation()
+    self:closeSpeech()
     if self.activeNPC then
         self.activeNPC.isTalking = false
     end

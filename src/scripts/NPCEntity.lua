@@ -107,37 +107,218 @@ local function configColorCount(cfg)
     return 0
 end
 
+local function getSelectedFaceName(style)
+    local faceCfg = style.configs and style.configs.face
+    if type(faceCfg) ~= "table" or type(faceCfg.getSelectedItem) ~= "function" then
+        return nil
+    end
+    local ok, item = pcall(faceCfg.getSelectedItem, faceCfg)
+    if ok and type(item) == "table" and item.name then return item.name end
+    return nil
+end
+
+-- FS25 beards can be tied to a specific face mesh (beard.faceName). An incompatible
+-- beard often renders as a permanent white/ghost layer on top of the jaw.
+local function beardMatchesFace(beardItem, faceName)
+    if type(beardItem) ~= "table" then return false end
+    if beardItem.faceName == nil then return true end
+    return faceName ~= nil and beardItem.faceName == faceName
+end
+
+local function findFirstCompatibleBeardIndex(beardCfg, faceName)
+    if type(beardCfg) ~= "table" or type(beardCfg.items) ~= "table" then return 0 end
+    for i = 1, #beardCfg.items do
+        if beardMatchesFace(beardCfg.items[i], faceName) then return i end
+    end
+    return 0
+end
+
+local function applyConfigChoice(cfg, choice, configName)
+    if type(cfg) ~= "table" or type(choice) ~= "table" then return end
+    local itemCount = configItemCount(cfg)
+    if choice.item == 0 then
+        pcall(function() cfg.selectedItemIndex = 0 end)
+    elseif choice.item and itemCount > 0 then
+        local idx = ((choice.item - 1) % itemCount) + 1
+        pcall(function() cfg.selectedItemIndex = idx end)
+    end
+    -- hairStyle/beard colors are applied AFTER the beard mesh is chosen (see below).
+    if choice.color and configName ~= "hairStyle" and configName ~= "beard" then
+        local colorCount = configColorCount(cfg)
+        local cidx = choice.color
+        if colorCount > 0 then cidx = ((choice.color - 1) % colorCount) + 1 end
+        pcall(function()
+            if type(cfg.setSelectedColorIndex) == "function" then
+                cfg:setSelectedColorIndex(cidx)
+            elseif type(cfg.selectedColorIndex) == "number" then
+                cfg.selectedColorIndex = cidx
+            end
+        end)
+    end
+end
+
+local function applyHairBeardColors(style, spec, splitColors)
+    local hair = style.configs.hairStyle
+    local beard = style.configs.beard
+    local hc = spec.hairStyle and spec.hairStyle.color
+    local bc = spec.beard and spec.beard.color
+
+    if splitColors then
+        if hc and type(hair) == "table" and type(hair.setSelectedColorIndex) == "function" then
+            pcall(function() hair:setSelectedColorIndex(hc) end)
+        end
+        if bc and type(beard) == "table" and type(beard.setSelectedColorIndex) == "function" then
+            pcall(function() beard:setSelectedColorIndex(bc) end)
+        end
+        print(string.format("[ValleyLife][exp] split colors: hair=%s beard=%s (no unify)",
+            tostring(hc), tostring(bc)))
+        return
+    end
+
+    -- Normal: tint AFTER face + hair mesh + beard mesh are all selected. Coloring
+    -- before the beard mesh is picked often leaves a permanent white/default beard.
+    if hc and type(hair) == "table" and type(hair.setSelectedColorIndex) == "function" then
+        pcall(function() hair:setSelectedColorIndex(hc) end)
+    elseif type(hair) == "table"
+        and type(hair.getSelectedColorIndex) == "function"
+        and type(hair.setSelectedColorIndex) == "function" then
+        pcall(function() hair:setSelectedColorIndex(hair:getSelectedColorIndex()) end)
+    end
+    -- Belt-and-suspenders: push the same palette index onto the beard config too.
+    if type(beard) == "table" and beard.selectedItemIndex and beard.selectedItemIndex > 0
+        and type(hair) == "table" and type(hair.getSelectedColorIndex) == "function"
+        and type(beard.setSelectedColorIndex) == "function" then
+        local ok, cidx = pcall(hair.getSelectedColorIndex, hair)
+        if ok and cidx then
+            pcall(function() beard:setSelectedColorIndex(cidx) end)
+        end
+    end
+end
+
 -- Apply a per-villager appearance to a PlayerStyle. Every step is guarded so a
 -- bad index or a missing config silently falls back to the default look rather
 -- than breaking the spawn. `spec` maps config name -> { item = n, color = n }.
 -- Item indices wrap to the available count; color indexes into the style's
 -- palette (hairColors / defaultClothingColors), which must be populated first.
-local function applyAppearance(style, spec)
+-- opts.splitHairBeardColors: apply hair color first, then beard color, and skip
+-- the engine's unification step (experimental — tests whether different shades stick).
+local function applyAppearance(style, spec, opts)
     if type(style) ~= "table" or type(style.configs) ~= "table" or type(spec) ~= "table" then
         return
     end
-    for name, choice in pairs(spec) do
-        local cfg = style.configs[name]
-        if type(cfg) == "table" then
-            local itemCount  = configItemCount(cfg)
-            local colorCount = configColorCount(cfg)
-            if choice.item and itemCount > 0 then
-                local idx = ((choice.item - 1) % itemCount) + 1
-                pcall(function() cfg.selectedItemIndex = idx end)
-            end
-            if choice.color then
-                local cidx = choice.color
-                if colorCount > 0 then cidx = ((choice.color - 1) % colorCount) + 1 end
-                pcall(function()
-                    if type(cfg.setSelectedColorIndex) == "function" then
-                        cfg:setSelectedColorIndex(cidx)
-                    elseif type(cfg.selectedColorIndex) == "number" then
-                        cfg.selectedColorIndex = cidx
-                    end
-                end)
-            end
+    opts = opts or {}
+    local splitColors = opts.splitHairBeardColors == true
+
+    -- Apply face before beard so compatibility checks see the correct face mesh.
+    if spec.face then
+        applyConfigChoice(style.configs.face, spec.face, "face")
+    end
+    if spec.hairStyle then
+        applyConfigChoice(style.configs.hairStyle, spec.hairStyle, "hairStyle")
+    end
+    if spec.beard then
+        applyConfigChoice(style.configs.beard, spec.beard, "beard")
+        local beardCfg = style.configs.beard
+        local faceName = getSelectedFaceName(style)
+        local idx = beardCfg and beardCfg.selectedItemIndex
+        local item = beardCfg and beardCfg.items and idx and beardCfg.items[idx]
+        if idx and idx > 0 and item and not beardMatchesFace(item, faceName) then
+            local alt = findFirstCompatibleBeardIndex(beardCfg, faceName)
+            print(string.format(
+                "[ValleyLife] Beard item %d incompatible with face '%s' (needs face-specific mesh) -> item %d",
+                idx, tostring(faceName), alt))
+            pcall(function() beardCfg.selectedItemIndex = alt end)
         end
     end
+    for name, choice in pairs(spec) do
+        if name ~= "face" and name ~= "hairStyle" and name ~= "beard" then
+            applyConfigChoice(style.configs[name], choice, name)
+        end
+    end
+
+    applyHairBeardColors(style, spec, splitColors)
+end
+
+-- Build a FRESH PlayerStyle for this villager. PlayerStyle.defaultStyle() is a
+-- shared singleton — mutating it makes every NPC (and the player) look identical
+-- and race on async load. loadConfigurationXML populates configs from the base
+-- player XML, but NOT the color palettes (hairColors / defaultClothingColors), so
+-- we copy those from the game's cached base style or per-config color lists fail.
+local function buildStyle(self)
+    local xmlFilename = self.isFemale and PLAYER_XML_FEMALE or PLAYER_XML_MALE
+    local style = PlayerStyle.new()
+    pcall(function()
+        if style.loadConfigurationXML then style:loadConfigurationXML(xmlFilename) end
+    end)
+    pcall(function() style.xmlFilename = xmlFilename end)
+    pcall(function()
+        if PlayerSystem ~= nil and PlayerSystem.PLAYER_STYLES_BY_FILENAME ~= nil then
+            local key = Utils.getFilename and Utils.getFilename(xmlFilename) or xmlFilename
+            local entry = PlayerSystem.PLAYER_STYLES_BY_FILENAME[key]
+            local src = entry and entry.style
+            if src ~= nil then
+                style.hairColors = src.hairColors
+                style.defaultClothingColors = src.defaultClothingColors
+            end
+        end
+    end)
+    if self.appearance then
+        applyAppearance(style, self.appearance, self._applyOpts)
+    end
+    -- Spawn diagnostic: confirms mesh + color indices after the full apply pass.
+    pcall(function()
+        local hair = style.configs.hairStyle
+        local beard = style.configs.beard
+        local face = style.configs.face
+        local hairColor, beardColor = "?", "?"
+        local hairName, faceName = "?", "?"
+        if hair and hair.getSelectedColorIndex then
+            local ok, v = pcall(hair.getSelectedColorIndex, hair)
+            if ok then hairColor = tostring(v) end
+        end
+        if hair and hair.getSelectedItem then
+            local ok, item = pcall(hair.getSelectedItem, hair)
+            if ok and item then hairName = tostring(item.name or "?") end
+        end
+        if face and face.getSelectedItem then
+            local ok, item = pcall(face.getSelectedItem, face)
+            if ok and item then faceName = tostring(item.name or "?") end
+        end
+        if beard and beard.getSelectedColorIndex then
+            local ok, v = pcall(beard.getSelectedColorIndex, beard)
+            if ok then beardColor = tostring(v) end
+        end
+        print(string.format(
+            "[ValleyLife] %s style: face=%s item=%s | hair '%s' item=%s color=%s | beard item=%s color=%s",
+            self.name, faceName, tostring(face and face.selectedItemIndex),
+            hairName, tostring(hair and hair.selectedItemIndex), hairColor,
+            tostring(beard and beard.selectedItemIndex), beardColor))
+    end)
+    return style
+end
+
+-- Build a preview style for console diagnostics (vlBeards, etc.).
+function VLNPCEntity:buildPreviewStyle()
+    return buildStyle(self)
+end
+
+-- Re-apply the current self.appearance to a spawned NPC by fully respawning the
+-- model. Used by the vlFace / vlHairColor console commands to preview variants
+-- live. We delete + rebuild rather than calling setStyleAsync again on the same
+-- graphics component, because re-applying onto the existing component stacks the
+-- new meshes on top of the old ones (e.g. two beards colliding).
+-- opts: optional table passed to applyAppearance (e.g. splitHairBeardColors).
+function VLNPCEntity:reapplyAppearance(opts)
+    if not humanApiAvailable() then return false end
+    self._applyOpts = opts
+    self:delete()
+    local ok, err = pcall(function() self:buildAnimatedCharacter() end)
+    self._applyOpts = nil
+    if not ok then
+        print("[ValleyLife] reapplyAppearance failed: " .. tostring(err))
+        return false
+    end
+    return true
 end
 
 function VLNPCEntity:buildAnimatedCharacter()
@@ -172,37 +353,8 @@ function VLNPCEntity:buildAnimatedCharacter()
         setParam(p.isIdling, true)
     end
 
-    -- Build a FRESH style per NPC. PlayerStyle.defaultStyle() is a shared
-    -- singleton — mutating it makes every NPC (and the player) look identical and
-    -- race on async load. loadConfigurationXML populates configs + per-config
-    -- color lists from the base-game player XML (male/female).
-    local xmlFilename = self.isFemale and PLAYER_XML_FEMALE or PLAYER_XML_MALE
-    local style = PlayerStyle.new()
-    pcall(function()
-        if style.loadConfigurationXML then style:loadConfigurationXML(xmlFilename) end
-    end)
-    pcall(function() style.xmlFilename = xmlFilename end)
-
-    -- loadConfigurationXML's cached path copies configs but NOT the color palettes
-    -- (style.hairColors / style.defaultClothingColors). Without them, a config's
-    -- selectedColorIndex resolves against an empty palette and the default color
-    -- renders. Pull the palettes from the game's cached base style.
-    pcall(function()
-        if PlayerSystem ~= nil and PlayerSystem.PLAYER_STYLES_BY_FILENAME ~= nil then
-            local key = Utils.getFilename and Utils.getFilename(xmlFilename) or xmlFilename
-            local entry = PlayerSystem.PLAYER_STYLES_BY_FILENAME[key]
-            local src = entry and entry.style
-            if src ~= nil then
-                style.hairColors = src.hairColors
-                style.defaultClothingColors = src.defaultClothingColors
-            end
-        end
-    end)
-
-    -- Give each villager a distinct look (guarded; falls back to default style).
-    if self.appearance then
-        applyAppearance(style, self.appearance)
-    end
+    -- Build a FRESH style per NPC (see buildStyle); falls back to default look.
+    local style = buildStyle(self)
 
     if gfx.setStyleAsync then
         -- Signature: setStyleAsync(style, callback, callbackObject, callbackArgs,

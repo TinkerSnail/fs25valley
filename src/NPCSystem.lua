@@ -13,8 +13,8 @@ VLNPCSystem.__index = VLNPCSystem
 local VILLAGERS = {
     -- Elara, late 20s: natural hair color, no grey, younger face.
     { id = "elara",  name = "Elara",  personality = "social",      isFemale = true,  appearance = { hairStyle = { item = 3, color = 4 }, top = { item = 2, color = 5 }, bottom = { item = 2, color = 2 }, face = { item = 2 } }, x = VLConfig.VILLAGER_SPAWNS.elara.x,  y = VLConfig.VILLAGER_SPAWNS.elara.y,  z = VLConfig.VILLAGER_SPAWNS.elara.z,  ry = VLConfig.VILLAGER_SPAWNS.elara.ry  },
-    -- Henryk, ~58: salt-and-pepper hair + beard (color 22), no hat (hair shows age), weathered face.
-    { id = "henryk", name = "Henryk", personality = "hardworking", isFemale = false, appearance = { hairStyle = { item = 2, color = 22 }, beard = { item = 2, color = 22 }, top = { item = 3, color = 3 }, bottom = { item = 1, color = 1 }, face = { item = 4 } }, x = VLConfig.VILLAGER_SPAWNS.henryk.x, y = VLConfig.VILLAGER_SPAWNS.henryk.y, z = VLConfig.VILLAGER_SPAWNS.henryk.z, ry = VLConfig.VILLAGER_SPAWNS.henryk.ry },
+    -- Kenji, ~58: face 8 (head07), hair09 (item 9), grey hair color 22, no beard mesh.
+    { id = "kenji", name = "Kenji", personality = "hardworking", isFemale = false, appearance = { hairStyle = { item = 9, color = 22 }, beard = { item = 0 }, top = { item = 3, color = 3 }, bottom = { item = 1, color = 1 }, face = { item = 8 } }, x = VLConfig.VILLAGER_SPAWNS.kenji.x, y = VLConfig.VILLAGER_SPAWNS.kenji.y, z = VLConfig.VILLAGER_SPAWNS.kenji.z, ry = VLConfig.VILLAGER_SPAWNS.kenji.ry },
     -- Marta, ~55: silver-white hair (color 21), mature face, warm clothing.
     { id = "marta",  name = "Marta",  personality = "generous",    isFemale = true,  appearance = { hairStyle = { item = 6, color = 21 }, top = { item = 5, color = 1 }, bottom = { item = 3, color = 4 }, face = { item = 4 } }, x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,  z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry  },
 }
@@ -51,6 +51,7 @@ function VLNPCSystem:update(dt)
 end
 
 function VLNPCSystem:getNPC(id)
+    if type(id) == "string" then id = string.lower(id) end
     return self.npcs[id]
 end
 

@@ -124,7 +124,7 @@ VLEventSequencer.registerEvent({
           text = "Go ahead. Open it." },
         { type = "wait", duration = 1.5 },
         { type = "dialogue", speaker = "elara",
-          text = "It's all here. The creek. Henryk's crooked fence. The market at six a.m. Your barn, twice." },
+          text = "It's all here. The creek. Kenji's crooked fence. The market at six a.m. Your barn, twice." },
         { type = "dialogue", speaker = "elara",
           text = "I told myself I was sketching to remember the city. I haven't drawn the city in a year. I've been drawing home and pretending I didn't notice." },
         { type = "dialogue", speaker = "elara",

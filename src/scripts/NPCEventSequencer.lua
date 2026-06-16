@@ -66,6 +66,7 @@ end
 -- Called each frame; checks whether any event should trigger.
 function VLEventSequencer:checkTriggers(npcId, relationship)
     if self.active then return end
+    if type(npcId) == "string" then npcId = string.lower(npcId) end
     for _, event in ipairs(HEART_EVENTS) do
         if event.npcId == npcId
         and not self.completed[event.id]
@@ -74,6 +75,40 @@ function VLEventSequencer:checkTriggers(npcId, relationship)
             return
         end
     end
+end
+
+-- Abort a stuck or in-progress scene (console/debug). Does not mark complete.
+function VLEventSequencer:abortActive()
+    if not self.active then return end
+    print("[ValleyLife] Aborting in-progress event: " .. tostring(self.currentEvent and self.currentEvent.id))
+    if g_valleyLife and g_valleyLife.dialog then
+        g_valleyLife.dialog:closeReply()
+        g_valleyLife.dialog:closeSpeech()
+    end
+    self:releaseCameraControl()
+    self.active       = false
+    self.currentEvent = nil
+    self.currentSteps = nil
+    self.stepIndex    = 1
+end
+
+-- Force-start the next uncompleted heart event for a villager (lowest threshold
+-- first). Used by vlEvent; bypasses relationship and proximity checks.
+function VLEventSequencer:forceTriggerNext(npcId)
+    if type(npcId) == "string" then npcId = string.lower(npcId) end
+    if self.active then self:abortActive() end
+    local best = nil
+    for _, event in ipairs(HEART_EVENTS) do
+        if event.npcId == npcId and not self.completed[event.id] then
+            if best == nil or (event.threshold or 0) < (best.threshold or 0) then
+                best = event
+            end
+        end
+    end
+    if best == nil then return false, nil end
+    print(string.format("[ValleyLife] Starting event %s for %s.", best.id, npcId))
+    self:startEvent(best)
+    return true, best.id
 end
 
 function VLEventSequencer:startEvent(event)
@@ -148,6 +183,9 @@ function VLEventSequencer:executeStep(step)
         -- Hand off to dialog system; it calls advanceStep when dismissed.
         if g_valleyLife and g_valleyLife.dialog then
             g_valleyLife.dialog:showEventDialogue(step, self)
+        else
+            print("[ValleyLife] ERROR: dialog system unavailable — skipping dialogue step.")
+            self:advanceStep()
         end
 
     elseif step.type == "wait" then

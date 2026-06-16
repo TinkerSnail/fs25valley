@@ -16,7 +16,7 @@ local SCHEDULES = {
         { start = 18, ["end"] = 22, label = "home"            },
         { start = 22, ["end"] = 7,  label = "sleep"           },
     },
-    henryk = {
+    kenji = {
         { start = 6,  ["end"] = 12, label = "field work"      },
         { start = 12, ["end"] = 13, label = "lunch"           },
         { start = 13, ["end"] = 17, label = "field work"      },

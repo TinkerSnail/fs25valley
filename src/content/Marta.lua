@@ -7,7 +7,7 @@
 -- room behind all that warmth. The loneliness of the connector.
 --
 -- As the town's connective tissue, her arc ties the cast together — her finale
--- is the one scene that can put the newcomer (Elara) and the elder (Henryk) in
+-- is the one scene that can put the newcomer (Elara) and the elder (Kenji) in
 -- the same room.
 --
 -- Four-beat arc (the question: who takes care of the caretaker?):
@@ -140,7 +140,7 @@ VLEventSequencer.registerEvent({
             { type = "dialogue", speaker = "marta",
               text = "*she sits, finally, and breathes like she hasn't all day* A minute. Just one. Then I'm back." },
             { type = "dialogue", speaker = "marta",
-              text = "*quietly* Thank you. Not for the fair. For seeing that I needed to sit down. Henryk would've walked right past. Elara wouldn't have noticed. You did." },
+              text = "*quietly* Thank you. Not for the fair. For seeing that I needed to sit down. Kenji would've walked right past. Elara wouldn't have noticed. You did." },
             { type = "end" },
         },
     },
@@ -154,20 +154,20 @@ VLEventSequencer.registerEvent({
     npcId     = "marta",
     threshold = 80,
     steps = {
-        -- The convergence scene: Marta, and off to the side, Elara and Henryk.
+        -- The convergence scene: Marta, and off to the side, Elara and Kenji.
         { type = "move_npc", npcId = "marta",  x = 0, y = 0, z = 0, ry = 0 },  -- TODO: diner, decorated
         { type = "move_npc", npcId = "elara",  x = 2, y = 0, z = 0, ry = 0 },  -- TODO: stage left
-        { type = "move_npc", npcId = "henryk", x = -2, y = 0, z = 0, ry = 0 }, -- TODO: stage right, awkward
+        { type = "move_npc", npcId = "kenji", x = -2, y = 0, z = 0, ry = 0 }, -- TODO: stage right, awkward
         { type = "camera",   x = 0, y = 2, z = -5, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "marta",
           text = "What is — *she stops in her own doorway* — the lights are mine. The good plates are out. Is that... my name on the bunting?" },
         { type = "dialogue", speaker = "elara",
           text = "Don't look at me, I just hung what they handed me. *grinning* Okay, I drew the banner. Fine." },
-        { type = "dialogue", speaker = "henryk",
+        { type = "dialogue", speaker = "kenji",
           text = "*gruffly, holding a covered dish, deeply uncomfortable and entirely present* Brought a pie. My wife's recipe. Don't make a thing of it." },
         { type = "dialogue", speaker = "marta",
-          text = "*she presses a hand to her mouth* You got Henryk out of his field. And Elara to stand still for ten minutes. For me. I throw the parties. Nobody throws them for me." },
+          text = "*she presses a hand to her mouth* You got Kenji out of his field. And Elara to stand still for ten minutes. For me. I throw the parties. Nobody throws them for me." },
         { type = "dialogue", speaker = "marta",
           text = "*to you, eyes shining* This is your doing. You found the thread that runs through all of us and you... pulled us into one room.",
           choices = {
@@ -180,14 +180,14 @@ VLEventSequencer.registerEvent({
     branches = {
         warm = {
             { type = "dialogue", speaker = "marta",
-              text = "*she laughs and cries at once* Sit me down before I fall down. And somebody cut Henryk's pie before he changes his mind about staying." },
-            { type = "dialogue", speaker = "henryk",
+              text = "*she laughs and cries at once* Sit me down before I fall down. And somebody cut Kenji's pie before he changes his mind about staying." },
+            { type = "dialogue", speaker = "kenji",
               text = "I heard that. *a pause* ...It's a good pie. Sit, Marta. We've got you tonight." },
             { type = "end" },
         },
         humble = {
             { type = "dialogue", speaker = "marta",
-              text = "Only set the date. *she shakes her head, smiling* That's the most anyone's done for me in twenty years, and you'll call it nothing. You and Henryk, two of a kind." },
+              text = "Only set the date. *she shakes her head, smiling* That's the most anyone's done for me in twenty years, and you'll call it nothing. You and Kenji, two of a kind." },
             { type = "dialogue", speaker = "elara",
               text = "Alright, enough — the food's getting cold and the connector finally gets to sit at her own table. Marta. The head seat's yours." },
             { type = "end" },
