@@ -6,9 +6,15 @@ Springs**, **singleplayer** career mode. More developments are on their way.
 
 **Current version:** 0.1.0.42 (`modDesc.xml`)
 
+## Screenshots
+
 ![Press R to talk to Elara — first-meet greeting on Riverbend Springs](docs/screenshots/elara-first-meet.png)
 
-*Elara's first-meet line, bottom-screen dialogue, and the Press R prompt (Riverbend Springs, winter).*
+*First meet — Elara introduces herself (Riverbend Springs, winter outfit).*
+
+![Kenji — already talked today](docs/screenshots/kenji-already-talked.png)
+
+*Repeat talk same day — Kenji's "already talked" pool, no extra relationship points.*
 
 ## What it does (so far)
 
