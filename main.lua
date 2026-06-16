@@ -6,6 +6,7 @@ local modDir = g_currentModDirectory
 -- 1. Utilities (no dependencies)
 source(modDir .. "src/utils/VectorHelper.lua")
 source(modDir .. "src/utils/TimeHelper.lua")
+source(modDir .. "src/utils/BirthdayHelper.lua")
 
 -- 2. Config (depends on nothing)
 source(modDir .. "src/NPCConfig.lua")
@@ -314,6 +315,201 @@ function VLConsole:dumpStyles()
     return "[ValleyLife] Style dump written to log/console."
 end
 
+local VL_NPC_IDS = "elara, kenji, marta"
+
+local function styleConfigItemCount(cfg)
+    if type(cfg) ~= "table" then return 0 end
+    for _, g in ipairs({ "getNumOfItems", "getNumItems", "getItemCount" }) do
+        if type(cfg[g]) == "function" then
+            local ok, v = pcall(cfg[g], cfg)
+            if ok and type(v) == "number" then return v end
+        end
+    end
+    if type(cfg.items) == "table" then return #cfg.items end
+    return 0
+end
+
+local function getNpcStyleConfig(npc, configName)
+    if type(npc.buildPreviewStyle) ~= "function" then return nil end
+    local style = npc:buildPreviewStyle()
+    return style and style.configs and style.configs[configName]
+end
+
+function VLConsole:resolveNpc(npcId, usage)
+    if g_valleyLife == nil then return nil, "[ValleyLife] No active game." end
+    local npc = npcId and g_valleyLife:getNPC(npcId)
+    if npc == nil then
+        return usage or string.format("[ValleyLife] Unknown villager. Try: %s.", VL_NPC_IDS)
+    end
+    return npc
+end
+
+function VLConsole:listStyleConfig(npcId, configName, listCmd, setCmd)
+    local usage = string.format("[ValleyLife] Usage: %s <npcId>  (npcId: %s)", listCmd, VL_NPC_IDS)
+    local npc, err = self:resolveNpc(npcId, usage)
+    if npc == nil then return err end
+    if type(npc.buildPreviewStyle) ~= "function" then
+        return "[ValleyLife] buildPreviewStyle unavailable."
+    end
+    local style = npc:buildPreviewStyle()
+    local cfg = style and style.configs and style.configs[configName]
+    if type(cfg) ~= "table" or type(cfg.items) ~= "table" then
+        return string.format("[ValleyLife] No %s config.", configName)
+    end
+    local itemCount = #cfg.items
+    if itemCount == 0 then
+        print(string.format("[ValleyLife] ---- %s (0 items) ----", configName))
+        if configName == "facegear" then
+            print("[ValleyLife] Base FS25 has an empty facegear slot (no socks/masks in playerF/playerM.xml).")
+            print("[ValleyLife] Use vlFootwears / vlShoe for shoes; there is no separate sock layer.")
+        else
+            print("[ValleyLife] This slot has no catalog items for this character rig.")
+        end
+        return string.format("[ValleyLife] %s: %s has 0 items.", npcId, configName)
+    end
+    print(string.format("[ValleyLife] ---- %s (%d items) ----", configName, itemCount))
+    for i = 1, math.min(itemCount, 40) do
+        local item = cfg.items[i]
+        if type(item) == "table" then
+            print(string.format("  %2d : %s", i, tostring(item.name or "?")))
+        end
+    end
+    if itemCount > 40 then
+        print(string.format("  ... (%d more)", itemCount - 40))
+    end
+    setCmd = setCmd or listCmd:gsub("s$", "")
+    print(string.format("[ValleyLife] ---- use %s %s <index>; %sColor for swatch ----",
+        setCmd, tostring(npcId), setCmd))
+    return string.format("[ValleyLife] Listed %s for %s.", configName, npcId)
+end
+
+local function itemNameLooksLikeSock(item)
+    if type(item) ~= "table" then return false end
+    local n = string.lower(tostring(item.name or ""))
+    return string.find(n, "sock", 1, true) ~= nil
+        or string.find(n, "stocking", 1, true) ~= nil
+        or string.find(n, "ankle", 1, true) ~= nil
+end
+
+function VLConsole:listFootwear(npcId, mode)
+    local listCmd = mode == "shoe" and "vlShoes" or (mode == "sock" and "vlSocks" or "vlFootwears")
+    local usage = string.format("[ValleyLife] Usage: %s <npcId>  (npcId: %s)", listCmd, VL_NPC_IDS)
+    local npc, err = self:resolveNpc(npcId, usage)
+    if npc == nil then return err end
+    if type(npc.buildPreviewStyle) ~= "function" then
+        return "[ValleyLife] buildPreviewStyle unavailable."
+    end
+    local style = npc:buildPreviewStyle()
+    local cfg = style and style.configs and style.configs.footwear
+    if type(cfg) ~= "table" or type(cfg.items) ~= "table" then
+        return "[ValleyLife] No footwear config."
+    end
+    local label = mode == "shoe" and "footwear (shoes)" or (mode == "sock" and "footwear (socks)" or "footwear (all)")
+    print(string.format("[ValleyLife] ---- %s (%d items) ----", label, #cfg.items))
+    local shown = 0
+    for i = 1, #cfg.items do
+        local item = cfg.items[i]
+        if type(item) == "table" then
+            local isSock = itemNameLooksLikeSock(item)
+            if mode == "all" or (mode == "sock" and isSock) or (mode == "shoe" and not isSock) then
+                shown = shown + 1
+                if shown <= 40 then
+                    print(string.format("  %2d : %s%s", i, tostring(item.name or "?"),
+                        isSock and " (sock)" or ""))
+                end
+            end
+        end
+    end
+    if shown > 40 then
+        print(string.format("  ... (%d more)", shown - 40))
+    end
+    if mode == "sock" then
+        local fg = style.configs and style.configs.facegear
+        if type(fg) == "table" and type(fg.items) == "table" and #fg.items > 0 then
+            print(string.format("[ValleyLife] ---- facegear (%d items, may include socks) ----", #fg.items))
+            for i = 1, math.min(#fg.items, 20) do
+                local item = fg.items[i]
+                if type(item) == "table" then
+                    print(string.format("  %2d : %s", i, tostring(item.name or "?")))
+                end
+            end
+            print("[ValleyLife] ---- try vlFacegear for facegear slot; vlSock for footwear sock names ----")
+        end
+        if shown == 0 then
+            print("[ValleyLife] No sock-named footwear found — run vlFootwears for the full list.")
+        end
+    end
+    if mode == "shoe" then
+        print(string.format("[ValleyLife] ---- use vlShoe %s <index>; vlShoeColor for swatch ----", npcId))
+    elseif mode == "sock" then
+        print(string.format("[ValleyLife] ---- use vlSock %s <index>; vlSockColor for swatch ----", npcId))
+    else
+        print(string.format("[ValleyLife] ---- use vlShoe or vlSock %s <index> ----", npcId))
+    end
+    return string.format("[ValleyLife] Listed footwear for %s.", npcId)
+end
+
+function VLConsole:sockUsesFacegear(npc)
+    if type(npc.buildPreviewStyle) ~= "function" then return false end
+    local style = npc:buildPreviewStyle()
+    local fg = style and style.configs and style.configs.facegear
+    return type(fg) == "table" and type(fg.items) == "table" and #fg.items > 0
+end
+
+function VLConsole:patchAppearanceLayer(npc, configName, patch)
+    if type(npc.setAppearanceLayer) == "function" then
+        npc:setAppearanceLayer(configName, patch)
+    else
+        npc.appearance = npc.appearance or {}
+        npc.appearance[configName] = npc.appearance[configName] or {}
+        for k, v in pairs(patch) do npc.appearance[configName][k] = v end
+    end
+end
+
+function VLConsole:setStyleConfigItem(npcId, configName, item, setCmd)
+    local usage = string.format("[ValleyLife] Usage: %s <npcId> <index>  (0 = none)", setCmd)
+    local npc, err = self:resolveNpc(npcId, usage)
+    if npc == nil then return err end
+    local idx = tonumber(item)
+    if idx == nil then
+        return string.format("[ValleyLife] Usage: %s %s <index>", setCmd, tostring(npcId))
+    end
+    if idx > 0 then
+        local cfg = getNpcStyleConfig(npc, configName)
+        local itemCount = styleConfigItemCount(cfg)
+        if itemCount == 0 then
+            local hint = configName == "facegear"
+                and " Base FS25 facegear is empty — use vlShoe/vlFootwears instead."
+                or ""
+            local msg = string.format(
+                "[ValleyLife] %s: %s has 0 items; index %d ignored.%s",
+                tostring(npcId), configName, idx, hint)
+            print(msg)
+            return msg
+        end
+    end
+    self:patchAppearanceLayer(npc, configName, { item = idx })
+    npc:reapplyAppearance()
+    local msg = string.format("[ValleyLife] %s %s -> item %d (reloading).", npcId, configName, idx)
+    print(msg)
+    return msg
+end
+
+function VLConsole:setStyleConfigColor(npcId, configName, color, setCmd)
+    local usage = string.format("[ValleyLife] Usage: %s <npcId> <colorIndex>", setCmd)
+    local npc, err = self:resolveNpc(npcId, usage)
+    if npc == nil then return err end
+    local idx = tonumber(color)
+    if idx == nil then
+        return string.format("[ValleyLife] Usage: %s %s <colorIndex>", setCmd, tostring(npcId))
+    end
+    self:patchAppearanceLayer(npc, configName, { color = idx })
+    npc:reapplyAppearance()
+    local msg = string.format("[ValleyLife] %s %s color -> %d (reloading).", npcId, configName, idx)
+    print(msg)
+    return msg
+end
+
 -- vlFace <npcId> <index>: live-swap a spawned villager's face/skin preset so you
 -- can flip through the variants (male 1..10, female 1..6) and pick the oldest-
 -- looking one. Once chosen, bake it into VILLAGERS[*].appearance.face.item.
@@ -327,8 +523,7 @@ function VLConsole:setFace(npcId, index)
     if idx == nil then
         return "[ValleyLife] Usage: vlFace " .. tostring(npcId) .. " <index>  (e.g. vlFace kenji 6)"
     end
-    npc.appearance = npc.appearance or {}
-    npc.appearance.face = { item = idx }
+    self:patchAppearanceLayer(npc, "face", { item = idx })
     npc:reapplyAppearance()
     local msg = string.format("[ValleyLife] %s face -> item %d (reloading model).", npcId, idx)
     print(msg)
@@ -366,6 +561,34 @@ function VLConsole:listHairs(npcId)
     return string.format("[ValleyLife] Listed hairStyles for %s.", npcId)
 end
 
+-- vlHairsForHat <npcId>: hairStyle items that work under hats (forHat flag).
+function VLConsole:listHairsForHat(npcId)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local npc = npcId and g_valleyLife:getNPC(npcId)
+    if npc == nil then
+        return "[ValleyLife] Usage: vlHairsForHat <npcId>  (npcId: " .. VL_NPC_IDS .. ")"
+    end
+    if type(npc.buildPreviewStyle) ~= "function" then
+        return "[ValleyLife] buildPreviewStyle unavailable."
+    end
+    local style = npc:buildPreviewStyle()
+    local hairCfg = style and style.configs and style.configs.hairStyle
+    if type(hairCfg) ~= "table" or type(hairCfg.items) ~= "table" then
+        return "[ValleyLife] No hairStyle config."
+    end
+    local count = 0
+    print("[ValleyLife] ---- hairStyles forHat (work under headgear) ----")
+    for i = 1, #hairCfg.items do
+        local item = hairCfg.items[i]
+        if type(item) == "table" and item.forHat then
+            count = count + 1
+            print(string.format("  %2d : %s", i, tostring(item.name or "?")))
+        end
+    end
+    print(string.format("[ValleyLife] ---- %d forHat styles (vlHat auto-picks one if needed) ----", count))
+    return string.format("[ValleyLife] Listed forHat hairStyles for %s.", npcId)
+end
+
 -- vlHair <npcId> <item>: live-swap hairStyle mesh (0 = none/bald slot if available).
 function VLConsole:setHair(npcId, item)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -377,9 +600,7 @@ function VLConsole:setHair(npcId, item)
     if idx == nil then
         return "[ValleyLife] Usage: vlHair " .. tostring(npcId) .. " <item>"
     end
-    npc.appearance = npc.appearance or {}
-    npc.appearance.hairStyle = npc.appearance.hairStyle or {}
-    npc.appearance.hairStyle.item = idx
+    self:patchAppearanceLayer(npc, "hairStyle", { item = idx })
     npc:reapplyAppearance()
     local msg = string.format("[ValleyLife] %s hairStyle -> item %d (reloading).", npcId, idx)
     print(msg)
@@ -448,10 +669,8 @@ function VLConsole:setBeard(npcId, item)
     if idx == nil then
         return "[ValleyLife] Usage: vlBeard " .. tostring(npcId) .. " <item>  (0 = none)"
     end
-    npc.appearance = npc.appearance or {}
-    -- Preserve the current beard color if one was set.
-    local color = npc.appearance.beard and npc.appearance.beard.color
-    npc.appearance.beard = { item = idx, color = color }
+    local color = npc.appearance and npc.appearance.beard and npc.appearance.beard.color
+    self:patchAppearanceLayer(npc, "beard", { item = idx, color = color })
     npc:reapplyAppearance()
     local msg = string.format("[ValleyLife] %s beard -> item %d (reloading).", npcId, idx)
     print(msg)
@@ -472,11 +691,9 @@ function VLConsole:setBeardColor(npcId, hairColor, beardColor)
     if hc == nil or bc == nil then
         return "[ValleyLife] Usage: vlBeardColor " .. tostring(npcId) .. " <hairColor> <beardColor>  (e.g. vlBeardColor kenji 23 24)"
     end
-    npc.appearance = npc.appearance or {}
-    npc.appearance.hairStyle = npc.appearance.hairStyle or {}
-    npc.appearance.hairStyle.color = hc
-    npc.appearance.beard = npc.appearance.beard or { item = 2 }
-    npc.appearance.beard.color = bc
+    self:patchAppearanceLayer(npc, "hairStyle", { color = hc })
+    local beardItem = npc.appearance and npc.appearance.beard and npc.appearance.beard.item
+    self:patchAppearanceLayer(npc, "beard", { item = beardItem or 2, color = bc })
     npc:reapplyAppearance({ splitHairBeardColors = true })
     local msg = string.format("[ValleyLife][exp] %s hair=%d beard=%d (split, no unify).", npcId, hc, bc)
     print(msg)
@@ -496,11 +713,9 @@ function VLConsole:setHairColor(npcId, index)
     if idx == nil then
         return "[ValleyLife] Usage: vlHairColor " .. tostring(npcId) .. " <index>  (e.g. vlHairColor kenji 20)"
     end
-    npc.appearance = npc.appearance or {}
-    npc.appearance.hairStyle = npc.appearance.hairStyle or {}
-    npc.appearance.hairStyle.color = idx
-    if npc.appearance.beard ~= nil then
-        npc.appearance.beard.color = idx
+    self:patchAppearanceLayer(npc, "hairStyle", { color = idx })
+    if npc.appearance ~= nil and npc.appearance.beard ~= nil then
+        self:patchAppearanceLayer(npc, "beard", { color = idx })
     end
     npc:reapplyAppearance()
     local msg = string.format("[ValleyLife] %s hair+beard color -> %d (reloading).", npcId, idx)
@@ -556,7 +771,169 @@ function VLConsole:dumpHairColors()
     return "[ValleyLife] Hair color palette written to log/console."
 end
 
+-- Clothing / accessories (live preview; bake into VILLAGERS[*].appearance.*)
+
+function VLConsole:listTops(npcId)
+    return self:listStyleConfig(npcId, "top", "vlTops")
+end
+function VLConsole:setTop(npcId, item)
+    return self:setStyleConfigItem(npcId, "top", item, "vlTop")
+end
+function VLConsole:setTopColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "top", color, "vlTopColor")
+end
+
+function VLConsole:listBottoms(npcId)
+    return self:listStyleConfig(npcId, "bottom", "vlBottoms")
+end
+function VLConsole:setBottom(npcId, item)
+    return self:setStyleConfigItem(npcId, "bottom", item, "vlBottom")
+end
+function VLConsole:setBottomColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "bottom", color, "vlBottomColor")
+end
+
+function VLConsole:listOnepieces(npcId)
+    return self:listStyleConfig(npcId, "onepiece", "vlOnepieces")
+end
+function VLConsole:setOnepiece(npcId, item)
+    return self:setStyleConfigItem(npcId, "onepiece", item, "vlOnepiece")
+end
+function VLConsole:setOnepieceColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "onepiece", color, "vlOnepieceColor")
+end
+
+function VLConsole:listGloves(npcId)
+    return self:listStyleConfig(npcId, "gloves", "vlGloves")
+end
+function VLConsole:setGloves(npcId, item)
+    return self:setStyleConfigItem(npcId, "gloves", item, "vlGloves")
+end
+function VLConsole:setGlovesColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "gloves", color, "vlGlovesColor")
+end
+
+function VLConsole:listGlasses(npcId)
+    return self:listStyleConfig(npcId, "glasses", "vlGlasses", "vlGlass")
+end
+function VLConsole:setGlasses(npcId, item)
+    return self:setStyleConfigItem(npcId, "glasses", item, "vlGlass")
+end
+function VLConsole:setGlassesColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "glasses", color, "vlGlassesColor")
+end
+
+function VLConsole:listHats(npcId)
+    return self:listStyleConfig(npcId, "headgear", "vlHats")
+end
+function VLConsole:setHat(npcId, item)
+    return self:setStyleConfigItem(npcId, "headgear", item, "vlHat")
+end
+function VLConsole:setHatColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "headgear", color, "vlHatColor")
+end
+
+function VLConsole:listFootwears(npcId)
+    return self:listFootwear(npcId, "all")
+end
+function VLConsole:listShoes(npcId)
+    return self:listFootwear(npcId, "shoe")
+end
+function VLConsole:listSocks(npcId)
+    return self:listFootwear(npcId, "sock")
+end
+function VLConsole:setShoe(npcId, item)
+    return self:setStyleConfigItem(npcId, "footwear", item, "vlShoe")
+end
+function VLConsole:setShoeColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "footwear", color, "vlShoeColor")
+end
+function VLConsole:setSock(npcId, item)
+    local usage = "[ValleyLife] Usage: vlSock <npcId> <index>  (0 = none)"
+    local npc, err = self:resolveNpc(npcId, usage)
+    if npc == nil then return err end
+    if self:sockUsesFacegear(npc) then
+        return self:setStyleConfigItem(npcId, "facegear", item, "vlSock")
+    end
+    return self:setStyleConfigItem(npcId, "footwear", item, "vlSock")
+end
+function VLConsole:setSockColor(npcId, color)
+    local usage = "[ValleyLife] Usage: vlSockColor <npcId> <colorIndex>"
+    local npc, err = self:resolveNpc(npcId, usage)
+    if npc == nil then return err end
+    if self:sockUsesFacegear(npc) then
+        return self:setStyleConfigColor(npcId, "facegear", color, "vlSockColor")
+    end
+    return self:setStyleConfigColor(npcId, "footwear", color, "vlSockColor")
+end
+
+function VLConsole:listFacegears(npcId)
+    return self:listStyleConfig(npcId, "facegear", "vlFacegears")
+end
+function VLConsole:setFacegear(npcId, item)
+    return self:setStyleConfigItem(npcId, "facegear", item, "vlFacegear")
+end
+function VLConsole:setFacegearColor(npcId, color)
+    return self:setStyleConfigColor(npcId, "facegear", color, "vlFacegearColor")
+end
+
+function VLConsole:printSeason()
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local month = g_currentMission and g_currentMission.environment
+        and g_currentMission.environment.currentMonth
+    local season = TimeHelper.getSeason()
+    local hour = TimeHelper.getHour()
+    local outfit = TimeHelper.getOutfitMode()
+    local reason = TimeHelper.getOutfitModeReason()
+    local msg = string.format(
+        "[ValleyLife] Month %s -> season '%s' (hour %.1f). Outfit: %s (%s). Work commands edit %s look.",
+        tostring(month), season, hour, outfit, reason,
+        outfit == "work" and season or (season .. " leisure"))
+    print(msg)
+    return msg
+end
+
+function VLConsole:printBirthdays()
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local lines = { "[ValleyLife] Villager birthdays:" }
+    for id, npc in pairs(g_valleyLife.npcs) do
+        local b = npc.birthday
+        local today = BirthdayHelper.isToday(b) and " (today!)" or ""
+        lines[#lines + 1] = string.format(
+            "  %s: %s%s", id, BirthdayHelper.format(b), today)
+    end
+    local msg = table.concat(lines, "\n")
+    print(msg)
+    return msg
+end
+
+function VLConsole:setOutfitMode(npcId, mode)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local npc = npcId and g_valleyLife:getNPC(npcId)
+    if npc == nil then
+        return "[ValleyLife] Usage: vlOutfit <npcId> <work|leisure>  (preview work/leisure outfit)"
+    end
+    local m = type(mode) == "string" and string.lower(mode) or nil
+    if m ~= "work" and m ~= "leisure" then
+        return "[ValleyLife] Usage: vlOutfit " .. tostring(npcId) .. " <work|leisure>"
+    end
+    if type(npc.setOutfitMode) ~= "function" then
+        return "[ValleyLife] Outfit modes unavailable on this NPC."
+    end
+    npc:setOutfitMode(m, { force = true })
+    local season = TimeHelper.getSeason()
+    local seasonLabel = m == "work" and season or (season .. " leisure")
+    local msg = string.format(
+        "[ValleyLife] %s outfit -> %s (clothing commands edit %s look).",
+        npcId, m, seasonLabel)
+    print(msg)
+    return msg
+end
+
 if addConsoleCommand ~= nil then
+    addConsoleCommand("vlSeason", "Print in-game season (for seasonal outfit tuning)", "printSeason", VLConsole)
+    addConsoleCommand("vlBirthdays", "List villager birthdays", "printBirthdays", VLConsole)
+    addConsoleCommand("vlOutfit", "Preview work/leisure outfit: vlOutfit <npcId> <work|leisure>", "setOutfitMode", VLConsole)
     addConsoleCommand("vlPos", "Print player world position (ValleyLife spawn coords)", "printPlayerPos", VLConsole)
     addConsoleCommand("vlRel", "Set villager relationship: vlRel <npcId> <value>", "setRelationship", VLConsole)
     addConsoleCommand("vlEvent", "Force-trigger next heart event: vlEvent <npcId>", "triggerEvent", VLConsole)
@@ -567,12 +944,41 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
     addConsoleCommand("vlHair", "Live-swap hairStyle mesh: vlHair <npcId> <item> (0=none)", "setHair", VLConsole)
     addConsoleCommand("vlHairs", "List hairStyle items: vlHairs <npcId>", "listHairs", VLConsole)
+    addConsoleCommand("vlHairsForHat", "List forHat hairStyles (under hats): vlHairsForHat <npcId>", "listHairsForHat", VLConsole)
     addConsoleCommand("vlBeard", "Live-swap a villager's beard: vlBeard <npcId> <item> (0=none)", "setBeard", VLConsole)
     addConsoleCommand("vlBeards", "List beards compatible with villager's face", "listBeards", VLConsole)
     addConsoleCommand("vlHairColor", "Live-swap hair+beard color: vlHairColor <npcId> <index>", "setHairColor", VLConsole)
     addConsoleCommand("vlBeardColor", "EXPERIMENTAL split hair/beard color: vlBeardColor <npcId> <hair> <beard>", "setBeardColor", VLConsole)
     addConsoleCommand("vlHairColors", "Print the hair color palette (index -> RGB)", "dumpHairColors", VLConsole)
-    print("[ValleyLife] Console commands registered: vlPos, vlRel, vlEvent, vlNear, vlReset, vlDlg, vlStyle, vlFace, vlHair, vlHairs, vlBeard, vlBeards, vlHairColor, vlBeardColor, vlHairColors.")
+    addConsoleCommand("vlTops", "List shirt/top items: vlTops <npcId>", "listTops", VLConsole)
+    addConsoleCommand("vlTop", "Live-swap shirt/top: vlTop <npcId> <index> (0=none)", "setTop", VLConsole)
+    addConsoleCommand("vlTopColor", "Live-swap shirt/top color: vlTopColor <npcId> <index>", "setTopColor", VLConsole)
+    addConsoleCommand("vlBottoms", "List pants/bottom items: vlBottoms <npcId>", "listBottoms", VLConsole)
+    addConsoleCommand("vlBottom", "Live-swap pants/bottom: vlBottom <npcId> <index> (0=none)", "setBottom", VLConsole)
+    addConsoleCommand("vlBottomColor", "Live-swap pants/bottom color: vlBottomColor <npcId> <index>", "setBottomColor", VLConsole)
+    addConsoleCommand("vlOnepieces", "List onepiece/jumper items: vlOnepieces <npcId>", "listOnepieces", VLConsole)
+    addConsoleCommand("vlOnepiece", "Live-swap onepiece: vlOnepiece <npcId> <index> (0=none)", "setOnepiece", VLConsole)
+    addConsoleCommand("vlOnepieceColor", "Live-swap onepiece color: vlOnepieceColor <npcId> <index>", "setOnepieceColor", VLConsole)
+    addConsoleCommand("vlGloves", "List glove items: vlGloves <npcId>", "listGloves", VLConsole)
+    addConsoleCommand("vlGlove", "Live-swap gloves: vlGlove <npcId> <index> (0=none)", "setGloves", VLConsole)
+    addConsoleCommand("vlGlovesColor", "Live-swap gloves color: vlGlovesColor <npcId> <index>", "setGlovesColor", VLConsole)
+    addConsoleCommand("vlGlasses", "List glasses/sunglasses items: vlGlasses <npcId>", "listGlasses", VLConsole)
+    addConsoleCommand("vlGlass", "Live-swap glasses/sunglasses: vlGlass <npcId> <index> (0=none)", "setGlasses", VLConsole)
+    addConsoleCommand("vlGlassesColor", "Live-swap glasses color: vlGlassesColor <npcId> <index>", "setGlassesColor", VLConsole)
+    addConsoleCommand("vlHats", "List headgear/hat items: vlHats <npcId>", "listHats", VLConsole)
+    addConsoleCommand("vlHat", "Live-swap hat/headgear: vlHat <npcId> <index> (0=none)", "setHat", VLConsole)
+    addConsoleCommand("vlHatColor", "Live-swap hat color: vlHatColor <npcId> <index>", "setHatColor", VLConsole)
+    addConsoleCommand("vlFootwears", "List all footwear: vlFootwears <npcId>", "listFootwears", VLConsole)
+    addConsoleCommand("vlShoes", "List shoe-like footwear: vlShoes <npcId>", "listShoes", VLConsole)
+    addConsoleCommand("vlSocks", "List sock-like footwear + facegear: vlSocks <npcId>", "listSocks", VLConsole)
+    addConsoleCommand("vlShoe", "Live-swap shoes/footwear: vlShoe <npcId> <index> (0=none)", "setShoe", VLConsole)
+    addConsoleCommand("vlShoeColor", "Live-swap shoe color: vlShoeColor <npcId> <index>", "setShoeColor", VLConsole)
+    addConsoleCommand("vlSock", "Live-swap socks (facegear or footwear): vlSock <npcId> <index>", "setSock", VLConsole)
+    addConsoleCommand("vlSockColor", "Live-swap sock color: vlSockColor <npcId> <index>", "setSockColor", VLConsole)
+    addConsoleCommand("vlFacegears", "List facegear (empty in base FS25): vlFacegears <npcId>", "listFacegears", VLConsole)
+    addConsoleCommand("vlFacegear", "Facegear slot (empty in base FS25): vlFacegear <npcId> <index>", "setFacegear", VLConsole)
+    addConsoleCommand("vlFacegearColor", "Facegear color (empty in base FS25): vlFacegearColor <npcId> <index>", "setFacegearColor", VLConsole)
+    print("[ValleyLife] Console commands registered (vlPos ... vlHatColor, vlFootwears, vlShoe, vlSock, vlFacegear, ...).")
 end
 
-print("[ValleyLife] main.lua loaded; lifecycle hooks installed.")
+print("[ValleyLife] Valley Life 0.1.0.37 loaded; lifecycle hooks installed.")

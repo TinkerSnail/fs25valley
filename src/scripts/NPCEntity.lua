@@ -13,13 +13,90 @@ VLNPCEntity.__index = VLNPCEntity
 local PLAYER_XML_MALE   = "dataS/character/playerM/playerM.xml"
 local PLAYER_XML_FEMALE = "dataS/character/playerF/playerF.xml"
 
+local APPEARANCE_BASE_KEYS = { face = true, hairStyle = true, beard = true }
+
+local function isAppearanceBaseKey(name)
+    return APPEARANCE_BASE_KEYS[name] == true
+end
+
+local function splitAppearance(appearance)
+    local base, outfit = {}, {}
+    if type(appearance) ~= "table" then return base, outfit end
+    for name, choice in pairs(appearance) do
+        if isAppearanceBaseKey(name) then
+            base[name] = choice
+        else
+            outfit[name] = choice
+        end
+    end
+    return base, outfit
+end
+
+local function mergeAppearance(base, outfit)
+    local merged = {}
+    if type(base) == "table" then
+        for name, choice in pairs(base) do merged[name] = choice end
+    end
+    if type(outfit) == "table" then
+        for name, choice in pairs(outfit) do merged[name] = choice end
+    end
+    return merged
+end
+
 function VLNPCEntity.new(data)
     local self = setmetatable({}, VLNPCEntity)
     self.id          = data.id
     self.name        = data.name
     self.personality = data.personality
+    self.birthday = data.birthday
+    if not BirthdayHelper.isValid(self.birthday) then
+        self.birthday = BirthdayHelper.fromNpcId(self.id)
+    end
     self.isFemale    = data.isFemale == true
-    self.appearance  = data.appearance   -- optional per-villager look (hair/clothing/colors)
+    self.appearanceBase  = data.appearanceBase
+    self.appearanceWork  = data.appearanceWork
+    self.appearanceLeisure = data.appearanceLeisure
+    if data.appearance ~= nil then
+        local base, work = splitAppearance(data.appearance)
+        self.appearanceBase = self.appearanceBase or base
+        self.appearanceWork = self.appearanceWork or work
+    end
+    self.appearanceBase = self.appearanceBase or {}
+    self.appearanceWork = self.appearanceWork or {}
+    self.appearanceLeisure = self.appearanceLeisure or {}
+    self.seasonalWorkOutfits = data.seasonalWorkOutfits or {}
+    self.seasonalLeisureOutfits = data.seasonalLeisureOutfits or {}
+    if data.appearanceSummerWork ~= nil then
+        self.seasonalWorkOutfits.summer = data.appearanceSummerWork
+    end
+    if data.appearanceFallWork ~= nil then
+        self.seasonalWorkOutfits.autumn = data.appearanceFallWork
+    end
+    if data.appearanceWinterWork ~= nil then
+        self.seasonalWorkOutfits.winter = data.appearanceWinterWork
+    end
+    if data.appearanceSpringWork ~= nil then
+        self.seasonalWorkOutfits.spring = data.appearanceSpringWork
+    end
+    if data.appearanceSummerLeisure ~= nil then
+        self.seasonalLeisureOutfits.summer = data.appearanceSummerLeisure
+    end
+    if data.appearanceFallLeisure ~= nil then
+        self.seasonalLeisureOutfits.autumn = data.appearanceFallLeisure
+    end
+    if data.appearanceWinterLeisure ~= nil then
+        self.seasonalLeisureOutfits.winter = data.appearanceWinterLeisure
+    end
+    if data.appearanceSpringLeisure ~= nil then
+        self.seasonalLeisureOutfits.spring = data.appearanceSpringLeisure
+    end
+    if type(self.appearanceWork) == "table" and next(self.appearanceWork) ~= nil
+        and self.seasonalWorkOutfits.summer == nil then
+        self.seasonalWorkOutfits.summer = self.appearanceWork
+    end
+    self._outfitMode = "work"
+    self.appearance = {}
+    self:refreshMergedAppearance()
     self.position    = { x = data.x, y = data.y, z = data.z }
     self.rotation    = { y = data.ry or 0 }
     self.rootNode    = nil
@@ -35,6 +112,157 @@ local function humanApiAvailable()
         and HumanGraphicsComponent.new ~= nil
         and PlayerStyle ~= nil
         and HumanModelLoadingState ~= nil
+end
+
+local SEASON_WORK_FALLBACK = {
+    winter = { "autumn", "summer", "spring" },
+    spring = { "summer", "autumn", "winter" },
+    summer = { "spring", "autumn", "winter" },
+    autumn = { "summer", "spring", "winter" },
+}
+
+local SEASON_LEISURE_FALLBACK = {
+    winter = { "autumn", "summer", "spring" },
+    spring = { "summer", "autumn", "winter" },
+    summer = { "spring", "autumn", "winter" },
+    autumn = { "summer", "spring", "winter" },
+}
+
+local function outfitHasLayers(outfit)
+    return type(outfit) == "table" and next(outfit) ~= nil
+end
+
+function VLNPCEntity:usesSeasonalWorkOutfits()
+    if type(self.seasonalWorkOutfits) ~= "table" then return false end
+    for _, outfit in pairs(self.seasonalWorkOutfits) do
+        if outfitHasLayers(outfit) then return true end
+    end
+    return false
+end
+
+function VLNPCEntity:usesSeasonalLeisureOutfits()
+    if type(self.seasonalLeisureOutfits) ~= "table" then return false end
+    for _, outfit in pairs(self.seasonalLeisureOutfits) do
+        if outfitHasLayers(outfit) then return true end
+    end
+    return false
+end
+
+function VLNPCEntity:getActiveLeisureOutfit()
+    if not self:usesSeasonalLeisureOutfits() then
+        return self.appearanceLeisure
+    end
+    local season = TimeHelper.getSeason()
+    local primary = self.seasonalLeisureOutfits[season]
+    if outfitHasLayers(primary) then return primary end
+    local fallbacks = SEASON_LEISURE_FALLBACK[season]
+    if fallbacks ~= nil then
+        for _, fb in ipairs(fallbacks) do
+            local o = self.seasonalLeisureOutfits[fb]
+            if outfitHasLayers(o) then return o end
+        end
+    end
+    return self.appearanceLeisure
+end
+
+function VLNPCEntity:getEditableLeisureOutfit()
+    if self:usesSeasonalLeisureOutfits() then
+        local season = TimeHelper.getSeason()
+        if self.seasonalLeisureOutfits[season] == nil then
+            self.seasonalLeisureOutfits[season] = {}
+        end
+        return self.seasonalLeisureOutfits[season]
+    end
+    return self.appearanceLeisure
+end
+
+function VLNPCEntity:getActiveWorkOutfit()
+    if not self:usesSeasonalWorkOutfits() then
+        return self.appearanceWork
+    end
+    local season = TimeHelper.getSeason()
+    local primary = self.seasonalWorkOutfits[season]
+    if outfitHasLayers(primary) then return primary end
+    local fallbacks = SEASON_WORK_FALLBACK[season]
+    if fallbacks ~= nil then
+        for _, fb in ipairs(fallbacks) do
+            local o = self.seasonalWorkOutfits[fb]
+            if outfitHasLayers(o) then return o end
+        end
+    end
+    return self.appearanceWork
+end
+
+function VLNPCEntity:getEditableWorkOutfit()
+    if self:usesSeasonalWorkOutfits() then
+        local season = TimeHelper.getSeason()
+        if self.seasonalWorkOutfits[season] == nil then
+            self.seasonalWorkOutfits[season] = {}
+        end
+        return self.seasonalWorkOutfits[season]
+    end
+    return self.appearanceWork
+end
+
+function VLNPCEntity:refreshMergedAppearance()
+    local outfit = self._outfitMode == "leisure" and self:getActiveLeisureOutfit() or self:getActiveWorkOutfit()
+    self.appearance = mergeAppearance(self.appearanceBase, outfit)
+end
+
+function VLNPCEntity:refreshSeasonalOutfit()
+    self:refreshMergedAppearance()
+    if self.graphics ~= nil or self.isLoaded then
+        return self:reapplyAppearance()
+    end
+    return true
+end
+
+function VLNPCEntity:refreshSeasonalWorkOutfit()
+    if self._outfitMode ~= "work" then return false end
+    return self:refreshSeasonalOutfit()
+end
+
+function VLNPCEntity:getOutfitMode()
+    return self._outfitMode or "work"
+end
+
+function VLNPCEntity:setAppearanceLayer(configName, patch)
+    if type(configName) ~= "string" or type(patch) ~= "table" then return end
+    if isAppearanceBaseKey(configName) then
+        self.appearanceBase[configName] = self.appearanceBase[configName] or {}
+        for k, v in pairs(patch) do self.appearanceBase[configName][k] = v end
+    else
+        local outfit = self._outfitMode == "leisure" and self:getEditableLeisureOutfit() or self:getEditableWorkOutfit()
+        outfit[configName] = outfit[configName] or {}
+        for k, v in pairs(patch) do outfit[configName][k] = v end
+    end
+    self:refreshMergedAppearance()
+end
+
+function VLNPCEntity:desiredOutfitMode()
+    return TimeHelper.getOutfitMode()
+end
+
+function VLNPCEntity:setOutfitMode(mode, opts)
+    if mode ~= "work" and mode ~= "leisure" then return false end
+    opts = opts or {}
+    if mode == self._outfitMode and not opts.force then
+        return false
+    end
+    self._outfitMode = mode
+    self:refreshMergedAppearance()
+    if opts.skipReapply then return true end
+    if self.graphics ~= nil or self.isLoaded then
+        return self:reapplyAppearance()
+    end
+    return true
+end
+
+function VLNPCEntity:updateOutfitForTime()
+    local want = self:desiredOutfitMode()
+    if want ~= self._outfitMode then
+        self:setOutfitMode(want)
+    end
 end
 
 function VLNPCEntity:spawn()
@@ -157,6 +385,59 @@ local function applyConfigChoice(cfg, choice, configName)
     end
 end
 
+local function findForHatHairIndex(hairCfg, currentIdx)
+    if type(hairCfg) ~= "table" or type(hairCfg.items) ~= "table" then
+        return currentIdx
+    end
+    local items = hairCfg.items
+    local current = currentIdx and items[currentIdx]
+    if type(current) == "table" and current.forHat then
+        return currentIdx
+    end
+    local currentName = type(current) == "table" and current.name or ""
+    local forHatList = {}
+    for i, item in ipairs(items) do
+        if type(item) == "table" and item.forHat then
+            forHatList[#forHatList + 1] = i
+            if currentName ~= "" and item.name and string.find(item.name, currentName, 1, true) then
+                return i
+            end
+        end
+    end
+    if #forHatList == 0 then return currentIdx end
+    local best, bestDist = forHatList[1], math.huge
+    local target = currentIdx or 0
+    for _, i in ipairs(forHatList) do
+        local d = math.abs(i - target)
+        if d < bestDist then
+            bestDist = d
+            best = i
+        end
+    end
+    return best
+end
+
+-- FS25 hides regular hair meshes when headgear is worn. Character creation uses
+-- hairStyle items marked forHat (shorter / cap-friendly). Swap at apply time so
+-- authored appearance.hairStyle.item stays the "no hat" choice.
+local function ensureHairCompatibleWithHeadgear(style)
+    local headgear = style.configs and style.configs.headgear
+    local hair = style.configs and style.configs.hairStyle
+    if type(headgear) ~= "table" or type(hair) ~= "table" then return end
+    local hgIdx = headgear.selectedItemIndex
+    if hgIdx == nil or hgIdx <= 0 then return end
+    local hairIdx = hair.selectedItemIndex
+    if hairIdx == nil or hairIdx <= 0 then return end
+    local newIdx = findForHatHairIndex(hair, hairIdx)
+    if newIdx ~= hairIdx then
+        pcall(function() hair.selectedItemIndex = newIdx end)
+        local name = hair.items and hair.items[newIdx] and hair.items[newIdx].name
+        print(string.format(
+            "[ValleyLife] headgear worn: hair item %d -> forHat item %d (%s)",
+            hairIdx, newIdx, tostring(name or "?")))
+    end
+end
+
 local function applyHairBeardColors(style, spec, splitColors)
     local hair = style.configs.hairStyle
     local beard = style.configs.beard
@@ -230,13 +511,26 @@ local function applyAppearance(style, spec, opts)
             pcall(function() beardCfg.selectedItemIndex = alt end)
         end
     end
+    -- Only apply clothing layers explicitly listed in appearance. Unset layers keep
+    -- loadConfigurationXML defaults (selectedItemIndex 0 = no shirt/pants mesh).
+    -- Underwear is NOT a top/bottom catalog item — it is bodyParts on the base
+    -- player i3d, shown when no clothing is selected. Do not force item 0 here;
+    -- that bypasses updateDisabledOptions and can leave body parts hidden (transparent).
     for name, choice in pairs(spec) do
         if name ~= "face" and name ~= "hairStyle" and name ~= "beard" then
             applyConfigChoice(style.configs[name], choice, name)
         end
     end
 
+    ensureHairCompatibleWithHeadgear(style)
+
     applyHairBeardColors(style, spec, splitColors)
+
+    pcall(function()
+        if type(style.updateDisabledOptions) == "function" then
+            style:updateDisabledOptions()
+        end
+    end)
 end
 
 -- Build a FRESH PlayerStyle for this villager. PlayerStyle.defaultStyle() is a

@@ -4,6 +4,19 @@ VLConfig = {}
 VLConfig.INTERACT_DISTANCE     = 3.0
 VLConfig.ACTIVATE_DISTANCE     = 200.0  -- beyond this, NPC updates are skipped
 
+-- NPC outfit schedule: work vs leisure (see TimeHelper.getOutfitMode).
+-- Work hours Mon–Fri only, excluding holidays; weekends and holidays are leisure all day.
+VLConfig.OUTFIT_WORK_START_HOUR = 5.5   -- 5:30 AM
+VLConfig.OUTFIT_WORK_END_HOUR   = 16.5  -- 4:30 PM (leisure from 4:30 PM onward)
+
+-- Fixed calendar holidays (month 1–12, day of month). Floating US holidays are detected in TimeHelper.
+VLConfig.OUTFIT_HOLIDAYS = {
+    { month = 1,  day = 1,  label = "New Year's Day" },
+    { month = 7,  day = 4,  label = "Independence Day" },
+    { month = 12, day = 25, label = "Christmas" },
+    { month = 12, day = 26, label = "Day after Christmas" },
+}
+
 -- Relationship
 VLConfig.REL_MIN  = 0
 VLConfig.REL_MAX  = 100

@@ -29,7 +29,7 @@ VLEventSequencer.registerEvent({
         { type = "camera",   x = 0, y = 2, z = -5, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "elara",
-          text = "Oh — hey. You're quiet for a big farmer type." },
+          text = "Oh — hey. You're quiet. I didn't hear you till you were right there." },
         { type = "dialogue", speaker = "elara",
           text = "*she closes a little book against her knee, too fast* It's nothing. Just... watching the light go." },
 

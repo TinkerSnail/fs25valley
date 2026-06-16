@@ -5,18 +5,188 @@ VLNPCSystem.__index = VLNPCSystem
 
 -- Authored villager definitions.
 -- personality: "hardworking"|"lazy"|"social"|"grumpy"|"generous"
--- appearance: per-config { item = index, color = index }; applied defensively and
---   wrapped to the available item count, so values are starting points to tune.
--- Age is suggested (FS25 has no aging morph): grey/white hair + grey beard +
--- accessories read "older". color indices are best-guess greys until the spawn
--- diagnostic confirms each config's real item/color counts.
+-- birthday: optional { month = 1-12, day = 1-31 }; omitted ids get a deterministic random date.
+-- appearanceBase: face, hairStyle, beard (always worn).
+-- appearanceWork / appearanceLeisure: clothing layers swapped by schedule.
+-- Item indices wrap to the available count; color indexes use the style palette.
 local VILLAGERS = {
-    -- Elara, late 20s: natural hair color, no grey, younger face.
-    { id = "elara",  name = "Elara",  personality = "social",      isFemale = true,  appearance = { hairStyle = { item = 3, color = 4 }, top = { item = 2, color = 5 }, bottom = { item = 2, color = 2 }, face = { item = 2 } }, x = VLConfig.VILLAGER_SPAWNS.elara.x,  y = VLConfig.VILLAGER_SPAWNS.elara.y,  z = VLConfig.VILLAGER_SPAWNS.elara.z,  ry = VLConfig.VILLAGER_SPAWNS.elara.ry  },
-    -- Kenji, ~58: face 8 (head07), hair09 (item 9), grey hair color 22, no beard mesh.
-    { id = "kenji", name = "Kenji", personality = "hardworking", isFemale = false, appearance = { hairStyle = { item = 9, color = 22 }, beard = { item = 0 }, top = { item = 3, color = 3 }, bottom = { item = 1, color = 1 }, face = { item = 8 } }, x = VLConfig.VILLAGER_SPAWNS.kenji.x, y = VLConfig.VILLAGER_SPAWNS.kenji.y, z = VLConfig.VILLAGER_SPAWNS.kenji.z, ry = VLConfig.VILLAGER_SPAWNS.kenji.ry },
-    -- Marta, ~55: silver-white hair (color 21), mature face, warm clothing.
-    { id = "marta",  name = "Marta",  personality = "generous",    isFemale = true,  appearance = { hairStyle = { item = 6, color = 21 }, top = { item = 5, color = 1 }, bottom = { item = 3, color = 4 }, face = { item = 4 } }, x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,  z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry  },
+    -- Elara: summer work = tank/shorts; fall work = sweater/skirt (seasonal).
+    -- Leisure = cozy sweater/skirt at home (no glasses) year-round.
+    { id = "elara",  name = "Elara",  personality = "social",      isFemale = true,
+      appearanceBase = {
+        face = { item = 4 },
+        hairStyle = { item = 8, color = 3 },
+      },
+      appearanceSummerWork = {
+        top = { item = 3 },
+        bottom = { item = 9 },
+        footwear = { item = 13, color = 1 },
+        glasses = { item = 7 },
+      },
+      appearanceFallWork = {
+        top = { item = 5, color = 9 },
+        bottom = { item = 11, color = 9 },
+        footwear = { item = 6, color = 3 },
+        glasses = { item = 7 },
+      },
+      appearanceSpringWork = {
+        top = { item = 23 },
+        bottom = { item = 4, color = 2 },
+        footwear = { item = 8 },
+        glasses = { item = 7 },
+      },
+      appearanceWinterWork = {
+        top = { item = 21, color = 1 },
+        bottom = { item = 3, color = 7 },
+        footwear = { item = 17 },
+        gloves = { item = 4, color = 9 },
+        glasses = { item = 7 },
+      },
+      appearanceLeisure = {
+        top = { item = 5, color = 9 },
+        bottom = { item = 11, color = 9 },
+        footwear = { item = 13, color = 1 },
+        glasses = { item = 0 },
+      },
+      appearanceFallLeisure = {
+        top = { item = 20, color = 6 },
+        bottom = { item = 4, color = 4 },
+        footwear = { item = 6, color = 3 },
+        glasses = { item = 7 },
+      },
+      x = VLConfig.VILLAGER_SPAWNS.elara.x,  y = VLConfig.VILLAGER_SPAWNS.elara.y,
+      z = VLConfig.VILLAGER_SPAWNS.elara.z,  ry = VLConfig.VILLAGER_SPAWNS.elara.ry  },
+    -- Kenji: summer work = t-shirt, cargo shorts, sandals, reading glasses.
+    -- Fall work (autumn season): mechanic coveralls + galoshes + gloves.
+    { id = "kenji", name = "Kenji", personality = "hardworking", isFemale = false,
+      appearanceBase = {
+        face = { item = 8 },
+        hairStyle = { item = 9, color = 22 },
+        beard = { item = 0 },
+      },
+      appearanceSummerWork = {
+        top = { item = 1 },
+        bottom = { item = 9, color = 2 },
+        footwear = { item = 11, color = 0 },
+        gloves = { item = 0 },
+        glasses = { item = 3 },
+      },
+      appearanceFallWork = {
+        onepiece = { item = 6, color = 3 },
+        footwear = { item = 4, color = 1 },
+        gloves = { item = 5 },
+      },
+      appearanceSpringWork = {
+        onepiece = { item = 6, color = 3 },
+        footwear = { item = 4, color = 1 },
+        gloves = { item = 5 },
+      },
+      appearanceWinterWork = {
+        top = { item = 12 },
+        bottom = { item = 2, color = 5 },
+        footwear = { item = 8 },
+        gloves = { item = 0 },
+        glasses = { item = 3 },
+      },
+      appearanceFallLeisure = {
+        top = { item = 11 },
+        bottom = { item = 2, color = 2 },
+        footwear = { item = 8 },
+        gloves = { item = 0 },
+        glasses = { item = 3 },
+      },
+      appearanceSummerLeisure = {
+        top = { item = 25 },
+        bottom = { item = 2, color = 2 },
+        footwear = { item = 8 },
+        gloves = { item = 0 },
+        glasses = { item = 3 },
+      },
+      appearanceWinterLeisure = {
+        top = { item = 20 },
+        bottom = { item = 2, color = 5 },
+        footwear = { item = 8 },
+        gloves = { item = 0 },
+        glasses = { item = 3 },
+      },
+      appearanceSpringLeisure = {
+        top = { item = 5, color = 1 },
+        bottom = { item = 2, color = 1 },
+        footwear = { item = 7, color = 1 },
+        gloves = { item = 0 },
+        glasses = { item = 3 },
+      },
+      appearanceLeisure = {
+        onepiece = { item = 3, color = 1 },
+        footwear = { item = 1 },
+        gloves = { item = 0 },
+      },
+      x = VLConfig.VILLAGER_SPAWNS.kenji.x, y = VLConfig.VILLAGER_SPAWNS.kenji.y,
+      z = VLConfig.VILLAGER_SPAWNS.kenji.z, ry = VLConfig.VILLAGER_SPAWNS.kenji.ry },
+    -- Marta: summer work = blouse/capris; summer leisure = collared shirt/skirt.
+    { id = "marta",  name = "Marta",  personality = "generous",    isFemale = true,
+      appearanceBase = {
+        face = { item = 5 },
+        hairStyle = { item = 16, color = 23 },
+      },
+      appearanceSummerWork = {
+        top = { item = 7 },
+        bottom = { item = 8 },
+        footwear = { item = 10 },
+        glasses = { item = 1 },
+      },
+      appearanceFallWork = {
+        top = { item = 18 },
+        bottom = { item = 10 },
+        footwear = { item = 15 },
+        glasses = { item = 1 },
+      },
+      appearanceWinterWork = {
+        top = { item = 13 },
+        bottom = { item = 5 },
+        footwear = { item = 4, color = 1 },
+        gloves = { item = 3 },
+        glasses = { item = 0 },
+      },
+      appearanceWork = {
+        top = { item = 7 },
+        bottom = { item = 8 },
+        footwear = { item = 10 },
+        glasses = { item = 1 },
+      },
+      appearanceSummerLeisure = {
+        top = { item = 4 },
+        bottom = { item = 11 },
+        footwear = { item = 12 },
+        glasses = { item = 1 },
+      },
+      appearanceLeisure = {
+        top = { item = 7 },
+        bottom = { item = 8 },
+        footwear = { item = 10 },
+        glasses = { item = 0 },
+      },
+      appearanceSpringLeisure = {
+        top = { item = 5 },
+        bottom = { item = 11 },
+        footwear = { item = 10 },
+        glasses = { item = 1 },
+      },
+      appearanceFallLeisure = {
+        top = { item = 15 },
+        bottom = { item = 14 },
+        footwear = { item = 15 },
+        glasses = { item = 1 },
+      },
+      appearanceWinterLeisure = {
+        top = { item = 10 },
+        bottom = { item = 5 },
+        footwear = { item = 9 },
+        gloves = { item = 3 },
+        glasses = { item = 0 },
+      },
+      x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,
+      z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry  },
 }
 
 function VLNPCSystem.new()
@@ -26,6 +196,9 @@ function VLNPCSystem.new()
     self.scheduler     = VLNPCScheduler.new()
     self.sequencer     = VLEventSequencer.new(self)
     self.dialog        = VLNPCDialog.new(self)
+    self._lastOutfitCheckHour = nil
+    self._lastOutfitCheckDay = nil
+    self._lastOutfitCheckSeason = nil
     return self
 end
 
@@ -34,14 +207,36 @@ function VLNPCSystem:initialize()
     for _, def in ipairs(VILLAGERS) do
         local npc = VLNPCEntity.new(def)
         self.npcs[def.id] = npc
+        npc:setOutfitMode(npc:desiredOutfitMode(), { skipReapply = true })
         npc:spawn()
     end
     self:hookSaveLoad()
     self.dialog:registerInput()
+    self._lastOutfitCheckSeason = TimeHelper.getSeason()
     print(string.format("[ValleyLife] %d villagers queued for spawn.", #VILLAGERS))
 end
 
 function VLNPCSystem:update(dt)
+    local hour = TimeHelper.getHour()
+    local day = TimeHelper.getDay()
+    if hour ~= self._lastOutfitCheckHour or day ~= self._lastOutfitCheckDay then
+        self._lastOutfitCheckHour = hour
+        self._lastOutfitCheckDay = day
+        for _, npc in pairs(self.npcs) do
+            if npc.isLoaded then
+                npc:updateOutfitForTime()
+            end
+        end
+    end
+    local season = TimeHelper.getSeason()
+    if season ~= self._lastOutfitCheckSeason then
+        self._lastOutfitCheckSeason = season
+        for _, npc in pairs(self.npcs) do
+            if npc.isLoaded then
+                npc:refreshSeasonalOutfit()
+            end
+        end
+    end
     for _, npc in pairs(self.npcs) do
         if npc.isLoaded then
             npc:update(dt)
