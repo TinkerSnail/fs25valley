@@ -11,12 +11,6 @@ function TimeHelper.getHour()
     return env.dayTime / 3600000
 end
 
-function TimeHelper.getDay()
-    local env = getEnvironment()
-    if not env then return 1 end
-    return env.currentDay or env.currentMonotonicDay or 1
-end
-
 -- FS25's environment counts in "periods" (1-12) where period 1 = March, NOT
 -- calendar months. (env.currentMonth does not exist - reading it returns nil,
 -- which previously defaulted the month to 1 and pinned every save to winter.)
@@ -30,9 +24,18 @@ function TimeHelper.getSeason()
     end
 end
 
--- 0 = Sunday, 1 = Monday, … 6 = Saturday (matches FS25_NPCFavor convention).
+-- 0 = Sunday, 1 = Monday, … 6 = Saturday.
+-- Anchored to the game calendar: Jan 1 is always Monday, independent of save
+-- start day. dayOfYear = (month-1)*daysPerPeriod + dayOfMonth; % 7 gives
+-- Mon=1 on Jan 1, Sat=6 on Jan 6, Sun=0 on Jan 7, repeating.
 function TimeHelper.getWeekday()
-    return TimeHelper.getDay() % 7
+    local env = getEnvironment()
+    if not env then return 1 end
+    local month = TimeHelper.getCalendarMonth()
+    local dayOfMonth = TimeHelper.getCalendarDayOfMonth()
+    local daysPerPeriod = env.daysPerPeriod or 1
+    local dayOfYear = (month - 1) * daysPerPeriod + dayOfMonth
+    return dayOfYear % 7
 end
 
 function TimeHelper.isWeekend()
@@ -60,21 +63,23 @@ function TimeHelper.getCalendarDayOfMonth()
     return env.currentDay or 1
 end
 
-local function isFloatingHoliday(month, day, weekday)
+local function isFloatingHoliday(month, day, weekday, daysPerPeriod)
     -- Memorial Day: last Monday in May.
-    if month == 5 and weekday == 1 and day >= 25 then return true end
+    if month == 5 and weekday == 1 and day > daysPerPeriod - 7 then return true end
     -- Labor Day: first Monday in September.
     if month == 9 and weekday == 1 and day <= 7 then return true end
-    -- Thanksgiving: fourth Thursday in November.
-    if month == 11 and weekday == 4 and day >= 22 and day <= 28 then return true end
+    -- Thanksgiving: last Thursday in November (= 4th Thursday when daysPerPeriod >= 28).
+    if month == 11 and weekday == 4 and day > daysPerPeriod - 7 then return true end
     return false
 end
 
 function TimeHelper.isHoliday()
+    local env = getEnvironment()
     local month = TimeHelper.getCalendarMonth()
     local day = TimeHelper.getCalendarDayOfMonth()
     local weekday = TimeHelper.getWeekday()
-    if isFloatingHoliday(month, day, weekday) then return true end
+    local daysPerPeriod = (env and env.daysPerPeriod) or 28
+    if isFloatingHoliday(month, day, weekday, daysPerPeriod) then return true end
     local holidays = VLConfig and VLConfig.OUTFIT_HOLIDAYS
     if type(holidays) ~= "table" then return false end
     for _, entry in ipairs(holidays) do
