@@ -6,7 +6,7 @@ console with **`~`** and type a command. Most print to the console **and**
 
 After code changes, run `./repack.sh` from the project root, then **fully quit
 and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
-`Valley Life 0.1.0.42 loaded`).
+`Valley Life 0.1.0.47 loaded`).
 
 `npcId` is one of: **`elara`**, **`kenji`**, **`marta`**.
 
@@ -61,6 +61,8 @@ yet change outfit mode.
 | `vlEvent` | `vlEvent <npcId>` | Force-start next uncompleted heart event. |
 | `vlReset` | `vlReset <npcId>` | Clear completed events, relationship 0, abort in-progress scene. |
 | `vlNear` | `vlNear` | Player pos, nearest villager, distance. |
+| `vlWalterIntro` | `vlWalterIntro` | Force-play Walter's post-tour market intro (ignores the once-only flag). |
+| `vlGuidedTour` | `vlGuidedTour` | Probe `GuidedTour` class/instance methods (hook-name discovery). |
 
 ## World & spawn
 

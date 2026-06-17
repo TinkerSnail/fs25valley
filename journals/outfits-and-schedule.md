@@ -37,6 +37,25 @@ Configured in `src/NPCConfig.lua`:
 - Labor Day (first Monday in September)
 - Thanksgiving (fourth Thursday in November)
 
+### Engine calendar: periods, not months (gotcha)
+
+FS25's `g_currentMission.environment` counts in **periods**, not calendar months:
+
+| Field | Meaning |
+|---|---|
+| `env.currentPeriod` | 1-12, where **period 1 = March**, period 12 = February |
+| `env.currentSeason` | 0=spring, 1=summer, 2=autumn, 3=winter (0-indexed) |
+| `env.currentDayInPeriod` | day within the current period (1 … `daysPerPeriod`) |
+| `env.daysPerPeriod` | season length in days (configurable) |
+
+**There is no `env.currentMonth`.** Reading it returns `nil`. Until 0.1.0.44,
+`TimeHelper` read `currentMonth`, defaulted the month to `1`, and pinned every
+save to **winter** - so the season never changed and outfits never swapped. Fixed
+in `TimeHelper.getCalendarMonth` by converting period → real month
+(`((period + 1) % 12) + 1`: period 1 → 3/March, 11 → 1/Jan, 12 → 2/Feb), the same
+offset every other seasonal mod (e.g. Critters' `correctMonth`) uses. `vlSeason`
+prints the raw `period=`/`engineSeason=` for verification.
+
 ### Seasons (which baked slot is active)
 
 Calendar month → season (`TimeHelper.getSeason`):
@@ -55,7 +74,7 @@ seasons (see `SEASON_WORK_FALLBACK` / `SEASON_LEISURE_FALLBACK` in
 
 **Face, hair, beard** always come from `appearanceBase` regardless of mode.
 
-**Mod version:** 0.1.0.42
+**Mod version:** 0.1.0.47
 
 ## Automatic outfit triggers (runtime)
 
@@ -100,9 +119,14 @@ Legend: ✓ baked · - missing (uses fallback) · (all) = same outfit every seas
 | Slot | Spring | Summer | Fall | Winter |
 |---|---|---|---|---|
 | **Work** | ✓ tweed/equestrian | ✓ tank/shorts | ✓ sweater/skirt | ✓ puffy/cargo |
-| **Leisure** | (default) sweater/skirt | | ✓ wool coat/equestrian | ✓ puffy/cargo |
+| **Leisure** | (fallback → summer) | ✓ top3/bottom10 | ✓ wool coat/equestrian | ✓ puffy/cargo |
 
 **Base:** face 4, hair 8 c3
+
+Note: spring leisure has no dedicated slot, so it now falls back to **summer
+leisure** (chain `{summer, autumn, winter}` hits summer first). The generic
+`appearanceLeisure` (sweater/skirt) is dead code while any seasonal leisure slot
+exists - it's only reached if every seasonal slot is empty.
 
 ### Kenji
 
@@ -126,7 +150,7 @@ Plus **default leisure** (synthetic onepiece) if no seasonal leisure matches.
 
 ## Gaps (TODO)
 
-- Elara: spring/summer **seasonal leisure**
+- Elara: spring **seasonal leisure** (currently falls back to summer; summer baked 0.1.0.45)
 - Birthday → leisure or event hooks
 
 ## Baking checklist

@@ -4,7 +4,7 @@ How Valley Life attaches to FS25 and what runs each frame. Implementation lives
 in `main.lua`, `src/NPCSystem.lua`, `src/scripts/NPCEntity.lua`, and
 `src/gui/NPCDialog.lua`.
 
-**Mod version:** 0.1.0.42 - confirm in log: `Valley Life 0.1.0.42 loaded`.
+**Mod version:** 0.1.0.47 - confirm in log: `Valley Life 0.1.0.47 loaded`.
 
 ---
 
@@ -18,7 +18,8 @@ modules in dependency order:
 3. Scripts - `NPCRelationshipManager`, `NPCEntity`, `NPCScheduler`, `NPCEventSequencer`
 4. `gui/NPCDialog.lua`
 5. `NPCSystem.lua`
-6. Content - `Elara.lua`, `Kenji.lua`, `Marta.lua` (register heart events)
+6. Content - `Elara.lua`, `Kenji.lua`, `Marta.lua` (register heart events),
+   then `WalterIntro.lua` (hooks the guided tour for the post-tour market beat)
 
 Console commands register at the bottom of `main.lua` (`VLConsole` + `addConsoleCommand`).
 
@@ -35,6 +36,11 @@ the base function outright).
 | `FSBaseMission.update` | Every frame | `onMissionUpdate` | `g_valleyLife:update(dt)` inside `pcall` |
 | `FSBaseMission.draw` | Every frame (HUD pass) | `onMissionDraw` | `g_valleyLife.dialog:draw()` |
 | `FSBaseMission.delete` | Mission teardown (**prepended**) | `onMissionUnload` | `g_valleyLife:delete()` → `g_valleyLife = nil` |
+| `GuidedTour.finish` | Player completes the intro tour | (in `WalterIntro.lua`) | Defer one frame → Walter's post-tour market intro (once, via `walterMentionedMarket` flag) |
+| `GuidedTour.cancel` | Player skips the intro tour | (in `WalterIntro.lua`) | Same as above (catches skip-tour players) |
+
+`GuidedTour.finish`/`cancel` are hooked from `WalterIntro.lua` at source time, not
+in the lifecycle block. See [walter-guided-tour.md](walter-guided-tour.md).
 
 **Not hooked:** `Mission00.update` - per-frame work uses `FSBaseMission.update`.
 
@@ -45,10 +51,12 @@ skip init.
 **Startup log lines** (one per successful hook):
 
 ```
+[ValleyLife] Hooked GuidedTour.finish.
+[ValleyLife] Hooked GuidedTour.cancel.
 [ValleyLife] Hooked Mission00.loadMission00Finished.
 [ValleyLife] Hooked FSBaseMission.update.
 [ValleyLife] Hooked FSBaseMission.draw.
-[ValleyLife] Valley Life 0.1.0.42 loaded; lifecycle hooks installed.
+[ValleyLife] Valley Life 0.1.0.47 loaded; lifecycle hooks installed.
 ```
 
 ---
@@ -96,9 +104,10 @@ Dialog is drawn in normalized screen space (`0–1`, bottom-left origin), not vi
 | Mission load (after init) | `{savegame}/valleyLife.xml` | `VLNPCSystem:loadFromFile` from `onMissionLoaded` |
 | Game save | same file | `FSCareerMissionInfo.saveToXMLFile` appended in `VLNPCSystem:hookSaveLoad()` |
 
-Persisted: relationship values, completed heart events (`VLConfig.SAVE_KEY` in
-`NPCConfig.lua`). NPC positions and outfits are **not** saved yet - they come
-from `VILLAGERS` spawn data + live calendar.
+Persisted: relationship values, completed heart events, casual-dialogue state,
+and one-shot story flags (`self.flags`, e.g. `walterMentionedMarket`) under
+`VLConfig.SAVE_KEY` in `NPCConfig.lua`. NPC positions and outfits are **not** saved
+yet - they come from `VILLAGERS` spawn data + live calendar.
 
 ---
 

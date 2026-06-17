@@ -30,6 +30,9 @@ source(modDir .. "src/content/Elara.lua")
 source(modDir .. "src/content/Kenji.lua")
 source(modDir .. "src/content/Marta.lua")
 
+-- Post-tour beat: hooks GuidedTour.finish/cancel to introduce Marta + the market.
+source(modDir .. "src/content/WalterIntro.lua")
+
 -- Mission lifecycle
 
 local function isCareerMission()
@@ -257,6 +260,174 @@ function VLConsole:probeDialogs()
     end
     print("[ValleyLife] ---- end probe (see above) ----")
     return "[ValleyLife] Dialog probe written to log/console."
+end
+
+-- vlGuidedTour: probe the GuidedTour class and active instance so we can find
+-- the right method names to hook (finish, skip, cancel, etc.) for post-Walter
+-- dialog injection.
+function VLConsole:probeGuidedTour()
+    if GuidedTour == nil then return "[ValleyLife] GuidedTour: (absent from _G)" end
+    local classMethods = {}
+    for k, v in pairs(GuidedTour) do
+        if type(v) == "function" then classMethods[#classMethods + 1] = k end
+    end
+    table.sort(classMethods)
+    print("[ValleyLife] GuidedTour class methods: " .. table.concat(classMethods, ", "))
+
+    local inst = g_currentMission and g_currentMission.guidedTour
+    print("[ValleyLife] g_currentMission.guidedTour = " .. tostring(inst))
+    if inst ~= nil then
+        local instMethods = {}
+        for k, v in pairs(inst) do
+            if type(v) == "function" then instMethods[#instMethods + 1] = k end
+        end
+        table.sort(instMethods)
+        print("[ValleyLife] instance methods: " .. table.concat(instMethods, ", "))
+        -- Also report any bool/string fields that look like state flags
+        local fields = {}
+        for k, v in pairs(inst) do
+            local t = type(v)
+            if t == "boolean" or t == "string" or t == "number" then
+                fields[#fields + 1] = string.format("%s=%s", k, tostring(v))
+            end
+        end
+        table.sort(fields)
+        print("[ValleyLife] instance state: " .. table.concat(fields, ", "))
+    end
+    return "[ValleyLife] GuidedTour probe done — check log."
+end
+
+-- vlAnimClips: enumerate animation clips on a villager's character set.
+-- Tries engine enumeration APIs first, then brute-forces a wide name list.
+function VLConsole:dumpAnimClips(npcId)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local npc = g_valleyLife.npcs[npcId or "marta"]
+    if npc == nil then return "[ValleyLife] NPC not found." end
+    local charSet = npc.animCharSet
+    if charSet == nil or charSet == 0 then return "[ValleyLife] No animCharSet (model not loaded yet?)." end
+
+    -- Try engine APIs that enumerate clips by index.
+    local enumerated = false
+    for _, numFn in ipairs({ "getNumAnimClips", "getNumOfClips", "getAnimNumClips" }) do
+        if type(_G[numFn]) == "function" then
+            local ok, n = pcall(_G[numFn], charSet)
+            if ok and type(n) == "number" and n > 0 then
+                print(string.format("[ValleyLife] %s(%s) = %d clips:", numFn, tostring(charSet), n))
+                for nameFn, fn in pairs({ getAnimClipName = getAnimClipName, getClipName = getClipName }) do
+                    if type(fn) == "function" then
+                        for i = 0, n - 1 do
+                            local ok2, name = pcall(fn, charSet, i)
+                            if ok2 and name then
+                                print(string.format("  [%d] %s", i, tostring(name)))
+                            end
+                        end
+                        enumerated = true
+                        break
+                    end
+                end
+                if not enumerated then
+                    print("[ValleyLife] Count found but no name getter available; trying brute-force.")
+                end
+                break
+            end
+        end
+    end
+
+    -- Try to enumerate all clips by index using engine APIs.
+    print("[ValleyLife] Enumerating clips by index (getAnimClipName / getAnimClip):")
+    local enumHits = 0
+    for i = 0, 120 do
+        for _, fn in ipairs({ getAnimClipName, getAnimClip }) do
+            if type(fn) == "function" then
+                local ok, result = pcall(fn, charSet, i)
+                if ok and result ~= nil and result ~= "" and result ~= -1 then
+                    print(string.format("  [%d] = %s", i, tostring(result)))
+                    enumHits = enumHits + 1
+                end
+                break
+            end
+        end
+    end
+    if enumHits == 0 then print("  (getAnimClipName / getAnimClip not available or returned nothing)") end
+
+    -- Also try the player character's charSet for comparison.
+    local player = g_localPlayer or (g_currentMission and g_currentMission.player)
+    if player ~= nil and player.rootNode ~= nil and player.rootNode ~= 0 then
+        local pCharSet = 0
+        pcall(function()
+            pCharSet = getAnimCharacterSet(player.rootNode)
+            if pCharSet == 0 then
+                local child = getChildAt(player.rootNode, 0)
+                if child and child ~= 0 then pCharSet = getAnimCharacterSet(child) end
+            end
+        end)
+        if pCharSet ~= 0 then
+            print(string.format("[ValleyLife] Player charSet = %s (NPC charSet = %s)", tostring(pCharSet), tostring(charSet)))
+            -- Probe the player charSet for walk clips
+            local WALK_PROBE = {
+                "walkSource","walk1Source","walk2Source","walkFemaleSource",
+                "walkForwardSource","walkForward1Source","walkForward2Source",
+                "walkForwardFemaleSource","walkForward1FemaleSource",
+                "walk1MSource","walk1FSource","walkForward1MSource","walkForward1FSource",
+                "moveForwardSource","moveForward1Source","moveSource",
+                "runSource","run1Source","runForwardSource","runForward1Source",
+                "locomotionSource","locoWalkSource",
+            }
+            print("[ValleyLife] Walk probe on PLAYER charSet:")
+            local pHits = 0
+            for _, name in ipairs(WALK_PROBE) do
+                local ok, idx = pcall(getAnimClipIndex, pCharSet, name)
+                if ok and type(idx) == "number" and idx >= 0 then
+                    print(string.format("  HIT  [%d] %s", idx, name))
+                    pHits = pHits + 1
+                end
+            end
+            if pHits == 0 then print("  (no hits on player charSet either)") end
+            -- Also try index enumeration on player charSet
+            print("[ValleyLife] Player charSet index enum:")
+            local pEnumHits = 0
+            for i = 0, 80 do
+                for _, fn in ipairs({ getAnimClipName, getAnimClip }) do
+                    if type(fn) == "function" then
+                        local ok, result = pcall(fn, pCharSet, i)
+                        if ok and result ~= nil and result ~= "" and result ~= -1 then
+                            print(string.format("  [%d] = %s", i, tostring(result)))
+                            pEnumHits = pEnumHits + 1
+                        end
+                        break
+                    end
+                end
+            end
+            if pEnumHits == 0 then print("  (no index enum available on player charSet)") end
+        else
+            print("[ValleyLife] Could not resolve player charSet.")
+        end
+    end
+
+    return "[ValleyLife] Clip enum done — check log."
+end
+
+-- vlWalk: force-start the walk loop for a villager (bypasses the half-hour timer).
+function VLConsole:forceWalk(npcId)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local npc = g_valleyLife.npcs[npcId]
+    if npc == nil then return string.format("[ValleyLife] Unknown NPC '%s'.", tostring(npcId)) end
+    if npc._walkLoop == nil then return string.format("[ValleyLife] '%s' has no walk loop.", npcId) end
+    npc:_onWalkEnd()
+    npc._walk = nil
+    npc._walkLastHour = -1
+    npc:_startWalk()
+    return string.format("[ValleyLife] Walk loop started for '%s'.", npcId)
+end
+
+-- vlWalterIntro: force-play Walter's post-tour market introduction (bypasses the
+-- once-only walterMentionedMarket flag), so we can test the lines without redoing
+-- the whole guided tour.
+function VLConsole:playWalterIntro()
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    if VLWalterIntro == nil then return "[ValleyLife] WalterIntro unavailable." end
+    VLWalterIntro.play(true)
+    return "[ValleyLife] Played Walter market intro (forced)."
 end
 
 -- vlStyle: enumerate the base-game character style configs (hair, beard, face,
@@ -885,15 +1056,17 @@ end
 
 function VLConsole:printSeason()
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
-    local month = g_currentMission and g_currentMission.environment
-        and g_currentMission.environment.currentMonth
+    local env = g_currentMission and g_currentMission.environment
+    local rawPeriod = env and env.currentPeriod
+    local rawSeason = env and env.currentSeason
+    local month = TimeHelper.getCalendarMonth()
     local season = TimeHelper.getSeason()
     local hour = TimeHelper.getHour()
     local outfit = TimeHelper.getOutfitMode()
     local reason = TimeHelper.getOutfitModeReason()
     local msg = string.format(
-        "[ValleyLife] Month %s -> season '%s' (hour %.1f). Outfit: %s (%s). Work commands edit %s look.",
-        tostring(month), season, hour, outfit, reason,
+        "[ValleyLife] period=%s engineSeason=%s -> month %d, season '%s' (hour %.1f). Outfit: %s (%s). Work commands edit %s look.",
+        tostring(rawPeriod), tostring(rawSeason), month, season, hour, outfit, reason,
         outfit == "work" and season or (season .. " leisure"))
     print(msg)
     return msg
@@ -962,6 +1135,11 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlNear", "Report nearest villager + distance (proximity debug)", "printNearest", VLConsole)
     addConsoleCommand("vlReset", "Reset a villager's events + relationship: vlReset <npcId>", "resetNpc", VLConsole)
     addConsoleCommand("vlDlg", "Probe available native dialog/choice widgets", "probeDialogs", VLConsole)
+    addConsoleCommand("vlGuidedTour", "Probe GuidedTour class/instance methods (find hook names)", "probeGuidedTour", VLConsole)
+    addConsoleCommand("vlAnimClips", "Dump animation clip names for a villager: vlAnimClips <npcId>", "dumpAnimClips", VLConsole)
+    addConsoleCommand("vlWalk", "Force-start a villager's walk loop: vlWalk <npcId>", "forceWalk", VLConsole)
+    addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
+    addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
     addConsoleCommand("vlHair", "Live-swap hairStyle mesh: vlHair <npcId> <item> (0=none)", "setHair", VLConsole)
@@ -1003,4 +1181,4 @@ if addConsoleCommand ~= nil then
     print("[ValleyLife] Console commands registered (vlPos ... vlHatColor, vlFootwears, vlShoe, vlSock, vlFacegear, ...).")
 end
 
-print("[ValleyLife] Valley Life 0.1.0.42 loaded; lifecycle hooks installed.")
+print("[ValleyLife] Valley Life 0.1.0.48 loaded; lifecycle hooks installed.")

@@ -108,6 +108,14 @@ function VLNPCEntity.new(data)
     self.useDirectAnimation = false
     self.animCharSet = nil
     self._animSetupRetries = 0
+    self._idleClipIdx = nil
+    self._walkClipIdx = nil
+    self._walkLoop          = data.walkLoop or nil
+    self._walk              = nil
+    self._walkLastHour      = -1
+    self._homeRy            = data.ry or 0
+    self._directTrackWalking = false
+    self._walkDirectTrack   = false
     return self
 end
 
@@ -667,7 +675,10 @@ function VLNPCEntity:reapplyAppearance(opts)
 end
 
 local function setAnimParam(param, value)
-    if param == nil or type(param.setValue) ~= "function" then return end
+    -- Guard the type first: indexing a number/boolean (param.setValue) throws
+    -- "attempt to index number" before a `type(param.setValue)` test can run.
+    if type(param) ~= "table" and type(param) ~= "userdata" then return end
+    if type(param.setValue) ~= "function" then return end
     pcall(function() param:setValue(value) end)
 end
 
@@ -676,6 +687,18 @@ local IDLE_CLIP_CANDIDATES_FEMALE = {
 }
 local IDLE_CLIP_CANDIDATES_MALE = {
     "idle1Source", "idle2Source", "idleSource", "idle1FemaleSource",
+}
+local WALK_CLIP_CANDIDATES_FEMALE = {
+    "NPCWalkFemale01Source",   -- NPC walk female variant 1 (may exist past index 80)
+    "NPCWalkFemale02Source",   -- [52] NPC walk female variant 2
+    "NPCWalkFemale03Source",   -- [53] NPC walk female variant 3
+    "walkFwd1FemaleSource",    -- [33] player walk female (faster, fallback only)
+}
+local WALK_CLIP_CANDIDATES_MALE = {
+    "NPCWalkMale01Source",     -- NPC walk male variant 1 (may exist past index 80)
+    "NPCWalkMale02Source",     -- [54] NPC walk male variant 2
+    "NPCWalkMale03Source",     -- [55] NPC walk male variant 3
+    "walkFwd1Source",          -- player walk male (may exist past index 80, fallback)
 }
 
 local function findAnimClip(charSet, candidates)
@@ -712,7 +735,12 @@ function VLNPCEntity:setupDirectIdleAnimation()
     local skeleton = gfx.model.skeleton
     if skeleton == nil or skeleton == 0 then return false end
 
-    if g_animCache ~= nil and AnimationCache ~= nil and cloneAnimCharacterSet ~= nil then
+    -- Prefer the character set already loaded by setStyleAsync — it contains the full
+    -- animation library (idle + walk + run). Only fall back to cloning from AnimationCache
+    -- if nothing is there yet, since cloning overwrites the rich set with idle clips only.
+    local charSet = resolveAnimCharacterSet(skeleton)
+
+    if charSet == 0 and g_animCache ~= nil and AnimationCache ~= nil and cloneAnimCharacterSet ~= nil then
         pcall(function()
             local animNode = g_animCache:getNode(AnimationCache.CHARACTER)
             if animNode ~= nil and animNode ~= 0 then
@@ -722,13 +750,13 @@ function VLNPCEntity:setupDirectIdleAnimation()
                 end
             end
         end)
+        charSet = resolveAnimCharacterSet(skeleton)
     end
 
-    local charSet = resolveAnimCharacterSet(skeleton)
     if charSet == 0 then return false end
 
-    local candidates = self.isFemale and IDLE_CLIP_CANDIDATES_FEMALE or IDLE_CLIP_CANDIDATES_MALE
-    local idleClip, idleName = findAnimClip(charSet, candidates)
+    local idleCandidates = self.isFemale and IDLE_CLIP_CANDIDATES_FEMALE or IDLE_CLIP_CANDIDATES_MALE
+    local idleClip, idleName = findAnimClip(charSet, idleCandidates)
     if idleClip < 0 then return false end
 
     local ok = pcall(function()
@@ -744,29 +772,50 @@ function VLNPCEntity:setupDirectIdleAnimation()
 
     self.useDirectAnimation = true
     self.animCharSet = charSet
-    print(string.format("[ValleyLife] '%s' idle animation: %s (direct track)", self.name, idleName))
+    self._idleClipIdx = idleClip
+
+    -- Cache the walk clip index now so _onWalkStart can assign it without a search.
+    local walkCandidates = self.isFemale and WALK_CLIP_CANDIDATES_FEMALE or WALK_CLIP_CANDIDATES_MALE
+    local walkClip, walkName = findAnimClip(charSet, walkCandidates)
+    self._walkClipIdx = walkClip
+    if walkClip >= 0 then
+        print(string.format("[ValleyLife] '%s' idle: %s | walk: %s (direct tracks)", self.name, idleName, walkName))
+    else
+        print(string.format("[ValleyLife] '%s' idle: %s (direct track; no walk clip found)", self.name, idleName))
+    end
     return true
 end
 
 function VLNPCEntity:applyIdleAnimationParameters()
     local gfx = self.graphics
     if gfx == nil or not self.modelLoaded then return end
-    local params = gfx.animationParameters
-    if type(params) ~= "table" then return end
-    setAnimParam(params.isNPC, true)
-    setAnimParam(params.isGrounded, true)
-    setAnimParam(params.isCloseToGround, true)
-    setAnimParam(params.isIdling, true)
-    setAnimParam(params.isWalking, false)
-    setAnimParam(params.isRunning, false)
-    setAnimParam(params.absSpeed, 0)
-    setAnimParam(params.distanceToGround, 0)
-    setAnimParam(params.relativeVelocityX, 0)
-    setAnimParam(params.relativeVelocityY, 0)
-    setAnimParam(params.relativeVelocityZ, 0)
-    setAnimParam(params.movementDirX, 0)
-    setAnimParam(params.movementDirZ, 0)
-    setAnimParam(params.rotationVelocity, 0)
+    local nameToIdx  = gfx.animationParameters
+    local paramObjs  = gfx.animation and gfx.animation.parameters
+    if type(nameToIdx) ~= "table" or type(paramObjs) ~= "table" then return end
+
+    local function set(name, value)
+        local idx = nameToIdx[name]
+        if idx == nil then return end
+        local p = paramObjs[idx]
+        if type(p) == "table" then p.value = value end
+    end
+
+    local walking = self._directTrackWalking
+    local speed   = walking and (self._walkLoop and self._walkLoop.speed or 1.2) or 0
+    set("isNPC",             not walking)
+    set("isGrounded",        true)
+    set("isCloseToGround",   true)
+    set("isIdling",          not walking)
+    set("isWalking",         walking)
+    set("isRunning",         false)
+    set("absSpeed",          speed)
+    set("distanceToGround",  0)
+    set("relativeVelocityX", 0)
+    set("relativeVelocityY", 0)
+    set("relativeVelocityZ", speed)
+    set("movementDirX",      0)
+    set("movementDirZ",      walking and 1 or 0)
+    set("rotationVelocity",  0)
 end
 
 function VLNPCEntity:updateGraphics(dt)
@@ -778,15 +827,19 @@ function VLNPCEntity:updateGraphics(dt)
     end
 
     -- Direct track mode: engine advances enabled clips; no per-frame gfx update.
+    -- Skip for both idle and walk when walk is on direct track too.
     if self.useDirectAnimation and self.animCharSet ~= nil then
-        return
+        if not self._directTrackWalking or self._walkDirectTrack then
+            return
+        end
+        -- Walking but no walk clip on direct track: fall through to ConditionalAnimation fallback.
     end
 
     local gfx = self.graphics
     if gfx == nil then return end
-    self:applyIdleAnimationParameters()
-    -- Fallback: ConditionalAnimation via HumanGraphicsComponent (sounds off).
-    pcall(function()
+    -- Run gfx:update first so any internal physics-driven param writes happen,
+    -- then re-apply our params so they win the frame's ConditionalAnimation read.
+    local ok, err = pcall(function()
         gfx.soundsEnabled = false
         if type(gfx.update) == "function" then
             gfx:update(dt)
@@ -794,11 +847,22 @@ function VLNPCEntity:updateGraphics(dt)
             gfx.animation:update(dt)
         end
     end)
+    if not ok then
+        self._gfxUpdateErrors = (self._gfxUpdateErrors or 0) + 1
+        if self._gfxUpdateErrors <= 3 then
+            print(string.format("[ValleyLife] gfx:update error on '%s': %s", self.name, tostring(err)))
+        end
+    end
+    self:applyIdleAnimationParameters()
 end
 
 function VLNPCEntity:buildAnimatedCharacter()
     self.useDirectAnimation = false
     self.animCharSet = nil
+    self._idleClipIdx = nil
+    self._walkClipIdx = nil
+    self._directTrackWalking = false
+    self._walkDirectTrack = false
     self._animSetupRetries = 0
     self.modelLoaded = false
 
@@ -848,12 +912,143 @@ function VLNPCEntity:buildAnimatedCharacter()
     self.isLoaded = true
 end
 
+function VLNPCEntity:_onWalkStart()
+    self._directTrackWalking = true
+    if self.animCharSet ~= nil and (self._walkClipIdx or -1) >= 0 then
+        -- Swap track 0 from idle to walk clip — same direct-track pattern as idle setup.
+        pcall(function()
+            clearAnimTrackClip(self.animCharSet, 0)
+            assignAnimTrackClip(self.animCharSet, 0, self._walkClipIdx)
+            setAnimTrackLoopState(self.animCharSet, 0, true)
+            enableAnimTrack(self.animCharSet, 0)
+        end)
+        self._walkDirectTrack = true
+        print(string.format("[ValleyLife] '%s' walk start: direct track (walk clip)", self.name))
+    else
+        -- Fallback: disable idle track and let ConditionalAnimation drive the walk clip.
+        self._walkDirectTrack = false
+        if self.animCharSet ~= nil then
+            pcall(function()
+                if disableAnimTrack ~= nil then
+                    disableAnimTrack(self.animCharSet, 0)
+                elseif clearAnimTrackClip ~= nil then
+                    clearAnimTrackClip(self.animCharSet, 0)
+                end
+            end)
+        end
+        print(string.format("[ValleyLife] '%s' walk start: no walk clip cached; ConditionalAnimation fallback", self.name))
+    end
+end
+
+function VLNPCEntity:_onWalkEnd()
+    if not self._directTrackWalking then return end
+    if self.animCharSet ~= nil and (self._idleClipIdx or -1) >= 0 then
+        pcall(function()
+            clearAnimTrackClip(self.animCharSet, 0)
+            assignAnimTrackClip(self.animCharSet, 0, self._idleClipIdx)
+            setAnimTrackLoopState(self.animCharSet, 0, true)
+            enableAnimTrack(self.animCharSet, 0)
+        end)
+    elseif self.animCharSet ~= nil then
+        pcall(function()
+            if enableAnimTrack ~= nil then enableAnimTrack(self.animCharSet, 0) end
+        end)
+    end
+    self._directTrackWalking = false
+    self._walkDirectTrack = false
+end
+
+function VLNPCEntity:_startWalk()
+    if self._walk ~= nil then return end
+    self._walk = { state = "walking", targetIdx = 2 }
+    self:_onWalkStart()
+end
+
+-- Turn rate in radians/sec. ~150°/sec feels like a natural walking pace.
+local WALK_TURN_RATE = math.rad(150)
+
+local function lerpAngle(current, target, maxStep)
+    local diff = target - current
+    while diff >  math.pi do diff = diff - 2 * math.pi end
+    while diff < -math.pi do diff = diff + 2 * math.pi end
+    if math.abs(diff) <= maxStep then return target end
+    return current + (diff > 0 and maxStep or -maxStep)
+end
+
+function VLNPCEntity:_updateWalkLoop(dt)
+    if self._walk == nil then
+        if not self.isTalking and TimeHelper.getOutfitMode() == "work" then
+            local halfHour = math.floor(TimeHelper.getHour() * 2)
+            if halfHour ~= self._walkLastHour then
+                self._walkLastHour = halfHour
+                self:_startWalk()
+            end
+        end
+        return
+    end
+
+    local walk = self._walk
+    local waypoints = self._walkLoop.waypoints
+
+    if walk.state == "pausing" then
+        local hour = TimeHelper.getHour()
+        local elapsed = hour - walk.pauseStartHour
+        if elapsed < 0 then elapsed = elapsed + 24 end
+        if elapsed >= walk.pauseMinutesRequired / 60 then
+            walk.state = "walking"
+            self:_onWalkStart()
+        end
+        return
+    end
+
+    local target = waypoints[walk.targetIdx]
+    local dx = target.x - self.position.x
+    local dz = target.z - self.position.z
+    local dist = math.sqrt(dx * dx + dz * dz)
+    local step = (self._walkLoop.speed or 1.2) * (dt / 1000)
+
+    if dist <= step then
+        self.position.x = target.x
+        self.position.z = target.z
+        if walk.targetIdx == 1 then
+            self._walk = nil
+            self.rotation.y = self._homeRy
+            self:_onWalkEnd()
+            return
+        end
+        local pauseMin = target.pauseMinutes
+        local nextIdx = walk.targetIdx + 1
+        if nextIdx > #waypoints then nextIdx = 1 end
+        walk.targetIdx = nextIdx
+        if pauseMin then
+            walk.state = "pausing"
+            walk.pauseStartHour = TimeHelper.getHour()
+            walk.pauseMinutesRequired = pauseMin
+            self:_onWalkEnd()
+        end
+    else
+        local nx = dx / dist
+        local nz = dz / dist
+
+        self.position.x = self.position.x + nx * step
+        self.position.z = self.position.z + nz * step
+
+        -- Smooth rotation: gradually turn to face the movement direction.
+        local targetRy = math.atan2(nx, nz)
+        local maxStep = WALK_TURN_RATE * (dt / 1000)
+        self.rotation.y = lerpAngle(self.rotation.y, targetRy, maxStep)
+    end
+end
+
 function VLNPCEntity:update(dt)
     if not nodeValid(self.rootNode) then return end
-    -- Keep grounded on uneven terrain.
+    if self._walkLoop then
+        self:_updateWalkLoop(dt)
+    end
     local y = terrainY(self.position.x, self.position.z, self.position.y or 0)
     self.position.y = y
     setTranslation(self.rootNode, self.position.x, y, self.position.z)
+    setRotation(self.rootNode, 0, self.rotation.y, 0)
     self:updateGraphics(dt)
 end
 
@@ -888,6 +1083,10 @@ end
 function VLNPCEntity:delete()
     self.useDirectAnimation = false
     self.animCharSet = nil
+    self._idleClipIdx = nil
+    self._walkClipIdx = nil
+    self._directTrackWalking = false
+    self._walkDirectTrack = false
     if self.graphics then
         pcall(function() self.graphics:delete() end)
         self.graphics = nil

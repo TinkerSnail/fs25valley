@@ -48,6 +48,12 @@ local VILLAGERS = {
         footwear = { item = 13, color = 1 },
         glasses = { item = 0 },
       },
+      appearanceSummerLeisure = {
+        top = { item = 3, color = 9 },
+        bottom = { item = 10, color = 9 },
+        footwear = { item = 13, color = 1 },
+        glasses = { item = 7 },
+      },
       appearanceFallLeisure = {
         top = { item = 20, color = 6 },
         bottom = { item = 4, color = 4 },
@@ -103,9 +109,9 @@ local VILLAGERS = {
         glasses = { item = 3 },
       },
       appearanceSummerLeisure = {
-        top = { item = 25 },
+        top = { item = 25, color = 1 },
         bottom = { item = 2, color = 2 },
-        footwear = { item = 8 },
+        footwear = { item = 10, color = 1 },
         gloves = { item = 0 },
         glasses = { item = 3 },
       },
@@ -193,7 +199,8 @@ local VILLAGERS = {
         glasses = { item = 0 },
       },
       x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,
-      z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry  },
+      z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry,
+      walkLoop = VLConfig.VILLAGER_SPAWNS.marta.walkLoop },
 }
 
 function VLNPCSystem.new()
@@ -205,7 +212,18 @@ function VLNPCSystem.new()
     self.casualDialogue = VLCasualDialogue.new()
     self.dialog        = VLNPCDialog.new(self)
     self._outfitCalendar = OutfitCalendar.new()
+    self.flags         = {}   -- name -> true; persisted story flags (e.g. walterMentionedMarket)
     return self
+end
+
+-- One-shot story flags (persisted). Used to fire a beat exactly once across a
+-- save, e.g. Walter's post-tour market introduction.
+function VLNPCSystem:getFlag(name)
+    return self.flags[name] == true
+end
+
+function VLNPCSystem:setFlag(name, value)
+    self.flags[name] = value and true or nil
 end
 
 function VLNPCSystem:initialize()
@@ -311,6 +329,8 @@ local function getSaveSchema()
     s:register(XMLValueType.INT,    root .. ".casual#count")
     s:register(XMLValueType.STRING, root .. ".casual.state(?)#npcId")
     s:register(XMLValueType.INT,    root .. ".casual.state(?)#rot")
+    s:register(XMLValueType.INT,    root .. ".flags#count")
+    s:register(XMLValueType.STRING, root .. ".flags.flag(?)#name")
     saveSchema = s
     return s
 end
@@ -380,6 +400,7 @@ function VLNPCSystem:saveToXML(xmlFile)
     self.relationships:saveToXML(xmlFile, key)
     self.sequencer:saveToXML(xmlFile, key)
     self.casualDialogue:saveToXML(xmlFile, key)
+    self:saveFlagsToXML(xmlFile, key)
 end
 
 function VLNPCSystem:loadFromXML(xmlFile, missionKey)
@@ -388,6 +409,28 @@ function VLNPCSystem:loadFromXML(xmlFile, missionKey)
     self.sequencer:loadFromXML(xmlFile, key)
     self.casualDialogue:loadFromXML(xmlFile, key)
     self.casualDialogue:syncLegacyMet(self.relationships, self.sequencer)
+    self:loadFlagsFromXML(xmlFile, key)
+end
+
+function VLNPCSystem:saveFlagsToXML(xmlFile, baseKey)
+    local key = baseKey .. ".flags"
+    local i = 0
+    for name, set in pairs(self.flags) do
+        if set then
+            xmlFile:setValue(string.format("%s.flag(%d)#name", key, i), name)
+            i = i + 1
+        end
+    end
+    xmlFile:setValue(key .. "#count", i)
+end
+
+function VLNPCSystem:loadFlagsFromXML(xmlFile, baseKey)
+    local key = baseKey .. ".flags"
+    local count = xmlFile:getValue(key .. "#count", 0)
+    for i = 0, count - 1 do
+        local name = xmlFile:getValue(string.format("%s.flag(%d)#name", key, i))
+        if name then self.flags[name] = true end
+    end
 end
 
 function VLNPCSystem:delete()

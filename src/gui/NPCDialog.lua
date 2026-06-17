@@ -29,6 +29,12 @@ local VL_TRI = modGui .. "vl_tri.png"
 -- movement, so the arrow keys navigate the replies instead of walking the character.
 local VL_REPLY_CONTEXT = "FS25_ValleyLife_REPLY"
 
+-- Context entered to freeze on-foot movement while a scripted speech sequence plays
+-- (e.g. Walter's post-tour intro), matching how the base-game tour locks the player
+-- while an NPC is talking. Enter/Space still advance because the speech box registers
+-- its own MENU_ACCEPT event inside this context.
+local VL_SPEECH_LOCK_CONTEXT = "FS25_ValleyLife_SPEECHLOCK"
+
 -- Defer a function to the next frame. Used when opening the reply selector right
 -- after dismissing the narration popup, so the same Enter press that closed the
 -- popup doesn't immediately confirm the freshly-registered selector.
@@ -440,10 +446,14 @@ function VLNPCDialog:registerSpeechInput()
     reg(InputAction.SKIP_MESSAGE_BOX, VLNPCDialog.onSpeechConfirm)
 end
 
-function VLNPCDialog:showSpeechBox(speaker, text, onClose)
+-- Speaker is rendered inline ("Speaker: text…") in one flow, matching the base
+-- game's tutorial dialogue, so every conversation feels cohesive. This is the
+-- default; pass opts.inlineSpeaker = false for the old bold header-line style.
+function VLNPCDialog:showSpeechBox(speaker, text, onClose, opts)
     onClose = onClose or function() end
     text = tostring(text or "")
     speaker = tostring(speaker or "")
+    local inlineSpeaker = not (opts ~= nil and opts.inlineSpeaker == false)
 
     self:closeSpeech()
 
@@ -453,13 +463,24 @@ function VLNPCDialog:showSpeechBox(speaker, text, onClose)
     local innerW   = boxW - SPEECH_PAD_X * 2
 
     if not hudDrawAvailable() then
-        return self:showSpeechBoxNative(speaker, text, onClose)
+        local nativeText = inlineSpeaker and speaker ~= ""
+            and (speaker .. ": " .. text) or text
+        return self:showSpeechBoxNative(inlineSpeaker and "" or speaker, nativeText, onClose)
     end
 
-    local lines = wrapText(text, SPEECH_TEXT_SIZE, innerW)
-    local contentW = math.min(maxTextWidth(lines, SPEECH_TEXT_SIZE, speaker, SPEECH_TITLE_SIZE), innerW)
+    -- In inline mode the speaker is folded into the body and no header row is drawn.
+    local headerSpeaker = inlineSpeaker and "" or speaker
+    local bodyText = text
+    if inlineSpeaker and speaker ~= "" then
+        bodyText = speaker .. ": " .. text
+    end
+
+    local lines = wrapText(bodyText, SPEECH_TEXT_SIZE, innerW)
+    local contentW = math.min(maxTextWidth(lines, SPEECH_TEXT_SIZE,
+        inlineSpeaker and nil or headerSpeaker,
+        inlineSpeaker and nil or SPEECH_TITLE_SIZE), innerW)
     local textX = boxLeft + (boxW - contentW) * 0.5
-    local titleH = SPEECH_TITLE_SIZE * 1.35
+    local titleH = inlineSpeaker and 0 or (SPEECH_TITLE_SIZE * 1.35)
     local bodyH  = #lines * SPEECH_LINE_H
     local _, hintRowH, hintGlyphY, hintTextY = hintRowLayout()
     local boxH   = SPEECH_PAD_TOP + titleH + bodyH + SPEECH_BODY_HINT_GAP
@@ -467,7 +488,8 @@ function VLNPCDialog:showSpeechBox(speaker, text, onClose)
     local boxTop = SPEECH_BOX_BOTTOM + boxH
 
     self.speech = {
-        speaker    = speaker,
+        speaker    = headerSpeaker,
+        inlineSpeaker = inlineSpeaker,
         lines      = lines,
         onClose    = onClose,
         eventIds   = {},
@@ -517,10 +539,13 @@ function VLNPCDialog:drawSpeech()
     renderRoundedPanel(s.boxLeft, s.boxBottom, s.boxW, s.boxH, 0, 0, 0, 0.85)
 
     setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(true)
+    if not s.inlineSpeaker then
+        setTextBold(true)
+        setTextColor(1, 1, 1, 1)
+        renderText(s.textX, s.titleY, s.titleSize, s.speaker)
+        setTextBold(false)
+    end
     setTextColor(1, 1, 1, 1)
-    renderText(s.textX, s.titleY, s.titleSize, s.speaker)
-    setTextBold(false)
 
     local y = s.firstLineY
     for _, line in ipairs(s.lines) do
@@ -877,11 +902,30 @@ function VLNPCDialog:restoreInputContextIfStuck()
     print("[ValleyLife] Restored default input context (reply selector was stuck).")
 end
 
+-- Freeze on-foot movement for a scripted speech sequence. Enter a fresh, empty
+-- input context (same technique as the reply selector) so movement actions are
+-- suspended; the speech box's own MENU_ACCEPT/SKIP_MESSAGE_BOX events, registered
+-- after this, still advance the line. Call unlockMovement() when the sequence ends.
+function VLNPCDialog:lockMovement()
+    if self._speechLockActive or g_inputBinding == nil then return end
+    local ok = pcall(function()
+        g_inputBinding:setContext(VL_SPEECH_LOCK_CONTEXT, true, false)
+    end)
+    self._speechLockActive = ok
+end
+
+function VLNPCDialog:unlockMovement()
+    if not self._speechLockActive or g_inputBinding == nil then return end
+    pcall(function() g_inputBinding:revertContext(true) end)
+    self._speechLockActive = false
+end
+
 function VLNPCDialog:delete()
     self:closeReply()
     self:closeSpeech()
     self:unregisterActionEvent()
     self:restoreInputContextIfStuck()
+    self:unlockMovement()
 end
 
 function VLNPCDialog:update(dt)

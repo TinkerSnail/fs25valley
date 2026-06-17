@@ -17,10 +17,12 @@ function TimeHelper.getDay()
     return env.currentDay or env.currentMonotonicDay or 1
 end
 
+-- FS25's environment counts in "periods" (1-12) where period 1 = March, NOT
+-- calendar months. (env.currentMonth does not exist - reading it returns nil,
+-- which previously defaulted the month to 1 and pinned every save to winter.)
+-- Convert period -> real calendar month so season + holiday logic line up.
 function TimeHelper.getSeason()
-    local env = getEnvironment()
-    if not env then return "spring" end
-    local month = env.currentMonth or 1
+    local month = TimeHelper.getCalendarMonth()
     if month >= 3 and month <= 5 then return "spring"
     elseif month >= 6 and month <= 8 then return "summer"
     elseif month >= 9 and month <= 11 then return "autumn"
@@ -38,15 +40,19 @@ function TimeHelper.isWeekend()
     return wd == 0 or wd == 6
 end
 
+-- Real calendar month (1-12) from FS25's period (1-12, period 1 = March).
+-- period 1 -> 3 (March); period 11 -> 1 (Jan); period 12 -> 2 (Feb).
 function TimeHelper.getCalendarMonth()
     local env = getEnvironment()
     if not env then return 1 end
-    return env.currentMonth or 1
+    local period = env.currentPeriod or 1
+    return ((period + 1) % 12) + 1
 end
 
 function TimeHelper.getCalendarDayOfMonth()
     local env = getEnvironment()
     if not env then return 1 end
+    if type(env.currentDayInPeriod) == "number" then return env.currentDayInPeriod end
     if type(env.getDayInPeriodFromDay) == "function" and env.currentMonotonicDay ~= nil then
         local ok, day = pcall(env.getDayInPeriodFromDay, env, env.currentMonotonicDay)
         if ok and type(day) == "number" then return day end

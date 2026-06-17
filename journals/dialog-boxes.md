@@ -45,8 +45,11 @@ Heart event step
                                                      Up/Down + Enter
 ```
 
-**Speech box** - black rounded panel, speaker name, wrapped body text, continue
-hint row (`Enter` / mouse glyphs via `InputGlyphElement`).
+**Speech box** - black rounded panel, wrapped body text, continue hint row
+(`Enter` / mouse glyphs via `InputGlyphElement`). The speaker is rendered **inline**
+(`Speaker: text…`) in one flow by default, matching the base game's tutorial
+dialogue so every conversation feels cohesive. Pass `opts.inlineSpeaker = false`
+to `showSpeechBox` for the older bold speaker-name header row instead.
 
 **Reply selector** - same panel placement and width; optional question header
 (often omitted when the line was already spoken); list of options; selected row

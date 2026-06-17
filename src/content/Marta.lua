@@ -1,10 +1,16 @@
 -- Authored heart events for Marta - "the one who holds everyone but is held by no one."
 --
--- Marta, 40s-50s. Runs the general store / diner - the town's social hub and
--- information broker; organizes every Riverbend Springs event. Warm, maternal, generous
--- to a fault, won't accept thanks. Everyone's confidante, nobody's priority:
--- she keeps the whole community together and lives small and alone in the back
--- room behind all that warmth. The loneliness of the connector.
+-- Marta, 40s-50s. Runs the Farmer's Market in Riverbend Springs - the walk-in
+-- market with the empty crates until locals supply it. Kitchen in back, counter
+-- out front, back room where she actually lives. Warm, maternal, generous to a
+-- fault; always recruiting one more farmer to fill a shelf. Won't accept thanks.
+-- Everyone's confidante, nobody's priority: she keeps the whole community
+-- together and lives small and alone behind all that warmth.
+--
+-- Mod fiction: Marta IS the market. Base-game David (FARMER) lives nearby and
+-- takes vanilla harvest contracts; he is a neighbor farmer, not the shopkeeper.
+-- The orange-shirt ambience NPCs inside the building stay decoration; Marta is
+-- who you talk to.
 --
 -- As the town's connective tissue, her arc ties the cast together - her finale
 -- is the one scene that can put the newcomer (Elara) and the elder (Kenji) in
@@ -26,13 +32,13 @@ VLEventSequencer.registerEvent({
     npcId     = "marta",
     threshold = 20,
     steps = {
-        { type = "move_npc", npcId = "marta", x = 0, y = 0, z = 0, ry = 0 },  -- TODO: store counter
+        { type = "move_npc", npcId = "marta", x = 0, y = 0, z = 0, ry = 0 },  -- TODO: Farmer's Market counter
         { type = "camera",   x = 0, y = 1.8, z = -4, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "marta",
-          text = "Oh, you look half-starved, sweetheart. Sit. No, sit - I've already got a plate coming. Don't argue with me, I run a diner." },
+          text = "Oh, you look half-starved, sweetheart. Sit. No, sit - I've already got a plate coming from the kitchen. Don't argue with me, I run this market." },
         { type = "dialogue", speaker = "marta",
-          text = "And it's on the house. New folks eat free their first season. House rule." },
+          text = "And it's on the house. New folks eat free their first season. House rule. *she glances at the empty crates* Same rule for anyone who helps me fill a shelf." },
         { type = "dialogue", speaker = "marta",
           text = "You're Walter's grandkid, aren't you - taking over his farm. Oh, that man used to sit right there and talk about you. Lit up like a porch lamp. He's so proud it's you keeping it in the family." },
         { type = "dialogue", speaker = "marta",
@@ -47,7 +53,7 @@ VLEventSequencer.registerEvent({
     branches = {
         repay = {
             { type = "dialogue", speaker = "marta",
-              text = "Pay me back? Goodness. *she waves it off* You'll pass it along to the next lost soul who wanders in. That's the only ledger I keep." },
+              text = "Pay me back? Goodness. *she waves it off* Bring me something from your fields and put it out front. That's the only ledger I keep." },
             { type = "dialogue", speaker = "marta",
               text = "Now eat before it gets cold. I didn't fuss over that for nothing." },
             { type = "end" },
@@ -76,7 +82,7 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "marta",
           text = "Oh - you weren't supposed to see back here. *she steps half in front of the doorway* It's nothing. Just where I sleep." },
         { type = "dialogue", speaker = "marta",
-          text = "A cot, a kettle, one chair. Doesn't take much when it's only you. The store's the big room; this is plenty." },
+          text = "A cot, a kettle, one chair. Doesn't take much when it's only you. The market floor's the big room; this is plenty." },
         { type = "dialogue", speaker = "marta",
           text = "*a small laugh that doesn't quite land* Listen to me. Everyone's got their whole life out front and I've got mine in a closet. Don't mind me.",
           choices = {
@@ -155,7 +161,7 @@ VLEventSequencer.registerEvent({
     threshold = 80,
     steps = {
         -- The convergence scene: Marta, and off to the side, Elara and Kenji.
-        { type = "move_npc", npcId = "marta",  x = 0, y = 0, z = 0, ry = 0 },  -- TODO: diner, decorated
+        { type = "move_npc", npcId = "marta",  x = 0, y = 0, z = 0, ry = 0 },  -- TODO: Farmer's Market, decorated for the party
         { type = "move_npc", npcId = "elara",  x = 2, y = 0, z = 0, ry = 0 },  -- TODO: stage left
         { type = "move_npc", npcId = "kenji", x = -2, y = 0, z = 0, ry = 0 }, -- TODO: stage right, awkward
         { type = "camera",   x = 0, y = 2, z = -5, lookAt = { x = 0, y = 1, z = 0 } },
@@ -199,59 +205,59 @@ VLEventSequencer.registerEvent({
 -- Daily greetings (Press R when no heart event is pending)
 -- ---------------------------------------------------------------------------
 VLCasualDialogue.register("marta", {
-    firstMeet = "Well, look who wandered in. You must be Walter's grandkid - I'm Marta. I run the store. If you're hungry, sit down before I decide for you.",
+    firstMeet = "Well, look who wandered in. Walter's grandkid, isn't it - I'm Marta. I run the Farmer's Market. Kitchen's in back, shelves are out front, and they're embarrassingly empty. If you're taking over his farm, sweetheart, we should talk about that.",
 
     stranger = {
-        "Morning, sweetheart. Coffee's on if you need it.",
-        "You're up with the sun - I like that in a farmer.",
-        "New face in town. Riverbend Springs doesn't get many. Take care of each other out here.",
-        "Don't skip meals. I can tell when someone does.",
-        "Stop by the store when you need anything. I keep the good stuff in back.",
+        "Morning, sweetheart. Coffee's on in the back if you need it.",
+        "See those empty crates? That's a invitation, not a decoration. Bring me something worth putting on a shelf.",
+        "David's neighbor farm keeps him busy - bless him - but one man can't feed a whole market.",
+        "You're up with the sun. Good. The market opens whether the shelves are full or not.",
+        "Don't skip meals. I can tell when someone does. I keep a plate warm for regulars.",
     },
 
     acquaintance = {
-        "There you are. I saved you a biscuit.",
-        "You're settling in. Good. Walter would be pleased.",
-        "Kenji came through grumbling this morning. That means he likes you.",
-        "Elara mentioned you stopped at the stand. About time someone did.",
+        "There you are. I saved you a biscuit - payment in advance for your first delivery.",
+        "You're settling in. Good. Walter would be pleased. The market could use a steady supplier too.",
+        "Kenji came through grumbling this morning. That means he likes you. He still won't sell me a tomato.",
+        "Elara mentioned you stopped at her stand. Buy from her, then bring me whatever she doesn't move. Everybody wins.",
     },
 
     friend = {
-        "Sit a minute. You look like you could use a break.",
-        "I'm fine, I'm fine - but thank you for asking.",
-        "Town's quiet today. Too quiet. Makes a person think.",
-        "You don't have to pay me back. You just have to stay.",
+        "Sit a minute. You look like you could use a break from all that empty shelf guilt I keep handing out.",
+        "I'm fine, I'm fine - but thank you for asking. The market's not fine. Same conversation.",
+        "Town's quiet today. Too quiet. Empty crates echo, you know.",
+        "You don't have to pay me back. Bring me produce. That's better than money out here.",
     },
 
     goodFriend = {
         "Back room's a mess, but the front's open. Story of my life.",
-        "You showed up when I needed it. I haven't forgotten.",
-        "Someone has to hold this town together. Might as well be me.",
-        "Sweetheart, you look tired. When's the last time someone fed you?",
+        "You showed up when I needed it. I haven't forgotten. Next time the shelves look bare, I might ask.",
+        "Someone has to hold this town together. Might as well be me - and my suppliers.",
+        "Sweetheart, when's the last time you drove a load to the market unload? Just asking. Gently.",
     },
 
     closeFriend = {
-        "Best thing that happened to this valley was you staying.",
-        "I got sat down at my own table once. Still thinking about it.",
-        "You found the thread that runs through all of us. Don't stop pulling.",
+        "Best thing that happened to this valley was you staying - and the days you actually fill a crate.",
+        "I got sat down at my own table once. Still thinking about it. The shelves looked fuller that week.",
+        "You found the thread that runs through all of us. Don't stop pulling. The market needs the tug.",
     },
 
     alreadyTalked = {
-        "We already talked today, sweetheart. Go on home.",
-        "I'm still here behind the counter. Same as always.",
-        "Save it for tomorrow - I'll have fresh gossip by then.",
+        "We already talked today, sweetheart. Go farm something for my shelves.",
+        "I'm still here behind the counter. Crates still empty. No rush. Some rush.",
+        "Save it for tomorrow - I'll have fresh gossip and hopefully fresh produce.",
     },
 
     afterEvent = {
         marta_01 = {
-            "Still on the house, by the way. House rule.",
-            "Don't you dare reach for that wallet in here.",
+            "Still on the house, by the way. House rule. Shelves still need filling, though.",
+            "Don't you dare reach for that wallet in here. Bring me a crate instead.",
         },
         marta_02 = {
-            "Back room's still small. But it's mine.",
+            "Back room's still small. But it's mine. Market floor's still too big for one woman.",
         },
         marta_03 = {
-            "Next town event's on me. ...Mostly on me.",
+            "Next town event's on me. ...Mostly on me. You already know I'll ask you to haul something.",
         },
     },
 })
