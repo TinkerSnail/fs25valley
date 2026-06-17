@@ -110,7 +110,7 @@ function VLNPCEntity.new(data)
     self._animSetupRetries = 0
     self._idleClipIdx = nil
     self._walkClipIdx = nil
-    self._walkLoop          = data.walkLoop or nil
+    self._workLoop          = data.workLoop or nil
     self._walk              = nil
     self._walkLastHour      = -1
     self._homeRy            = data.ry or 0
@@ -801,7 +801,7 @@ function VLNPCEntity:applyIdleAnimationParameters()
     end
 
     local walking = self._directTrackWalking
-    local speed   = walking and (self._walkLoop and self._walkLoop.speed or 1.2) or 0
+    local speed   = walking and (self._workLoop and self._workLoop.speed or 1.2) or 0
     set("isNPC",             not walking)
     set("isGrounded",        true)
     set("isCloseToGround",   true)
@@ -964,8 +964,10 @@ function VLNPCEntity:_startWalk()
     self:_onWalkStart()
 end
 
--- Turn rate in radians/sec. ~150°/sec feels like a natural walking pace.
-local WALK_TURN_RATE = math.rad(150)
+-- Turn rate in radians/sec while pivoting to face the next waypoint.
+local WALK_TURN_RATE = math.rad(240)
+-- If she needs to turn more than this before walking, she pivots in place first.
+local WALK_TURN_THRESHOLD = math.rad(25)
 
 local function lerpAngle(current, target, maxStep)
     local diff = target - current
@@ -978,9 +980,9 @@ end
 function VLNPCEntity:_updateWalkLoop(dt)
     if self._walk == nil then
         if not self.isTalking and TimeHelper.getOutfitMode() == "work" then
-            local halfHour = math.floor(TimeHelper.getHour() * 2)
-            if halfHour ~= self._walkLastHour then
-                self._walkLastHour = halfHour
+            local twoHourTick = math.floor(TimeHelper.getHour() / 2)
+            if twoHourTick ~= self._walkLastHour then
+                self._walkLastHour = twoHourTick
                 self:_startWalk()
             end
         end
@@ -988,9 +990,13 @@ function VLNPCEntity:_updateWalkLoop(dt)
     end
 
     local walk = self._walk
-    local waypoints = self._walkLoop.waypoints
+    local waypoints = self._workLoop.waypoints
 
     if walk.state == "pausing" then
+        if walk.pauseTargetRy then
+            local maxStep = WALK_TURN_RATE * (dt / 1000)
+            self.rotation.y = lerpAngle(self.rotation.y, walk.pauseTargetRy, maxStep)
+        end
         local hour = TimeHelper.getHour()
         local elapsed = hour - walk.pauseStartHour
         if elapsed < 0 then elapsed = elapsed + 24 end
@@ -1005,7 +1011,7 @@ function VLNPCEntity:_updateWalkLoop(dt)
     local dx = target.x - self.position.x
     local dz = target.z - self.position.z
     local dist = math.sqrt(dx * dx + dz * dz)
-    local step = (self._walkLoop.speed or 1.2) * (dt / 1000)
+    local step = (self._workLoop.speed or 1.2) * (dt / 1000)
 
     if dist <= step then
         self.position.x = target.x
@@ -1024,25 +1030,32 @@ function VLNPCEntity:_updateWalkLoop(dt)
             walk.state = "pausing"
             walk.pauseStartHour = TimeHelper.getHour()
             walk.pauseMinutesRequired = pauseMin
+            walk.pauseTargetRy = target.pauseRy
             self:_onWalkEnd()
         end
     else
         local nx = dx / dist
         local nz = dz / dist
 
-        self.position.x = self.position.x + nx * step
-        self.position.z = self.position.z + nz * step
-
-        -- Smooth rotation: gradually turn to face the movement direction.
+        -- Rotate toward movement direction. If the angle gap is large, pivot in
+        -- place first so she doesn't moonwalk sideways to the next waypoint.
         local targetRy = math.atan2(nx, nz)
         local maxStep = WALK_TURN_RATE * (dt / 1000)
         self.rotation.y = lerpAngle(self.rotation.y, targetRy, maxStep)
+
+        local diff = targetRy - self.rotation.y
+        while diff >  math.pi do diff = diff - 2 * math.pi end
+        while diff < -math.pi do diff = diff + 2 * math.pi end
+        if math.abs(diff) <= WALK_TURN_THRESHOLD then
+            self.position.x = self.position.x + nx * step
+            self.position.z = self.position.z + nz * step
+        end
     end
 end
 
 function VLNPCEntity:update(dt)
     if not nodeValid(self.rootNode) then return end
-    if self._walkLoop then
+    if self._workLoop then
         self:_updateWalkLoop(dt)
     end
     local y = terrainY(self.position.x, self.position.z, self.position.y or 0)

@@ -412,12 +412,27 @@ function VLConsole:forceWalk(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
     local npc = g_valleyLife.npcs[npcId]
     if npc == nil then return string.format("[ValleyLife] Unknown NPC '%s'.", tostring(npcId)) end
-    if npc._walkLoop == nil then return string.format("[ValleyLife] '%s' has no walk loop.", npcId) end
+    if npc._workLoop == nil then return string.format("[ValleyLife] '%s' has no walk loop.", npcId) end
     npc:_onWalkEnd()
     npc._walk = nil
     npc._walkLastHour = -1
     npc:_startWalk()
     return string.format("[ValleyLife] Walk loop started for '%s'.", npcId)
+end
+
+-- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
+function VLConsole:skipPause(npcId)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local npc = g_valleyLife.npcs[npcId]
+    if npc == nil then return string.format("[ValleyLife] Unknown NPC '%s'.", tostring(npcId)) end
+    local walk = npc._walk
+    if walk == nil then return string.format("[ValleyLife] '%s' is not on a walk loop right now.", npcId) end
+    if walk.state ~= "pausing" then
+        return string.format("[ValleyLife] '%s' is not pausing (state = %s).", npcId, tostring(walk.state))
+    end
+    walk.state = "walking"
+    npc:_onWalkStart()
+    return string.format("[ValleyLife] '%s' is now walking to waypoint %d.", npcId, tostring(walk.targetIdx))
 end
 
 -- vlWalterIntro: force-play Walter's post-tour market introduction (bypasses the
@@ -1138,6 +1153,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlGuidedTour", "Probe GuidedTour class/instance methods (find hook names)", "probeGuidedTour", VLConsole)
     addConsoleCommand("vlAnimClips", "Dump animation clip names for a villager: vlAnimClips <npcId>", "dumpAnimClips", VLConsole)
     addConsoleCommand("vlWalk", "Force-start a villager's walk loop: vlWalk <npcId>", "forceWalk", VLConsole)
+    addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)

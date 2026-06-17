@@ -22,12 +22,16 @@ For project overview, install, and controls, see the root [README.md](../README.
 - [walter-guided-tour.md](walter-guided-tour.md) - base-game intro tour: why
   Walter's `.gar` dialog is **un-editable**, his reconstructed closing speech,
   and the `GuidedTour.finish`/`cancel` **injection seam** for a post-tour town beat.
+- [npc-movement.md](npc-movement.md) - **work loop system**: waypoints, walk
+  animation clips, turn-then-walk behavior, `pauseMinutes` (game time), `pauseRy`,
+  and hand props research.
 - [dumps/](dumps/) - raw captured output from in-game diagnostic commands.
 
 ## Conventions
 
-- Current mod version: **0.1.0.47** (check `modDesc.xml` / log line
-  `Valley Life 0.1.0.47 loaded`).
+- Current mod version: **0.1.0.70** (check `modDesc.xml` / log line
+  `Valley Life 0.1.0.XX loaded` — displayed version may be stale/cached, but new
+  code IS running if log messages reflect recent changes).
 - When a diagnostic command (e.g. `vlStyle`, `vlHairColors`) produces output we
   want to keep, paste the raw log block into `journals/dumps/` with a dated
   filename, and summarize the takeaway in the relevant topic file.

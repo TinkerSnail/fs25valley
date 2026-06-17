@@ -44,13 +44,19 @@ VLConfig.VILLAGER_SPAWNS = {
     elara  = { x = -707.46, y = 47.34, z = 142.0, ry = math.pi },
     kenji = { x = -704.46, y = 47.34, z = 142.0, ry = math.pi },
     marta  = { x = 412.66, y = 71.39, z = -669.52, ry = math.pi - math.rad(30),
-        walkLoop = {
+        workLoop = {
             waypoints = {
-                { x = 412.66, z = -669.52 },                              -- [1] home
+                { x = 412.66, z = -669.52 },                             -- [1] office wall
                 { x = 413.54, z = -686.39 },                             -- [2] door threshold
                 { x = 413.52, z = -688.02 },                             -- [3] clear of door
-                { x = 411.21, z = -688.28, pauseMinutes = 20 },          -- [4] destination
-                { x = 423.66, z = -660.75 },                             -- [5] return leg
+                { x = 411.21, z = -688.28, pauseMinutes = 30 },         -- [4] mailbox
+                { x = 413.52, z = -688.02 },                             -- [5] clear of door (return)
+                { x = 413.54, z = -686.39 },                             -- [6] door threshold (return)
+                { x = 414.01, z = -676.89 },                             -- [7] path to bulletin board
+                { x = 419.96, z = -674.78 },                             -- [8] path to bulletin board
+                { x = 420.60, z = -660.64 },                             -- [9] path to bulletin board
+                { x = 423.66, z = -660.75, pauseMinutes = 30, pauseRy = math.rad(-45) }, -- [10] bulletin board
+                { x = 413.61, z = -660.48 },                             -- [11] path to office wall
             },
             speed = 1.2,  -- m/s
         }

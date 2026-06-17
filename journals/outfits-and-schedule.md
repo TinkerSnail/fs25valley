@@ -74,7 +74,7 @@ seasons (see `SEASON_WORK_FALLBACK` / `SEASON_LEISURE_FALLBACK` in
 
 **Face, hair, beard** always come from `appearanceBase` regardless of mode.
 
-**Mod version:** 0.1.0.47
+**Mod version:** 0.1.0.70
 
 ## Automatic outfit triggers (runtime)
 
@@ -143,10 +143,44 @@ Plus **default leisure** (synthetic onepiece) if no seasonal leisure matches.
 
 | Slot | Spring | Summer | Fall | Winter |
 |---|---|---|---|---|
-| **Work** | (fallback) blouse/capris | ✓ blouse/capris | ✓ vest/yoga | ✓ farm jacket |
+| **Work** | (fallback → summer) | ✓ onepiece jeans + horse gloves | ✓ vest/yoga | ✓ farm jacket |
 | **Leisure** | ✓ sweater/skirt | ✓ collared/skirt | ✓ pullover/wrap skirt | ✓ leather/chelsea |
 
 **Base:** face 5, hair 16 c23
+
+Summer work baked as of 0.1.0.70:
+```lua
+appearanceSummerWork = {
+    onepiece = { item = 4, color = 6 },  -- onePieceJeans
+    gloves   = { item = 2 },             -- glovesHorseRiding
+    glasses  = { item = 1 },             -- none
+},
+```
+
+## Diagnosing "wrong outfit" in-game
+
+If an NPC appears in the wrong outfit after a repack, check two things before
+assuming a code bug:
+
+**1. What time and day is it in-game?**
+
+Open `savegame*/environment.xml` while the game is closed:
+
+```xml
+<dayTime>932.464661</dayTime>   <!-- ms since midnight; divide by 3600000 for hour -->
+<currentDay>6</currentDay>       <!-- monotonic day counter -->
+```
+
+- `dayTime / 3600000` → current hour (e.g. 0.26 = 12:16 AM → leisure)
+- `currentDay % 7 == 0 or 6` → weekend → **leisure all day**
+
+**2. Is it a weekend?**
+
+`TimeHelper.getWeekday()` = `currentDay % 7`. Values 0 and 6 are weekend.
+Work outfit never activates on weekends or holidays regardless of the hour.
+
+If both conditions confirm you're in work mode and the outfit still looks
+wrong, then check the outfit config and re-read the baking checklist above.
 
 ## Gaps (TODO)
 

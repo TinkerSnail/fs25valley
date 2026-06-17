@@ -70,6 +70,20 @@ yet change outfit mode.
 |---|---|---|
 | `vlPos` | `vlPos` | Player world position formatted for `VLConfig.VILLAGER_SPAWNS`. |
 
+## NPC movement (work loop)
+
+| Command | Usage | What it does |
+|---|---|---|
+| `vlWalk` | `vlWalk <npcId>` | Force-start the NPC's work loop from waypoint 2 immediately (bypasses the 2-hour tick). |
+| `vlSkipPause` | `vlSkipPause <npcId>` | Skip the current pause and trigger movement to the next waypoint. |
+| `vlAnimClips` | `vlAnimClips <npcId>` | Enumerate all animation clip names (indices 0–120) on the NPC's char set. Useful for discovering walk/idle clip names. |
+
+Work loops only run during **work mode** (Mon–Fri 5:30 AM–4:30 PM). Use `vlWalk`
+to test without waiting for the 2-hour trigger. Use `vlSkipPause` to fast-forward
+through a `pauseMinutes` stop without touching the clock.
+
+See [npc-movement.md](npc-movement.md) for full work loop documentation.
+
 ## Appearance diagnostics
 
 | Command | Usage | What it does |

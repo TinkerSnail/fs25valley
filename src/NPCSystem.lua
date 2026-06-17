@@ -143,10 +143,9 @@ local VILLAGERS = {
         hairStyle = { item = 16, color = 23 },
       },
       appearanceSummerWork = {
-        top = { item = 7 },
-        bottom = { item = 8 },
-        footwear = { item = 10 },
-        glasses = { item = 1 },
+        onepiece = { item = 4, color = 6 },
+        gloves   = { item = 2 },
+        glasses  = { item = 1 },
       },
       appearanceFallWork = {
         top = { item = 18 },
@@ -200,7 +199,7 @@ local VILLAGERS = {
       },
       x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,
       z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry,
-      walkLoop = VLConfig.VILLAGER_SPAWNS.marta.walkLoop },
+      workLoop = VLConfig.VILLAGER_SPAWNS.marta.workLoop },
 }
 
 function VLNPCSystem.new()
