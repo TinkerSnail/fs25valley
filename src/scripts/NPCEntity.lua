@@ -90,6 +90,20 @@ function VLNPCEntity.new(data)
     if data.appearanceSpringLeisure ~= nil then
         self.seasonalLeisureOutfits.spring = data.appearanceSpringLeisure
     end
+    self.appearanceDate = data.appearanceDate or nil
+    self.seasonalDateOutfits = data.seasonalDateOutfits or {}
+    if data.appearanceSummerDate ~= nil then
+        self.seasonalDateOutfits.summer = data.appearanceSummerDate
+    end
+    if data.appearanceFallDate ~= nil then
+        self.seasonalDateOutfits.autumn = data.appearanceFallDate
+    end
+    if data.appearanceWinterDate ~= nil then
+        self.seasonalDateOutfits.winter = data.appearanceWinterDate
+    end
+    if data.appearanceSpringDate ~= nil then
+        self.seasonalDateOutfits.spring = data.appearanceSpringDate
+    end
     if type(self.appearanceWork) == "table" and next(self.appearanceWork) ~= nil
         and self.seasonalWorkOutfits.summer == nil then
         self.seasonalWorkOutfits.summer = self.appearanceWork
@@ -110,7 +124,8 @@ function VLNPCEntity.new(data)
     self._animSetupRetries = 0
     self._idleClipIdx = nil
     self._walkClipIdx = nil
-    self._workLoop          = data.workLoop or nil
+    self._workLoops         = data.workLoops or (data.workLoop and {data.workLoop} or nil)
+self._workLoop          = nil
     self._walk              = nil
     self._walkLastHour      = -1
     self._homeRy            = data.ry or 0
@@ -188,6 +203,43 @@ function VLNPCEntity:getEditableLeisureOutfit()
     return self.appearanceLeisure
 end
 
+function VLNPCEntity:usesSeasonalDateOutfits()
+    if type(self.seasonalDateOutfits) ~= "table" then return false end
+    for _, outfit in pairs(self.seasonalDateOutfits) do
+        if outfitHasLayers(outfit) then return true end
+    end
+    return false
+end
+
+function VLNPCEntity:getActiveDateOutfit()
+    if self:usesSeasonalDateOutfits() then
+        local season = TimeHelper.getSeason()
+        local primary = self.seasonalDateOutfits[season]
+        if outfitHasLayers(primary) then return primary end
+        local fallbacks = SEASON_LEISURE_FALLBACK[season]
+        if fallbacks ~= nil then
+            for _, fb in ipairs(fallbacks) do
+                local o = self.seasonalDateOutfits[fb]
+                if outfitHasLayers(o) then return o end
+            end
+        end
+    end
+    if outfitHasLayers(self.appearanceDate) then return self.appearanceDate end
+    return self:getActiveLeisureOutfit()
+end
+
+function VLNPCEntity:getEditableDateOutfit()
+    if self:usesSeasonalDateOutfits() then
+        local season = TimeHelper.getSeason()
+        if self.seasonalDateOutfits[season] == nil then
+            self.seasonalDateOutfits[season] = {}
+        end
+        return self.seasonalDateOutfits[season]
+    end
+    self.appearanceDate = self.appearanceDate or {}
+    return self.appearanceDate
+end
+
 function VLNPCEntity:getActiveWorkOutfit()
     if not self:usesSeasonalWorkOutfits() then
         return self.appearanceWork
@@ -217,7 +269,14 @@ function VLNPCEntity:getEditableWorkOutfit()
 end
 
 function VLNPCEntity:refreshMergedAppearance()
-    local outfit = self._outfitMode == "leisure" and self:getActiveLeisureOutfit() or self:getActiveWorkOutfit()
+    local outfit
+    if self._outfitMode == "date" then
+        outfit = self:getActiveDateOutfit()
+    elseif self._outfitMode == "leisure" then
+        outfit = self:getActiveLeisureOutfit()
+    else
+        outfit = self:getActiveWorkOutfit()
+    end
     self.appearance = mergeAppearance(self.appearanceBase, outfit)
 end
 
@@ -256,7 +315,7 @@ function VLNPCEntity:desiredOutfitMode()
 end
 
 function VLNPCEntity:setOutfitMode(mode, opts)
-    if mode ~= "work" and mode ~= "leisure" then return false end
+    if mode ~= "work" and mode ~= "leisure" and mode ~= "date" then return false end
     opts = opts or {}
     if mode == self._outfitMode and not opts.force then
         return false
@@ -960,6 +1019,9 @@ end
 
 function VLNPCEntity:_startWalk()
     if self._walk ~= nil then return end
+    if self.rootNode and entityExists(self.rootNode) then
+        setVisibility(self.rootNode, true)
+    end
     self._walk = { state = "walking", targetIdx = 2 }
     self:_onWalkStart()
 end
@@ -977,13 +1039,28 @@ local function lerpAngle(current, target, maxStep)
     return current + (diff > 0 and maxStep or -maxStep)
 end
 
+function VLNPCEntity:_getActiveWorkLoop()
+    if not self._workLoops then return nil end
+    local hour = TimeHelper.getHour()
+    for _, loop in ipairs(self._workLoops) do
+        if hour >= (loop.startHour or 0) and hour < (loop.endHour or 24) then
+            return loop
+        end
+    end
+    return nil
+end
+
 function VLNPCEntity:_updateWalkLoop(dt)
     if self._walk == nil then
         if not self.isTalking and TimeHelper.getOutfitMode() == "work" then
-            local twoHourTick = math.floor(TimeHelper.getHour() / 2)
-            if twoHourTick ~= self._walkLastHour then
-                self._walkLastHour = twoHourTick
-                self:_startWalk()
+            local activeLoop = self:_getActiveWorkLoop()
+            if activeLoop then
+                local twoHourTick = math.floor(TimeHelper.getHour() / 2)
+                if twoHourTick ~= self._walkLastHour then
+                    self._walkLastHour = twoHourTick
+                    self._workLoop = activeLoop
+                    self:_startWalk()
+                end
             end
         end
         return
@@ -1020,6 +1097,9 @@ function VLNPCEntity:_updateWalkLoop(dt)
             self._walk = nil
             self.rotation.y = self._homeRy
             self:_onWalkEnd()
+            if self._workLoop.despawnOnEnd and self.rootNode and entityExists(self.rootNode) then
+                setVisibility(self.rootNode, false)
+            end
             return
         end
         local pauseMin = target.pauseMinutes
@@ -1055,7 +1135,7 @@ end
 
 function VLNPCEntity:update(dt)
     if not nodeValid(self.rootNode) then return end
-    if self._workLoop then
+    if self._workLoops then
         self:_updateWalkLoop(dt)
     end
     local y = terrainY(self.position.x, self.position.z, self.position.y or 0)

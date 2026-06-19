@@ -25,17 +25,20 @@ function TimeHelper.getSeason()
 end
 
 -- 0 = Sunday, 1 = Monday, … 6 = Saturday.
--- Anchored to the game calendar: Jan 1 is always Monday, independent of save
--- start day. dayOfYear = (month-1)*daysPerPeriod + dayOfMonth; % 7 gives
--- Mon=1 on Jan 1, Sat=6 on Jan 6, Sun=0 on Jan 7, repeating.
+-- Uses currentMonotonicDay (total days since save start, 1-based) so day 1 of
+-- any save is always Monday, regardless of starting period or daysPerPeriod.
+-- Falls back to the calendar formula only when currentMonotonicDay is unavailable.
 function TimeHelper.getWeekday()
     local env = getEnvironment()
     if not env then return 1 end
+    local mday = env.currentMonotonicDay
+    if type(mday) == "number" and mday >= 1 then
+        return mday % 7
+    end
     local month = TimeHelper.getCalendarMonth()
     local dayOfMonth = TimeHelper.getCalendarDayOfMonth()
-    local daysPerPeriod = env.daysPerPeriod or 1
-    local dayOfYear = (month - 1) * daysPerPeriod + dayOfMonth
-    return dayOfYear % 7
+    local daysPerPeriod = env.daysPerPeriod or 28
+    return ((month - 1) * daysPerPeriod + dayOfMonth) % 7
 end
 
 function TimeHelper.isWeekend()

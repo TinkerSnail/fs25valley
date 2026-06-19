@@ -167,6 +167,12 @@ local VILLAGERS = {
         glasses = { item = 1 },
       },
       appearanceSummerLeisure = {
+        top = { item = 2, color = 7 },
+        bottom = { item = 8, color = 5 },
+        footwear = { item = 3, color = 6 },
+        glasses = { item = 1 },
+      },
+      appearanceSummerDate = {
         top = { item = 4 },
         bottom = { item = 11 },
         footwear = { item = 12 },
@@ -199,7 +205,7 @@ local VILLAGERS = {
       },
       x = VLConfig.VILLAGER_SPAWNS.marta.x,  y = VLConfig.VILLAGER_SPAWNS.marta.y,
       z = VLConfig.VILLAGER_SPAWNS.marta.z,  ry = VLConfig.VILLAGER_SPAWNS.marta.ry,
-      workLoop = VLConfig.VILLAGER_SPAWNS.marta.workLoop },
+      workLoops = VLConfig.VILLAGER_SPAWNS.marta.workLoops },
 }
 
 function VLNPCSystem.new()
@@ -226,7 +232,14 @@ function VLNPCSystem:setFlag(name, value)
 end
 
 function VLNPCSystem:initialize()
-    print("[ValleyLife] Initializing...")
+    local env = g_currentMission and g_currentMission.environment
+    local mday = env and env.currentMonotonicDay
+    local hour = TimeHelper.getHour()
+    local weekday = TimeHelper.getWeekday()
+    local mode = TimeHelper.getOutfitMode()
+    local reason = TimeHelper.getOutfitModeReason()
+    print(string.format("[ValleyLife] Initializing... monotonicDay=%s weekday=%d hour=%.1f outfitMode=%s (%s)",
+        tostring(mday), weekday, hour, mode, reason))
     for _, def in ipairs(VILLAGERS) do
         local npc = VLNPCEntity.new(def)
         self.npcs[def.id] = npc

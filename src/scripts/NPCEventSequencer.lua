@@ -86,6 +86,11 @@ function VLEventSequencer:abortActive()
         g_valleyLife.dialog:closeSpeech()
     end
     self:releaseCameraControl()
+    if self._outfitLockedNpc then
+        local npc = self.npcSystem:getNPC(self._outfitLockedNpc)
+        if npc then npc:syncOutfitToCalendar() end
+        self._outfitLockedNpc = nil
+    end
     self.active       = false
     self.currentEvent = nil
     self.currentSteps = nil
@@ -116,6 +121,7 @@ function VLEventSequencer:startEvent(event)
     self.currentEvent  = event
     self.currentSteps  = event.steps   -- which sequence is playing (main line or a branch)
     self.stepIndex     = 1
+    self._outfitLockedNpc = nil
     self:advanceStep()
 end
 
@@ -199,6 +205,15 @@ function VLEventSequencer:executeStep(step)
                 end
             end
         })
+
+    elseif step.type == "set_outfit" then
+        local npc = self.npcSystem:getNPC(step.npcId)
+        if npc then
+            npc:setOutfitMode(step.mode or "date", { force = true })
+            npc:setOutfitCalendarLocked(true)
+            self._outfitLockedNpc = step.npcId
+        end
+        self:advanceStep()
 
     elseif step.type == "end" then
         self:endEvent()

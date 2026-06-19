@@ -44,22 +44,77 @@ VLConfig.VILLAGER_SPAWNS = {
     elara  = { x = -707.46, y = 47.34, z = 142.0, ry = math.pi },
     kenji = { x = -704.46, y = 47.34, z = 142.0, ry = math.pi },
     marta  = { x = 412.66, y = 71.39, z = -669.52, ry = math.pi - math.rad(30),
-        workLoop = {
-            waypoints = {
-                { x = 412.66, z = -669.52 },                             -- [1] office wall
-                { x = 413.54, z = -686.39 },                             -- [2] door threshold
-                { x = 413.52, z = -688.02 },                             -- [3] clear of door
-                { x = 411.21, z = -688.28, pauseMinutes = 30 },         -- [4] mailbox
-                { x = 413.52, z = -688.02 },                             -- [5] clear of door (return)
-                { x = 413.54, z = -686.39 },                             -- [6] door threshold (return)
-                { x = 414.01, z = -676.89 },                             -- [7] path to bulletin board
-                { x = 419.96, z = -674.78 },                             -- [8] path to bulletin board
-                { x = 420.60, z = -660.64 },                             -- [9] path to bulletin board
-                { x = 423.66, z = -660.75, pauseMinutes = 30, pauseRy = math.rad(-45) }, -- [10] bulletin board
-                { x = 413.61, z = -660.48 },                             -- [11] path to office wall
+        workLoops = {
+            {
+                startHour = 6, endHour = 9,
+                speed = 1.2,
+                waypoints = {
+                    { x = 412.66, z = -669.52 },                             -- [1] office wall
+                    { x = 413.54, z = -686.39 },                             -- [2] door threshold
+                    { x = 413.52, z = -688.02 },                             -- [3] clear of door
+                    { x = 411.21, z = -688.28, pauseMinutes = 30 },         -- [4] mailbox
+                    { x = 413.52, z = -688.02 },                             -- [5] clear of door (return)
+                    { x = 413.54, z = -686.39 },                             -- [6] door threshold (return)
+                    { x = 414.01, z = -676.89 },                             -- [7] path to bulletin board
+                    { x = 419.96, z = -674.78 },                             -- [8] path to bulletin board
+                    { x = 420.60, z = -660.64 },                             -- [9] path to bulletin board
+                    { x = 423.66, z = -660.75, pauseMinutes = 30, pauseRy = math.rad(-45) }, -- [10] bulletin board
+                    { x = 413.61, z = -660.48 },                             -- [11] path to office wall
+                },
             },
-            speed = 1.2,  -- m/s
-        }
+            {
+                startHour = 13, endHour = 16,
+                speed = 1.2,
+                waypoints = {
+                    { x = 412.66, z = -669.52 },                             -- [1] office wall
+                    { x = 413.07, z = -658.99 },                             -- [2] north extension
+                    { x = 431.16, z = -645.66 },                             -- [3] path to ring toss
+                    { x = 430.28, z = -640.32, pauseMinutes = 5, pauseRy = math.rad(-90) }, -- [4] ring toss
+                    { x = 449.85, z = -636.69, pauseMinutes = 10 },          -- [5] flower stand
+                    { x = 426.84, z = -605.53 },                             -- [6] door of barn
+                    { x = 426.92, z = -588.86 },                             -- [7] back of barn
+                    { x = 427.83, z = -583.20 },                             -- [8] barn path
+                    { x = 460.05, z = -582.60 },                             -- [9] driveway
+                    { x = 459.75, z = -607.23 },                             -- [10] driveway2
+                    { x = 467.26, z = -607.22 },                             -- [11] playground1
+                    { x = 469.93, z = -618.51 },                             -- [12] playground2
+                    { x = 471.87, z = -630.27 },                             -- [13] playground3
+                    { x = 473.03, z = -638.19 },                             -- [14] playground4
+                    { x = 482.45, z = -638.47 },                             -- [15] shed1
+                    { x = 483.02, z = -652.93 },                             -- [16] shed2
+                    { x = 486.21, z = -652.32, pauseMinutes = 3, pauseRy = math.rad(135) }, -- [17] shed3
+                    { x = 483.90, z = -653.60 },                             -- [18] shed4
+                    { x = 484.05, z = -656.97 },                             -- [19] shed5
+                    { x = 482.02, z = -657.10 },                             -- [20] shed6
+                    { x = 482.46, z = -666.37 },                             -- [21] shed7
+                    { x = 479.71, z = -666.77 },                             -- [22] house1
+                    { x = 479.33, z = -671.07 },                             -- [23] house2
+                    { x = 460.48, z = -670.69 },                             -- [24] house3
+                    { x = 460.36, z = -628.44 },                             -- [25] house4
+                },
+            },
+            {
+                startHour = 16,
+                speed = 1.2,
+                despawnOnEnd = true,
+                waypoints = {
+                    { x = 462.89, z = -652.53 },                             -- [1] door threshold (despawn)
+                    { x = 413.07, z = -658.99 },                             -- [2] north extension
+                    { x = 460.36, z = -628.44 },                             -- [3] house4
+                    { x = 460.28, z = -652.39 },                             -- [4] house5
+                },
+            },
+            {
+                startHour = 5.5, endHour = 6,
+                speed = 1.2,
+                waypoints = {
+                    { x = 412.66, z = -669.52 },                             -- [1] office wall (termination)
+                    { x = 460.28, z = -652.39 },                             -- [2] house5
+                    { x = 460.36, z = -628.44 },                             -- [3] house4
+                    { x = 413.07, z = -658.99 },                             -- [4] north extension
+                },
+            },
+        },
     },
 }
 

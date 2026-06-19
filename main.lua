@@ -408,16 +408,27 @@ function VLConsole:dumpAnimClips(npcId)
 end
 
 -- vlWalk: force-start the walk loop for a villager (bypasses the half-hour timer).
-function VLConsole:forceWalk(npcId)
+function VLConsole:forceWalk(npcId, loopIndex)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
     local npc = g_valleyLife.npcs[npcId]
     if npc == nil then return string.format("[ValleyLife] Unknown NPC '%s'.", tostring(npcId)) end
-    if npc._workLoop == nil then return string.format("[ValleyLife] '%s' has no walk loop.", npcId) end
-    npc:_onWalkEnd()
+    if not npc._workLoops then return string.format("[ValleyLife] '%s' has no walk loops.", npcId) end
+    local idx = tonumber(loopIndex)
+    if idx then
+        local loop = npc._workLoops[idx]
+        if loop == nil then
+            return string.format("[ValleyLife] '%s' has no loop %d (max %d).", npcId, idx, #npc._workLoops)
+        end
+        npc._workLoop = loop
+    else
+        npc._workLoop = npc:_getActiveWorkLoop() or npc._workLoops[1]
+    end
+    if npc._walk then npc:_onWalkEnd() end
     npc._walk = nil
     npc._walkLastHour = -1
     npc:_startWalk()
-    return string.format("[ValleyLife] Walk loop started for '%s'.", npcId)
+    local which = idx or "active"
+    return string.format("[ValleyLife] Walk loop %s started for '%s'.", tostring(which), npcId)
 end
 
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
@@ -1074,15 +1085,19 @@ function VLConsole:printSeason()
     local env = g_currentMission and g_currentMission.environment
     local rawPeriod = env and env.currentPeriod
     local rawSeason = env and env.currentSeason
+    local mday = env and env.currentMonotonicDay
     local month = TimeHelper.getCalendarMonth()
+    local dayOfMonth = TimeHelper.getCalendarDayOfMonth()
     local season = TimeHelper.getSeason()
     local hour = TimeHelper.getHour()
+    local weekday = TimeHelper.getWeekday()
+    local WDNAMES = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"}
     local outfit = TimeHelper.getOutfitMode()
     local reason = TimeHelper.getOutfitModeReason()
     local msg = string.format(
-        "[ValleyLife] period=%s engineSeason=%s -> month %d, season '%s' (hour %.1f). Outfit: %s (%s). Work commands edit %s look.",
-        tostring(rawPeriod), tostring(rawSeason), month, season, hour, outfit, reason,
-        outfit == "work" and season or (season .. " leisure"))
+        "[ValleyLife] period=%s engineSeason=%s -> month %d day %d, season '%s'. monotonicDay=%s weekday=%d(%s) hour=%.1f. Outfit: %s (%s).",
+        tostring(rawPeriod), tostring(rawSeason), month, dayOfMonth, season,
+        tostring(mday), weekday, WDNAMES[weekday + 1] or "?", hour, outfit, reason)
     print(msg)
     return msg
 end
@@ -1121,8 +1136,8 @@ function VLConsole:setOutfitMode(npcId, mode)
         print(msg)
         return msg
     end
-    if m ~= "work" and m ~= "leisure" then
-        return "[ValleyLife] Usage: vlOutfit " .. tostring(npcId) .. " <work|leisure|auto>"
+    if m ~= "work" and m ~= "leisure" and m ~= "date" then
+        return "[ValleyLife] Usage: vlOutfit " .. tostring(npcId) .. " <work|leisure|date|auto>"
     end
     if type(npc.setOutfitMode) ~= "function" then
         return "[ValleyLife] Outfit modes unavailable on this NPC."
@@ -1132,7 +1147,7 @@ function VLConsole:setOutfitMode(npcId, mode)
         npc:setOutfitCalendarLocked(true)
     end
     local season = TimeHelper.getSeason()
-    local seasonLabel = m == "work" and season or (season .. " leisure")
+    local seasonLabel = m == "work" and (season .. " work") or (m == "date" and (season .. " date") or (season .. " leisure"))
     local msg = string.format(
         "[ValleyLife] %s outfit -> %s (preview; calendar paused). Clothing commands edit %s look.",
         npcId, m, seasonLabel)

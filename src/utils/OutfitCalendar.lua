@@ -17,7 +17,7 @@ end
 function OutfitCalendar:sync()
     self.season = TimeHelper.getSeason()
     self.month = TimeHelper.getCalendarMonth()
-    self.day = TimeHelper.getDay()
+    self.day = TimeHelper.getCalendarDayOfMonth()
     self.mode = TimeHelper.getOutfitMode()
     self._ready = true
 end
@@ -26,7 +26,7 @@ end
 function OutfitCalendar:poll()
     local season = TimeHelper.getSeason()
     local month = TimeHelper.getCalendarMonth()
-    local day = TimeHelper.getDay()
+    local day = TimeHelper.getCalendarDayOfMonth()
     local mode = TimeHelper.getOutfitMode()
 
     local seasonChanged = self._ready and (season ~= self.season or month ~= self.month)
