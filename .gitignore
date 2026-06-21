@@ -1,5 +1,8 @@
-# Local editor / agent settings
-.claude/
+# Editor / agent settings — shared hooks & process ARE version-controlled (see .claude/),
+# but local-only overrides and per-session runtime markers are not.
+.claude/settings.local.json
+.claude/.session-start
+.claude/.preflight
 .cursor/
 
 # macOS
