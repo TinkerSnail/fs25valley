@@ -25,6 +25,13 @@ For project overview, install, and controls, see the root [README.md](../README.
 - [npc-movement.md](npc-movement.md) - **work loop system**: waypoints, walk
   animation clips, turn-then-walk behavior, `pauseMinutes` (game time), `pauseRy`,
   and hand props research.
+- [game-files-and-xml.md](game-files-and-xml.md) - **how to research base-game
+  behavior**: resource directory paths, key XML files (`maps_npcs.xml`,
+  `guidedTour_intro.xml`, `pedestrianSystem.xml`), search patterns, and what is
+  vs. isn't readable (`.gar` is sealed).
+- [development-process.md](development-process.md) - **`.claude` failsafes**: auto-repack
+  hook, session-context injection, the **R-table gate** (how to operate it, multi-edit
+  gotcha), build verifier, and which `log.txt` to read.
 - [dumps/](dumps/) - raw captured output from in-game diagnostic commands.
 
 ## Conventions
@@ -39,6 +46,9 @@ For project overview, install, and controls, see the root [README.md](../README.
   reasoning is preserved.
 - **Bake outfits** in `src/NPCSystem.lua`; console tweaks are live-only. Repack
   with `./repack.sh` → full FS25 relaunch.
+- **After every code edit: repack then relaunch.** Run `./repack.sh` from the
+  project root immediately after any `.lua` change — Claude should do this
+  automatically after edits without being asked.
 
 ## Villagers
 

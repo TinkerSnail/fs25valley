@@ -18,6 +18,7 @@ source(modDir .. "src/scripts/NPCEntity.lua")
 source(modDir .. "src/scripts/NPCScheduler.lua")
 source(modDir .. "src/scripts/NPCEventSequencer.lua")
 source(modDir .. "src/scripts/NPCCasualDialogue.lua")
+source(modDir .. "src/scripts/WalterWalker.lua")
 
 -- 4. GUI (depends on subsystems)
 source(modDir .. "src/gui/NPCDialog.lua")
@@ -40,6 +41,12 @@ local function isCareerMission()
         and (FSCareerMission == nil or g_currentMission:isa(FSCareerMission))
 end
 
+local function vlApplyWalterPosition()
+    if g_valleyLife and g_valleyLife.walterWalker then
+        pcall(function() g_valleyLife.walterWalker:applyPosition() end)
+    end
+end
+
 local function onMissionLoaded(mission, node)
     if g_valleyLife ~= nil then return end   -- guard against double-init
     if not isCareerMission() then return end
@@ -49,6 +56,23 @@ local function onMissionLoaded(mission, node)
 
     -- Load saved state if a savegame exists (new games have no savegameDirectory yet).
     g_valleyLife:loadFromFile(g_currentMission.missionInfo)
+
+    -- Hook g_npcManager after mission load so we run after HumanGraphicsComponent.
+    -- This is later than our FSBaseMission.draw hook, so the game can't append after us.
+    if g_npcManager then
+        if type(g_npcManager.update) == "function" then
+            g_npcManager.update = Utils.appendedFunction(g_npcManager.update, function(mgr, dt)
+                vlApplyWalterPosition()
+            end)
+            print("[ValleyLife] Hooked g_npcManager.update for WalterWalker.")
+        end
+        if type(g_npcManager.draw) == "function" then
+            g_npcManager.draw = Utils.appendedFunction(g_npcManager.draw, function(mgr)
+                vlApplyWalterPosition()
+            end)
+            print("[ValleyLife] Hooked g_npcManager.draw for WalterWalker.")
+        end
+    end
 end
 
 local function onMissionUpdate(mission, dt)
@@ -71,6 +95,10 @@ end
 local function onMissionDraw(mission)
     if g_valleyLife and g_valleyLife.dialog then
         g_valleyLife.dialog:draw()
+    end
+    -- Apply Walter's position in draw phase so we run after all NPC update logic.
+    if g_valleyLife and g_valleyLife.walterWalker then
+        pcall(function() g_valleyLife.walterWalker:applyPosition() end)
     end
 end
 
@@ -1080,6 +1108,482 @@ function VLConsole:setFacegearColor(npcId, color)
     return self:setStyleConfigColor(npcId, "facegear", color, "vlFacegearColor")
 end
 
+-- vlGrandpa: probe every plausible runtime path to the base-game GRANDPA NPC object
+-- so we can get his rootNode and move him. Run in-game; read log.txt for results.
+function VLConsole:probeGrandpa()
+    local found = {}
+
+    local function tryNode(label, obj)
+        if obj == nil then return end
+        local node = nil
+        pcall(function()
+            node = obj.rootNode or obj.graphicsRootNode
+                or (obj.graphicsComponent and obj.graphicsComponent.graphicsRootNode)
+        end)
+        if node ~= nil and node ~= 0 and entityExists(node) then
+            local x, y, z = getWorldTranslation(node)
+            print(string.format("[ValleyLife][Grandpa] HIT %s  node=%s  pos=(%.1f, %.1f, %.1f)",
+                label, tostring(node), x, y, z))
+            found[#found + 1] = { label = label, node = node, obj = obj }
+        else
+            -- Still print the object type so we know the path resolved but had no node
+            if obj ~= nil then
+                print(string.format("[ValleyLife][Grandpa] PARTIAL %s  obj=%s  node=%s",
+                    label, type(obj), tostring(node)))
+            end
+        end
+    end
+
+    local function tryNPCsByName(label, container)
+        if type(container) ~= "table" then return end
+        for k, v in pairs(container) do
+            local name = nil
+            pcall(function()
+                name = v.npcName or v.name or v.typeName or (type(v.getName) == "function" and v:getName())
+            end)
+            if type(name) == "string" and string.upper(name) == "GRANDPA" then
+                tryNode(label .. "[" .. tostring(k) .. "]", v)
+            end
+        end
+    end
+
+    print("[ValleyLife][Grandpa] ---- probing for GRANDPA node ----")
+
+    -- Path 1: FarmlandManager owns NPC references (farmlands.xml npcName="GRANDPA")
+    local fm = g_currentMission and g_currentMission.farmlandManager
+    if fm then
+        print("[ValleyLife][Grandpa] farmlandManager = " .. type(fm))
+        -- Try direct npcsByName table
+        pcall(function()
+            local byName = fm.npcsByName or fm.npcs or fm.npcObjects
+            if type(byName) == "table" then
+                tryNode("farmlandManager.npcsByName[GRANDPA]", byName["GRANDPA"] or byName["grandpa"])
+                tryNPCsByName("farmlandManager.npcs", byName)
+            end
+        end)
+        -- Try getFarmlandById and inspect the npc field
+        pcall(function()
+            for _, getFn in ipairs({ "getFarmlandById", "getFarmland" }) do
+                if type(fm[getFn]) == "function" then
+                    local fl = fm[getFn](fm, 1)  -- farmland 1 = GRANDPA's first
+                    if fl then
+                        print("[ValleyLife][Grandpa] farmland[1] = " .. type(fl))
+                        tryNode("farmland[1].npc", fl.npc)
+                        tryNode("farmland[1].npcObject", fl.npcObject)
+                        if type(fl.npcName) == "string" then
+                            print("[ValleyLife][Grandpa] farmland[1].npcName = " .. fl.npcName)
+                        end
+                    end
+                    break
+                end
+            end
+        end)
+    else
+        print("[ValleyLife][Grandpa] g_currentMission.farmlandManager = nil")
+    end
+
+    -- Path 2: Dedicated NPC system on the mission
+    for _, key in ipairs({ "npcSystem", "npcs", "npcManager", "npcHandler" }) do
+        local sys = g_currentMission and g_currentMission[key]
+        if sys ~= nil then
+            print(string.format("[ValleyLife][Grandpa] mission.%s = %s", key, type(sys)))
+            -- Try by-name lookup methods
+            pcall(function()
+                for _, fn in ipairs({ "getNPCByName", "getNPC", "getByName", "getObject" }) do
+                    if type(sys[fn]) == "function" then
+                        local obj = sys[fn](sys, "GRANDPA")
+                        if obj then
+                            tryNode(string.format("mission.%s:%s(GRANDPA)", key, fn), obj)
+                        end
+                    end
+                end
+            end)
+            -- Try iterating if it's a table of NPCs
+            if type(sys) == "table" then
+                tryNPCsByName("mission." .. key, sys)
+            end
+        end
+    end
+
+    -- Path 3: Global NPC manager / farmland manager — dump methods and try lookups
+    for _, gname in ipairs({ "g_npcManager", "g_npcs", "g_npcSystem", "g_farmlandManager" }) do
+        local g = _G[gname]
+        if g ~= nil then
+            print(string.format("[ValleyLife][Grandpa] %s = %s", gname, type(g)))
+            pcall(function()
+                -- Dump all keys so we can see the structure
+                local fns, fields = {}, {}
+                for k, v in pairs(g) do
+                    if type(v) == "function" then fns[#fns+1] = k
+                    elseif type(v) ~= "table" and type(v) ~= "userdata" then
+                        fields[#fields+1] = k .. "=" .. tostring(v)
+                    else
+                        fns[#fns+1] = k .. "(" .. type(v) .. ")"
+                    end
+                end
+                table.sort(fns); table.sort(fields)
+                print(string.format("[ValleyLife][Grandpa] %s keys: %s", gname, table.concat(fns, ", ")))
+                if #fields > 0 then
+                    print(string.format("[ValleyLife][Grandpa] %s fields: %s", gname, table.concat(fields, ", ")))
+                end
+
+                -- Try direct key lookup
+                local obj = g["GRANDPA"] or g["grandpa"]
+                if obj then tryNode(gname .. "[GRANDPA]", obj) end
+                tryNPCsByName(gname, g)
+
+                -- Try common getter methods
+                for _, fn in ipairs({ "getNPCByName", "getNPC", "getByName", "getObject", "getNPCObject" }) do
+                    if type(g[fn]) == "function" then
+                        local ok, result = pcall(g[fn], g, "GRANDPA")
+                        if ok and result ~= nil then
+                            print(string.format("[ValleyLife][Grandpa] %s:%s(GRANDPA) = %s", gname, fn, type(result)))
+                            tryNode(gname .. ":" .. fn .. "(GRANDPA)", result)
+                        end
+                    end
+                end
+
+                -- g_farmlandManager: try getFarmlandById(1) and inspect deeper
+                if gname == "g_farmlandManager" then
+                    for _, getFn in ipairs({ "getFarmlandById", "getFarmland", "getFarmlandByIndex" }) do
+                        if type(g[getFn]) == "function" then
+                            local ok, fl = pcall(g[getFn], g, 1)
+                            if ok and fl ~= nil then
+                                print(string.format("[ValleyLife][Grandpa] %s:%s(1) = %s", gname, getFn, type(fl)))
+                                -- Dump farmland fields
+                                local flkeys = {}
+                                for k, v in pairs(fl) do flkeys[#flkeys+1] = k .. "=" .. type(v) end
+                                table.sort(flkeys)
+                                print("[ValleyLife][Grandpa] farmland[1] keys: " .. table.concat(flkeys, ", "))
+                                tryNode("farmland[1].npc",       fl.npc)
+                                tryNode("farmland[1].npcObject", fl.npcObject)
+                                tryNode("farmland[1].owner",     fl.owner)
+                            end
+                            break
+                        end
+                    end
+                end
+
+                -- g_npcManager: dump the NPC object fields to find the node property name
+                if gname == "g_npcManager" then
+                    -- Get GRANDPA via getNPCByName and dump every field
+                    local npcObj = nil
+                    pcall(function()
+                        npcObj = g:getNPCByName("GRANDPA")
+                    end)
+                    if npcObj == nil then
+                        -- Try nameToNPC direct table
+                        pcall(function() npcObj = g.nameToNPC and g.nameToNPC["GRANDPA"] end)
+                    end
+                    if npcObj ~= nil then
+                        print("[ValleyLife][Grandpa] GRANDPA NPC object fields:")
+                        local flds = {}
+                        for k, v in pairs(npcObj) do
+                            flds[#flds+1] = string.format("  %s = %s", tostring(k), type(v))
+                            -- Try anything that looks like it could be a scene node
+                            if type(v) == "number" and v ~= 0 then
+                                pcall(function()
+                                    if entityExists(v) then
+                                        local x, y, z = getWorldTranslation(v)
+                                        print(string.format("[ValleyLife][Grandpa] HIT npcObj.%s is a valid entity node! pos=(%.1f,%.1f,%.1f)", tostring(k), x, y, z))
+                                        found[#found+1] = { label = "g_npcManager:getNPCByName(GRANDPA)." .. tostring(k), node = v, obj = npcObj }
+                                    end
+                                end)
+                            elseif type(v) == "table" or type(v) == "userdata" then
+                                -- Check one level deeper for a node
+                                pcall(function()
+                                    for k2, v2 in pairs(v) do
+                                        if type(v2) == "number" and v2 ~= 0 and entityExists(v2) then
+                                            local x, y, z = getWorldTranslation(v2)
+                                            print(string.format("[ValleyLife][Grandpa] HIT npcObj.%s.%s is a valid entity node! pos=(%.1f,%.1f,%.1f)", tostring(k), tostring(k2), x, y, z))
+                                            found[#found+1] = { label = "npcObj." .. tostring(k) .. "." .. tostring(k2), node = v2, obj = npcObj }
+                                        end
+                                    end
+                                end)
+                            end
+                        end
+                        table.sort(flds)
+                        for _, l in ipairs(flds) do print(l) end
+                    end
+
+                    -- Also try spots/startSpots which may hold scene node references
+                    for _, subkey in ipairs({ "spots", "startSpots", "npcs" }) do
+                        local sub = g[subkey]
+                        if type(sub) == "table" and #sub > 0 then
+                            print(string.format("[ValleyLife][Grandpa] g_npcManager.%s[1] fields:", subkey))
+                            local sflds = {}
+                            for k, v in pairs(sub[1]) do
+                                sflds[#sflds+1] = string.format("  %s = %s", tostring(k), type(v))
+                                if type(v) == "number" and v ~= 0 then
+                                    pcall(function()
+                                        if entityExists(v) then
+                                            local x, y, z = getWorldTranslation(v)
+                                            print(string.format("[ValleyLife][Grandpa] HIT %s[1].%s entity pos=(%.1f,%.1f,%.1f)", subkey, tostring(k), x, y, z))
+                                            found[#found+1] = { label = subkey .. "[1]." .. tostring(k), node = v, obj = sub[1] }
+                                        end
+                                    end)
+                                end
+                            end
+                            table.sort(sflds)
+                            for _, l in ipairs(sflds) do print(l) end
+                        end
+                    end
+
+                    -- Use farmland npcIndex to get GRANDPA's entry
+                    pcall(function()
+                        local fl = g_farmlandManager and g_farmlandManager:getFarmlandById(1)
+                        local idx = fl and fl.npcIndex
+                        if idx ~= nil then
+                            print(string.format("[ValleyLife][Grandpa] farmland[1].npcIndex = %s", tostring(idx)))
+                            local npcByIdx = g.npcs and g.npcs[idx]
+                            if npcByIdx then
+                                print("[ValleyLife][Grandpa] g_npcManager.npcs[npcIndex] fields:")
+                                for k, v in pairs(npcByIdx) do
+                                    print(string.format("  %s = %s", tostring(k), type(v)))
+                                    if type(v) == "number" and v ~= 0 then
+                                        pcall(function()
+                                            if entityExists(v) then
+                                                local x, y, z = getWorldTranslation(v)
+                                                print(string.format("[ValleyLife][Grandpa] HIT npcs[npcIndex].%s entity pos=(%.1f,%.1f,%.1f)", tostring(k), x, y, z))
+                                                found[#found+1] = { label = "npcs[npcIndex]." .. tostring(k), node = v, obj = npcByIdx }
+                                            end
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
+    end
+
+    -- Path 4: GuidedTour instance (only present during the tour, but try anyway)
+    local gt = g_currentMission and g_currentMission.guidedTour
+    if gt then
+        print("[ValleyLife][Grandpa] guidedTour instance present")
+        pcall(function()
+            if type(gt.getNPCSpot) == "function" then
+                local spot = gt:getNPCSpot("GRANDPA")
+                if spot then
+                    print("[ValleyLife][Grandpa] getNPCSpot(GRANDPA) = " .. type(spot))
+                    tryNode("guidedTour.getNPCSpot(GRANDPA)", spot)
+                    -- Spot may wrap the NPC object
+                    if type(spot) == "table" then
+                        for k, v in pairs(spot) do
+                            if type(v) == "table" or type(v) == "userdata" then
+                                tryNode("guidedTour.spot." .. tostring(k), v)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if #found == 0 then
+        print("[ValleyLife][Grandpa] No rootNode found on any path. GRANDPA may not be loaded yet, or needs a different lookup.")
+    else
+        print(string.format("[ValleyLife][Grandpa] Found %d node(s). See HIT lines above.", #found))
+    end
+
+    -- Dump the spot table on the GRANDPA NPC object
+    local grandpa = g_npcManager and g_npcManager:getNPCByName("GRANDPA")
+    if grandpa and grandpa.spot then
+        print("[ValleyLife][Grandpa] grandpa.spot fields:")
+        local spotFields = {}
+        for k, v in pairs(grandpa.spot) do
+            spotFields[#spotFields+1] = string.format("  %s = %s (%s)", tostring(k), tostring(v), type(v))
+        end
+        table.sort(spotFields)
+        for _, l in ipairs(spotFields) do print(l) end
+    else
+        print("[ValleyLife][Grandpa] grandpa.spot is nil or GRANDPA not found")
+    end
+
+    print("[ValleyLife][Grandpa] ---- end probe ----")
+    return "[ValleyLife] Grandpa probe done — check log.txt."
+end
+
+-- vlMoveGrandpa x z: move the base-game GRANDPA to a world position by writing
+-- his x/z/needPositionUpdate fields, letting his own update loop move the node.
+-- vlMoveGrandpa with no args: teleport to player's current position.
+-- vlMoveGrandpa x z: teleport to explicit world coords.
+function VLConsole:moveGrandpa(x, z)
+    local px, pz
+    if x == nil then
+        -- No args — use player position
+        local camera = getCamera()
+        if camera == nil then
+            return "[ValleyLife] No camera found."
+        end
+        px, _, pz = getWorldTranslation(camera)
+    else
+        px, pz = tonumber(x), tonumber(z)
+        if px == nil or pz == nil then
+            return "[ValleyLife] Usage: vlMoveGrandpa [x z]"
+        end
+    end
+    local grandpa = g_npcManager and g_npcManager:getNPCByName("GRANDPA")
+    if grandpa == nil then
+        return "[ValleyLife] GRANDPA not found in g_npcManager."
+    end
+    local oldX, oldZ = grandpa.x, grandpa.z
+    -- Move spot anchor and NPC node together using world coordinates so the
+    -- NPC is already at the destination before the walk system can activate.
+    local py = grandpa.y or 47.0
+    if grandpa.spot and grandpa.spot.node and entityExists(grandpa.spot.node) then
+        setWorldTranslation(grandpa.spot.node, px, py, pz)
+    end
+    if grandpa.node and grandpa.node ~= 0 and entityExists(grandpa.node) then
+        setWorldTranslation(grandpa.node, px, py, pz)
+    end
+    grandpa.x = px
+    grandpa.y = py
+    grandpa.z = pz
+    grandpa.needPositionUpdate = true
+    local msg = string.format("[ValleyLife] GRANDPA moved (%.1f,%.1f) -> (%.1f,%.1f)", oldX, oldZ, px, pz)
+    print(msg)
+    return msg
+end
+
+-- vlWalterDump: dump everything about the GRANDPA NPC at runtime — spot fields,
+-- graphicsComponent, components, and all scalar fields. Run after load to see
+-- whether spot.node is populated and which child nodes carry animCharSets.
+function VLConsole:dumpWalter()
+    local grandpa = g_npcManager and g_npcManager:getNPCByName("GRANDPA")
+    if grandpa == nil then
+        return "[ValleyLife] GRANDPA not found in g_npcManager."
+    end
+
+    print("[ValleyLife][Walter] ---- GRANDPA dump ----")
+    print(string.format("  isActive=%s  needPositionUpdate=%s", tostring(grandpa.isActive), tostring(grandpa.needPositionUpdate)))
+    print(string.format("  pos=(%.2f, %.2f, %.2f)", grandpa.x or 0, grandpa.y or 0, grandpa.z or 0))
+    print(string.format("  pendingSpotUniqueId=%s", tostring(grandpa.pendingSpotUniqueId)))
+    print(string.format("  node=%s  exists=%s", tostring(grandpa.node),
+        tostring(grandpa.node ~= nil and entityExists(grandpa.node))))
+
+    -- Spot
+    if grandpa.spot then
+        print("[ValleyLife][Walter] spot fields:")
+        for k, v in pairs(grandpa.spot) do
+            if type(v) == "number" and v ~= 0 then
+                local isEnt = false
+                pcall(function() isEnt = entityExists(v) end)
+                if isEnt then
+                    local x, y, z = getWorldTranslation(v)
+                    print(string.format("  .%s = %d (entity pos=%.1f,%.1f,%.1f)", k, v, x, y, z))
+                    local ok2, acs = pcall(getAnimCharacterSet, v)
+                    if ok2 and acs and acs ~= 0 then
+                        print(string.format("    -> animCharSet=%d", acs))
+                    end
+                else
+                    print(string.format("  .%s = %s", k, tostring(v)))
+                end
+            else
+                print(string.format("  .%s = %s (%s)", k, tostring(v), type(v)))
+            end
+        end
+    else
+        print("[ValleyLife][Walter] spot = nil")
+    end
+
+    -- playerGraphics / graphicsComponent — dump ALL fields so we can find charSet/animCharSet
+    for _, key in ipairs({ "playerGraphics", "graphicsComponent" }) do
+        local pg = grandpa[key]
+        if pg ~= nil then
+            print(string.format("[ValleyLife][Walter] %s (all fields):", key))
+            local pgFields = {}
+            for k, v in pairs(pg) do
+                local t = type(v)
+                if t == "number" then
+                    -- Could be an entity node or the charSet handle — test both
+                    local isEnt = false
+                    pcall(function() isEnt = v ~= 0 and entityExists(v) end)
+                    if isEnt then
+                        local x2, y2, z2 = getWorldTranslation(v)
+                        pgFields[#pgFields+1] = string.format("  .%s = %d (entity pos=%.1f,%.1f,%.1f)", k, v, x2, y2, z2)
+                        local ok2, acs = pcall(getAnimCharacterSet, v)
+                        if ok2 and acs and acs ~= 0 then
+                            pgFields[#pgFields+1] = string.format("    -> getAnimCharacterSet=%d  *** FOUND ***", acs)
+                        end
+                        -- Try children
+                        local nc = getNumOfChildren(v)
+                        for i = 0, math.min(nc-1, 7) do
+                            local child = getChildAt(v, i)
+                            if child and child ~= 0 then
+                                local ok3, acs3 = pcall(getAnimCharacterSet, child)
+                                if ok3 and acs3 and acs3 ~= 0 then
+                                    pgFields[#pgFields+1] = string.format("    -> child[%d]=%d animCharSet=%d  *** FOUND ***", i, child, acs3)
+                                end
+                            end
+                        end
+                    else
+                        -- Non-entity number — could be animCharSet handle (not a scene node)
+                        pgFields[#pgFields+1] = string.format("  .%s = %d (non-entity number)", k, v)
+                    end
+                elseif t == "boolean" or t == "string" then
+                    pgFields[#pgFields+1] = string.format("  .%s = %s (%s)", k, tostring(v), t)
+                elseif t == "table" then
+                    pgFields[#pgFields+1] = string.format("  .%s = table", k)
+                elseif t ~= "function" then
+                    pgFields[#pgFields+1] = string.format("  .%s = %s (%s)", k, tostring(v), t)
+                end
+            end
+            table.sort(pgFields)
+            for _, l in ipairs(pgFields) do print(l) end
+        end
+    end
+
+    -- components table
+    if type(grandpa.components) == "table" then
+        print(string.format("[ValleyLife][Walter] components (%d):", #grandpa.components))
+        for i, comp in ipairs(grandpa.components) do
+            if type(comp) == "table" then
+                local parts = {}
+                for k, v in pairs(comp) do
+                    if type(v) == "number" and v ~= 0 then
+                        local isEnt = false
+                        pcall(function() isEnt = entityExists(v) end)
+                        if isEnt then
+                            local x, _, z = getWorldTranslation(v)
+                            parts[#parts+1] = string.format("%s=%d@(%.0f,%.0f)", k, v, x, z)
+                            local ok2, acs = pcall(getAnimCharacterSet, v)
+                            if ok2 and acs and acs ~= 0 then
+                                print(string.format("  comp[%d].%s -> animCharSet=%d", i, k, acs))
+                            end
+                        else
+                            parts[#parts+1] = string.format("%s=%s", k, tostring(v))
+                        end
+                    elseif type(v) ~= "function" and type(v) ~= "table" then
+                        parts[#parts+1] = string.format("%s=%s", k, tostring(v))
+                    end
+                end
+                print(string.format("  [%d] {%s}", i, table.concat(parts, ", ")))
+            else
+                print(string.format("  [%d] %s", i, type(comp)))
+            end
+        end
+    else
+        print("[ValleyLife][Walter] components = " .. type(grandpa.components))
+    end
+
+    -- All scalar fields on grandpa
+    print("[ValleyLife][Walter] scalar fields:")
+    local fields = {}
+    for k, v in pairs(grandpa) do
+        local t = type(v)
+        if t == "boolean" or t == "string" or t == "number" then
+            fields[#fields+1] = string.format("  %s = %s", k, tostring(v))
+        end
+    end
+    table.sort(fields)
+    for _, l in ipairs(fields) do print(l) end
+
+    print("[ValleyLife][Walter] ---- end dump ----")
+    return "[ValleyLife] Walter dump done — check log."
+end
+
 function VLConsole:printSeason()
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
     local env = g_currentMission and g_currentMission.environment
@@ -1166,6 +1670,9 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlReset", "Reset a villager's events + relationship: vlReset <npcId>", "resetNpc", VLConsole)
     addConsoleCommand("vlDlg", "Probe available native dialog/choice widgets", "probeDialogs", VLConsole)
     addConsoleCommand("vlGuidedTour", "Probe GuidedTour class/instance methods (find hook names)", "probeGuidedTour", VLConsole)
+    addConsoleCommand("vlGrandpa", "Probe runtime paths to GRANDPA's rootNode (for walk loop research)", "probeGrandpa", VLConsole)
+    addConsoleCommand("vlMoveGrandpa", "Move GRANDPA to world position: vlMoveGrandpa <x> <z>", "moveGrandpa", VLConsole)
+    addConsoleCommand("vlWalterDump", "Dump GRANDPA NPC runtime state (spot, components, graphicsNode)", "dumpWalter", VLConsole)
     addConsoleCommand("vlAnimClips", "Dump animation clip names for a villager: vlAnimClips <npcId>", "dumpAnimClips", VLConsole)
     addConsoleCommand("vlWalk", "Force-start a villager's walk loop: vlWalk <npcId>", "forceWalk", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)

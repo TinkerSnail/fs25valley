@@ -218,6 +218,7 @@ function VLNPCSystem.new()
     self.dialog        = VLNPCDialog.new(self)
     self._outfitCalendar = OutfitCalendar.new()
     self.flags         = {}   -- name -> true; persisted story flags (e.g. walterMentionedMarket)
+    self.walterWalker  = WalterWalker.new()
     return self
 end
 
@@ -281,6 +282,7 @@ function VLNPCSystem:update(dt)
         end
     end
     self.dialog:update(dt)
+    self.walterWalker:update(dt)
 end
 
 function VLNPCSystem:getNPC(id)
@@ -451,5 +453,6 @@ function VLNPCSystem:delete()
         npc:delete()
     end
     self.npcs = {}
+    if self.walterWalker then self.walterWalker:delete() end
     print("[ValleyLife] Cleaned up.")
 end

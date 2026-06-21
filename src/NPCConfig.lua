@@ -118,6 +118,20 @@ VLConfig.VILLAGER_SPAWNS = {
     },
 }
 
+-- Walter (GRANDPA) walk loop — waypoints are world X/Z; Y is read from terrain.
+-- startHour/endHour use in-game hours (0-24). speed is units/sec.
+-- pauseMinutes is in in-game minutes. pauseRy is optional facing rotation (radians).
+-- Add waypoints by walking the route in-game and recording positions with vlPos.
+VLConfig.WALTER_WALK = {
+    startHour = 0,      -- set to real hours once waypoints are confirmed
+    endHour   = 24,
+    speed     = 0.8,
+    waypoints = {
+        { x = -758.2, z = 94.3,  pauseMinutes = 2  },  -- home (farmhouse)
+        { x = -752.0, z = 94.3,  pauseMinutes = 2  },  -- placeholder: replace with vlPos
+    },
+}
+
 -- Save file key prefix
 VLConfig.SAVE_KEY = "valleyLife"
 VLConfig.SAVE_VERSION = "0.1"
