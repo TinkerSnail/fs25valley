@@ -149,7 +149,7 @@ VLConfig.WALTER_WALK = {
         -- Captured 2026-06-21 with vlPos. Other loops (morningRounds, middayPorch,
         -- afternoonStroll, ...) get added back here as we record their stops.
         {
-            name = "eveningReturn", startHour = 17, endHour = 18,
+            name = "eveningReturn", startHour = 19, endHour = 20,
             waypoints = {
                 { name = "home",         x = -758.2,  y = 47.0,  z = 94.3 },                    -- [1] start/end (GRANDPA_FARMHOUSE spot)
                 { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                   -- [2] base of the stairs; ground level so home->here stays flat
