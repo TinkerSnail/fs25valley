@@ -98,18 +98,17 @@ sharedLights }`.
 - `spec_lights.groups[i]` = `{ index, isActive (on/off), name ("Shed lights"), triggerNode,
   inputAction ("INTERACT"), hasManualLights, activateText "Turn on %s", deactivateText }`.
 
-**Toggle in code (this build):**
+**Toggle in code:**
 ```lua
-group.isActive = on
-p:updateLightState(group.index)
-p:lightSetupChanged()
+p:setGroupIsActive(group.index, on)   -- the proper call (what "press R" invokes)
 ```
-`setLightState` / `setLightsState` do **not** exist on this build (verified), so the
-manual path above is the lever.
+`setGroupIsActive` is a `PlaceableLights` module fn (found via `vlLightFns`). It sets the
+state cleanly — no console warning. (`setLightState` / `setLightsState` do **not** exist here.)
 
-> **Known wart:** `updateLightState(index)` internally calls `setVisibility(node, nil)` →
-> harmless red console warning `'setVisibility': Argument 1 ... Expected: Bool. Actual: Nil`.
-> The lights still toggle correctly. A cleaner call (the activatable's run?) is still TBD.
+> **Avoid** the manual `group.isActive = on` + `p:updateLightState(index)` +
+> `p:lightSetupChanged()` path — it toggles the lights but `updateLightState` then calls
+> `setVisibility(node, nil)`, spamming a red `'setVisibility' ... Expected: Bool. Actual: Nil`
+> warning. `setGroupIsActive` does the setup `updateLightState` expects, so no nil.
 
 ---
 

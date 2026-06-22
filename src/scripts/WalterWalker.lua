@@ -396,12 +396,17 @@ function WalterWalker:_setWoodshopLights(on)
     local groups = sp and sp.groups
     if type(groups) ~= "table" then return false end
     for _, g in ipairs(groups) do
-        pcall(function() g.isActive = on end)
-        if type(shed.updateLightState) == "function" then
-            pcall(function() shed:updateLightState(g.index or 1) end)
+        if type(shed.setGroupIsActive) == "function" then
+            -- The proper toggle (what the "press R" activatable calls). Sets the state cleanly so
+            -- updateLightState no longer feeds nil to setVisibility (no red console warning).
+            pcall(function() shed:setGroupIsActive(g.index, on) end)
+        else
+            -- Fallback (older builds): manual poke. Emits a harmless setVisibility(nil) warning.
+            pcall(function() g.isActive = on end)
+            if type(shed.updateLightState) == "function" then pcall(function() shed:updateLightState(g.index or 1) end) end
+            if type(shed.lightSetupChanged) == "function" then pcall(function() shed:lightSetupChanged() end) end
         end
     end
-    if type(shed.lightSetupChanged) == "function" then pcall(function() shed:lightSetupChanged() end) end
     print(string.format("[ValleyLife][Walter] woodshop lights %s", on and "on" or "off"))
     return true
 end
