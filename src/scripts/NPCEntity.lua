@@ -1040,14 +1040,22 @@ local function lerpAngle(current, target, maxStep)
 end
 
 function VLNPCEntity:_getActiveWorkLoop()
+    return (WorkLoopHelper.getActiveLoop(self._workLoops, TimeHelper.getHour()))
+end
+
+-- Force-start a loop now, bypassing the 2-hour timer. `selector` may be a loop
+-- name, an index, or nil (= the loop active at the current hour). Returns the
+-- started loop's name/index, or nil if no matching loop. Used by vlWalk.
+function VLNPCEntity:forceWalkLoop(selector)
     if not self._workLoops then return nil end
-    local hour = TimeHelper.getHour()
-    for _, loop in ipairs(self._workLoops) do
-        if hour >= (loop.startHour or 0) and hour < (loop.endHour or 24) then
-            return loop
-        end
-    end
-    return nil
+    local loop, idx = WorkLoopHelper.resolve(self._workLoops, selector, TimeHelper.getHour())
+    if loop == nil then return nil end
+    if self._walk then self:_onWalkEnd() end
+    self._walk = nil
+    self._walkLastHour = -1
+    self._workLoop = loop
+    self:_startWalk()
+    return loop.name or idx
 end
 
 function VLNPCEntity:_updateWalkLoop(dt)

@@ -8,6 +8,7 @@ source(modDir .. "src/utils/VectorHelper.lua")
 source(modDir .. "src/utils/TimeHelper.lua")
 source(modDir .. "src/utils/BirthdayHelper.lua")
 source(modDir .. "src/utils/OutfitCalendar.lua")
+source(modDir .. "src/utils/WorkLoopHelper.lua")
 
 -- 2. Config (depends on nothing)
 source(modDir .. "src/NPCConfig.lua")
@@ -435,28 +436,67 @@ function VLConsole:dumpAnimClips(npcId)
     return "[ValleyLife] Clip enum done — check log."
 end
 
--- vlWalk: force-start the walk loop for a villager (bypasses the half-hour timer).
-function VLConsole:forceWalk(npcId, loopIndex)
+-- vlWalk <npcId> [loopNameOrIndex]: force-start a walk loop (bypasses the timer).
+-- `loopNameOrIndex` may be a loop name ("morningRounds"), an index ("2"), or be
+-- omitted (= the loop active at the current hour). Works for the mod NPCs (Marta)
+-- and for Walter, who is the base-game GRANDPA driven by WalterWalker.
+function VLConsole:forceWalk(npcId, loopSelector)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    if npcId == nil then return "[ValleyLife] Usage: vlWalk <npcId> [loopName|index]" end
+
+    -- Walter lives in walterWalker, not g_valleyLife.npcs.
+    if npcId == "grandpa" or npcId == "walter" then
+        local ww = g_valleyLife.walterWalker
+        if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+        local which = ww:forceWalkLoop(loopSelector)
+        if which == nil then
+            return string.format("[ValleyLife] Walter has no loop '%s'. Loops: %s",
+                tostring(loopSelector), table.concat(ww:loopNames(), ", "))
+        end
+        return string.format("[ValleyLife] Walk loop '%s' started for Walter.", tostring(which))
+    end
+
     local npc = g_valleyLife.npcs[npcId]
     if npc == nil then return string.format("[ValleyLife] Unknown NPC '%s'.", tostring(npcId)) end
     if not npc._workLoops then return string.format("[ValleyLife] '%s' has no walk loops.", npcId) end
-    local idx = tonumber(loopIndex)
-    if idx then
-        local loop = npc._workLoops[idx]
-        if loop == nil then
-            return string.format("[ValleyLife] '%s' has no loop %d (max %d).", npcId, idx, #npc._workLoops)
-        end
-        npc._workLoop = loop
-    else
-        npc._workLoop = npc:_getActiveWorkLoop() or npc._workLoops[1]
+    local which = npc:forceWalkLoop(loopSelector)
+    if which == nil then
+        return string.format("[ValleyLife] '%s' has no loop '%s'. Loops: %s",
+            npcId, tostring(loopSelector), table.concat(WorkLoopHelper.names(npc._workLoops), ", "))
     end
-    if npc._walk then npc:_onWalkEnd() end
-    npc._walk = nil
-    npc._walkLastHour = -1
-    npc:_startWalk()
-    local which = idx or "active"
-    return string.format("[ValleyLife] Walk loop %s started for '%s'.", tostring(which), npcId)
+    return string.format("[ValleyLife] Walk loop '%s' started for '%s'.", tostring(which), npcId)
+end
+
+-- vlWalterYOffset <meters>: live-tune the vertical offset subtracted from Walter's
+-- driven height (positive lowers him). Fixes floating/sinking while we drive him.
+-- Bake the value you settle on into VLConfig.WALTER_WALK.yOffset.
+function VLConsole:setWalterYOffset(value)
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    local ww = g_valleyLife.walterWalker
+    local n = tonumber(value)
+    if n == nil then
+        return string.format("[ValleyLife] Usage: vlWalterYOffset <meters>  (current=%.3f)", ww._yOffset or 0)
+    end
+    ww._yOffset = n
+    return string.format("[ValleyLife] Walter Y offset = %.3f m (positive = lower). Re-run vlWalk grandpa to see it.", n)
+end
+
+-- vlWalterStairLift <value>: live-tune the convex bow lift added on sloped segments (e.g. stairs).
+-- A parabola peaking at mid-segment lifts his feet over stair-tread noses without changing
+-- arrival/departure heights. Bake the settled value into VLConfig.WALTER_WALK.stairLift.
+function VLConsole:setWalterStairLift(value)
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    local ww = g_valleyLife.walterWalker
+    local n = tonumber(value)
+    if n == nil then
+        return string.format("[ValleyLife] Usage: vlWalterStairLift <meters>  (current=%.3f)", ww._stairLift or 0)
+    end
+    ww._stairLift = n
+    return string.format("[ValleyLife] Walter stairLift = %.3f m. Re-run vlWalk grandpa to see it.", n)
 end
 
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
@@ -1674,7 +1714,9 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlMoveGrandpa", "Move GRANDPA to world position: vlMoveGrandpa <x> <z>", "moveGrandpa", VLConsole)
     addConsoleCommand("vlWalterDump", "Dump GRANDPA NPC runtime state (spot, components, graphicsNode)", "dumpWalter", VLConsole)
     addConsoleCommand("vlAnimClips", "Dump animation clip names for a villager: vlAnimClips <npcId>", "dumpAnimClips", VLConsole)
-    addConsoleCommand("vlWalk", "Force-start a villager's walk loop: vlWalk <npcId>", "forceWalk", VLConsole)
+    addConsoleCommand("vlWalk", "Force-start a walk loop: vlWalk <npcId> [loopName|index] (npcId: marta, grandpa, ...)", "forceWalk", VLConsole)
+    addConsoleCommand("vlWalterYOffset", "Tune Walter's driven height offset (meters, +lowers): vlWalterYOffset <n>", "setWalterYOffset", VLConsole)
+    addConsoleCommand("vlWalterStairLift", "Tune Walter's stair bow-lift on sloped segments: vlWalterStairLift <n>", "setWalterStairLift", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)

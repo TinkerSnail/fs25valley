@@ -5,7 +5,6 @@
 WalterWalker = {}
 WalterWalker.__index = WalterWalker
 
-local ARRIVAL_DIST       = 1.5
 local WALK_TURN_RATE      = math.rad(240)
 local WALK_TURN_THRESHOLD = math.rad(25)
 
@@ -60,12 +59,12 @@ function WalterWalker.new()
     self._wz          = 0
     self.walk         = nil
     self._active      = false
-    self._lastLog     = 0
+    self._loop        = nil
+    self._lastTick    = -1
+    self._yOffset     = nil   -- lazy-init from VLConfig.WALTER_WALK.yOffset; live-tunable via vlWalterYOffset
+    self._stairLift   = nil   -- lazy-init from VLConfig.WALTER_WALK.stairLift; live-tunable via vlWalterStairLift
     self._origPlayerGraphicsUpdate = nil
     self._patchedClass             = nil
-    self._dbgNodes                 = nil
-    self._probeT                   = 0
-    self._lastWrittenRy            = 0
     return self
 end
 
@@ -112,16 +111,10 @@ function WalterWalker:_acquireNode()
         local orig = cls.update or pg.update
         if type(orig) == "function" then
             local walker  = self
-            local invoked = false
             local patched = function(self_pg, dt)
                 local grn    = self_pg.graphicsRootNode
                 local active = walker._active and self_pg == walker.grandpa.playerGraphics
                                and grn and entityExists(grn)
-
-                if not invoked then
-                    invoked = true
-                    print("[ValleyLife][Walter] CLASS patch wrapper INVOKED (R17 skip-orig-when-active)")
-                end
 
                 -- R17: while Walter is actively walking, SKIP orig() (the GIANTS graphics update).
                 -- orig() runs the ConditionalAnimation state machine, which flickers between walk and
@@ -136,18 +129,6 @@ function WalterWalker:_acquireNode()
 
                 -- Active: drive facing ourselves; ConditionalAnimation stays dormant.
                 setRotation(grn, 0, walker._ry, 0)
-                walker._lastWrittenRy = walker._ry
-
-                -- Light verification trace (1/sec): is the body still following our _ry?
-                local now = (getTimeSec and getTimeSec()) or 0
-                if (now - (walker._probeT or 0)) > 1.0 then
-                    walker._probeT = now
-                    local hipW = (walker._hipsNode and entityExists(walker._hipsNode))
-                        and select(2, getWorldRotation(walker._hipsNode)) or 0
-                    print(string.format("[ValleyLife][Walter] R17 grnRy=%.3f hipsW=%.3f _ry=%.3f state=%s",
-                        select(2, getRotation(grn)) or 0, hipW or 0, walker._ry,
-                        (walker.walk and walker.walk.state) or "none"))
-                end
             end
             if cls.update then
                 cls.update = patched
@@ -161,65 +142,6 @@ function WalterWalker:_acquireNode()
         end
     end
 
-    -- Dump playerGraphics + grandpa scalar fields once, hunting for the rotation/heading
-    -- INPUT the C update reads to recompute graphicsRootNode rotation each frame. Same
-    -- strategy that found spot.node — find the input, feed it our facing, stop fighting output.
-    local function dumpScalars(label, obj)
-        if type(obj) ~= "table" then return end
-        local fields = {}
-        for k, v in pairs(obj) do
-            local t = type(v)
-            if t == "number" or t == "boolean" then
-                fields[#fields+1] = string.format("%s=%s", tostring(k), tostring(v))
-            end
-        end
-        table.sort(fields)
-        print(string.format("[ValleyLife][Walter] %s scalars: %s", label, table.concat(fields, " | ")))
-    end
-    pcall(function() dumpScalars("playerGraphics", grandpa.playerGraphics) end)
-    pcall(function() dumpScalars("grandpa", grandpa) end)
-    pcall(function()
-        if grandpa.playerGraphics and grandpa.playerGraphics.model then
-            dumpScalars("pg.model", grandpa.playerGraphics.model)
-        end
-    end)
-
-    -- Build a list of candidate rotation-carrying nodes and dump their hierarchy + live ry.
-    -- The node whose ry oscillates against our _ry during walk is the one the C animation
-    -- pass writes — i.e. the real handle for visible facing.
-    self._dbgNodes = {}
-    local function addDbg(name, n)
-        if type(n) == "number" and n ~= 0 and entityExists(n) then
-            self._dbgNodes[#self._dbgNodes+1] = { name = name, id = n }
-            local p = -1
-            pcall(function() p = getParent(n) or -1 end)
-            local rx, ry, rz = 0, 0, 0
-            pcall(function() rx, ry, rz = getRotation(n) end)
-            print(string.format("[ValleyLife][Walter] node %-20s id=%d parent=%d ry=%.3f",
-                name, n, p, ry or 0))
-        else
-            print(string.format("[ValleyLife][Walter] node %-20s = nil/invalid (%s)", name, tostring(n)))
-        end
-    end
-    local pgm = grandpa.playerGraphics and grandpa.playerGraphics.model
-    addDbg("graphicsRootNode",     grandpa.playerGraphics and grandpa.playerGraphics.graphicsRootNode)
-    addDbg("model.rootNode",       pgm and pgm.rootNode)
-    addDbg("model.skeleton",       pgm and pgm.skeleton)
-    addDbg("model.skeletonRoot",   pgm and pgm.skeletonRootNode)
-    addDbg("model.animRoot3rd",    pgm and pgm.animRootThirdPerson)
-    addDbg("model.mesh",           pgm and pgm.mesh)
-    addDbg("model.hips3rd",        pgm and pgm.thirdPersonHipsNode)
-    addDbg("grandpa.node",         grandpa.node)
-
-    -- R13: capture the visible-body nodes so the wrapper can log their WORLD orientation each
-    -- frame. graphicsRootNode.ry is proven stable (R12); if a body node's WORLD ry twitches while
-    -- the graphicsRootNode is steady, the animation/skeleton drives facing, not the node.
-    self._meshNode = (pgm and pgm.mesh and pgm.mesh ~= 0 and entityExists(pgm.mesh)) and pgm.mesh or nil
-    self._hipsNode = (pgm and pgm.thirdPersonHipsNode and pgm.thirdPersonHipsNode ~= 0
-                      and entityExists(pgm.thirdPersonHipsNode)) and pgm.thirdPersonHipsNode or nil
-
-    print(string.format("[ValleyLife][Walter] acquired: pos=(%.1f,%.1f,%.1f) graphicsNode=%s spotNode=%s ry=%.2f",
-        self._wx, self._wy, self._wz, tostring(self.graphicsNode), tostring(self.spotNode), self._ry))
     return true
 end
 
@@ -267,7 +189,6 @@ function WalterWalker:_tryResolveAnim()
     -- poses the body at world-0; we only want OUR track 0. Disable 1..4 defensively.
     if disableAnimTrack ~= nil then
         for t = 1, 4 do pcall(function() disableAnimTrack(acs, t) end) end
-        print("[ValleyLife][Walter] R15 disabled competing anim tracks 1..4")
     end
 
     self.animCharSet  = acs
@@ -338,36 +259,107 @@ function WalterWalker:_stopWalkAnim()
     end
 end
 
+function WalterWalker:_loopRunnable(loop)
+    return type(loop) == "table" and type(loop.waypoints) == "table" and #loop.waypoints >= 2
+end
+
+function WalterWalker:_beginLoop(loop)
+    self._loop   = loop
+    self.walk    = { state = "walking", targetIdx = 2 }  -- wp[1] is home; head out first
+    self._active = true
+    print(string.format("[ValleyLife][Walter] loop '%s' started", loop.name or "?"))
+end
+
+function WalterWalker:_endLoop(cfg)
+    self:_stopWalkAnim()
+    self._active = false
+    self.walk    = nil
+    self._loop   = nil
+    -- Settle facing to home heading; the base game resumes idle control next frame
+    -- (orig() runs again once _active is false) so conversation/face stay intact.
+    if cfg and cfg.homeRy then self._ry = cfg.homeRy end
+    print("[ValleyLife][Walter] loop complete; idling at home")
+end
+
+-- Force-start a loop now (vlWalk), bypassing the timer. `selector` is a loop name,
+-- an index, or nil (= the loop active at the current hour). Returns name/index or nil.
+function WalterWalker:forceWalkLoop(selector)
+    local cfg = VLConfig.WALTER_WALK
+    if type(cfg) ~= "table" or type(cfg.loops) ~= "table" then return nil end
+    local loop = WorkLoopHelper.resolve(cfg.loops, selector, TimeHelper.getHour())
+    if loop == nil or not self:_loopRunnable(loop) then return nil end
+    self:_beginLoop(loop)
+    self._lastTick = math.floor(TimeHelper.getHour() / 2)  -- avoid an immediate auto re-fire
+    return loop.name or selector
+end
+
+function WalterWalker:loopNames()
+    local cfg = VLConfig.WALTER_WALK
+    return WorkLoopHelper.names(cfg and cfg.loops)
+end
+
 function WalterWalker:update(dt)
     if not self:_acquireNode() then return end
     self:_tryResolveAnim()
 
-    local cfg  = VLConfig.WALTER_WALK
-    local hour = TimeHelper.getHour()
+    local cfg = VLConfig.WALTER_WALK
+    if type(cfg) ~= "table" or type(cfg.loops) ~= "table" then return end
+    if self._yOffset    == nil then self._yOffset   = cfg.yOffset   or 0    end
+    if self._stairLift  == nil then self._stairLift = cfg.stairLift or 0.15 end
 
-    if hour < cfg.startHour or hour >= cfg.endHour then
-        if self._active then
-            self:_stopWalkAnim()
-            self.walk    = nil
-            self._active = false
-        end
+    if self._active then
+        self:_updateWalk(cfg, dt)
         return
     end
 
-    if not self._active then
-        self.walk    = { state = "walking", targetIdx = 1 }
-        self._active = true
-        print(string.format("[ValleyLife][Walter] walk started at pos=(%.1f,%.1f)", self.grandpa.x or 0, self.grandpa.z or 0))
-    end
-
-    if self.walk then
-        self:_updateWalk(cfg, dt)
+    -- Not walking: auto-start the loop whose window contains this hour, re-firing on
+    -- the 2-hour tick (same cadence as Marta). Never interrupt a conversation.
+    if self.grandpa and self.grandpa.isInConversation then return end
+    local hour = TimeHelper.getHour()
+    local loop = WorkLoopHelper.getActiveLoop(cfg.loops, hour)
+    if loop and self:_loopRunnable(loop) then
+        local tick = math.floor(hour / 2)
+        if tick ~= self._lastTick then
+            self._lastTick = tick
+            self:_beginLoop(loop)
+        end
     end
 end
 
+-- Height for the current position. If BOTH the current segment's endpoints carry a
+-- captured `y` (from vlPos), interpolate between them so Walter rises/descends with
+-- porches and stairs the terrain heightmap doesn't include. Otherwise snap to terrain.
+function WalterWalker:_surfaceY(waypoints, walk, target)
+    local prevIdx = walk.targetIdx - 1
+    if prevIdx < 1 then prevIdx = #waypoints end
+    local a = waypoints[prevIdx]
+    if target.y and a and a.y then
+        local sdx, sdz = target.x - a.x, target.z - a.z
+        local segLen   = math.sqrt(sdx*sdx + sdz*sdz)
+        if segLen > 0.001 then
+            local pdx, pdz = self._wx - a.x, self._wz - a.z
+            local along    = math.sqrt(pdx*pdx + pdz*pdz)
+            local frac     = math.min(math.max(along / segLen, 0), 1)
+            local linear   = a.y + (target.y - a.y) * frac
+            -- On sloped segments, add a convex bow to lift feet over stair-tread noses.
+            -- The parabola 4*frac*(1-frac) is zero at both endpoints and peaks at mid-segment.
+            local dy = math.abs(target.y - a.y)
+            if dy > 0.05 then
+                linear = linear + (self._stairLift or 0) * 4 * frac * (1 - frac)
+            end
+            return linear
+        end
+        return target.y
+    end
+    return terrainY(self._wx, self._wz, self._wy)
+end
+
 function WalterWalker:_updateWalk(cfg, dt)
-    local walk      = self.walk
-    local waypoints = cfg.waypoints
+    local walk = self.walk
+    local loop = self._loop
+    if loop == nil then self._active = false; return end
+    local waypoints = loop.waypoints
+    local speed     = loop.speed or cfg.speed or 0.8
 
     if walk.state == "pausing" then
         self:_stopWalkAnim()
@@ -389,56 +381,26 @@ function WalterWalker:_updateWalk(cfg, dt)
         return
     end
 
-    local target   = waypoints[walk.targetIdx]
-    local gx, gz   = self._wx, self._wz
-    local dx       = target.x - gx
-    local dz       = target.z - gz
-    local dist     = math.sqrt(dx*dx + dz*dz)
+    local target = waypoints[walk.targetIdx]
+    local dx     = target.x - self._wx
+    local dz     = target.z - self._wz
+    local dist   = math.sqrt(dx*dx + dz*dz)
+    local step   = speed * (dt / 1000)
 
-    if dist > 0.05 then
-        local targetRy = math.atan2(dx, dz)
-        local maxStep  = WALK_TURN_RATE * (dt / 1000)
-        self._ry       = lerpAngle(self._ry, targetRy, maxStep)
+    -- Within one frame's travel → snap exactly onto the waypoint (same as Marta,
+    -- NPCEntity.lua:1093) so he lands on the recorded spot instead of cutting the
+    -- corner 1.5 m short. Then handle end / pause / advance.
+    if dist <= step or dist <= 0.05 then
+        self._wx = target.x
+        self._wz = target.z
+        self._wy = (target.y ~= nil) and target.y or terrainY(self._wx, self._wz, self._wy)
+        setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
 
-        local diff = targetRy - self._ry
-        while diff >  math.pi do diff = diff - 2 * math.pi end
-        while diff < -math.pi do diff = diff + 2 * math.pi end
-
-        self:_startWalkAnim()
-        if math.abs(diff) <= WALK_TURN_THRESHOLD then
-            local step = math.min((cfg.speed or 0.8) * (dt / 1000), dist)
-            self._wx = gx + (dx/dist)*step
-            self._wz = gz + (dz/dist)*step
-            self._wy = terrainY(self._wx, self._wz, self._wy)
-            setTranslation(self.graphicsNode, self._wx, self._wy, self._wz)
+        -- Back at waypoint [1] (home) → circuit done; idle, base game resumes control.
+        if walk.targetIdx == 1 then
+            self:_endLoop(cfg)
+            return
         end
-        -- Rotation written to graphicsRootNode in the playerGraphics:update wrapper (last line).
-    end
-
-    local now = getTimeSec and getTimeSec() or 0
-    if (now - self._lastLog) > 3 then
-        self._lastLog = now
-        local rgx, _, rgz = 0, 0, 0
-        if self.graphicsNode and entityExists(self.graphicsNode) then
-            rgx, _, rgz = getTranslation(self.graphicsNode)
-        end
-        print(string.format("[ValleyLife][Walter] wp%d dist=%.1f want=(%.1f,%.1f) mesh=(%.1f,%.1f) anim=%s _ry=%.3f",
-            walk.targetIdx, dist, gx, gz, rgx, rgz, self._isWalking and "walk" or "idle", self._ry))
-        -- Per-node ry snapshot: which node is the engine actually steering?
-        if self._dbgNodes then
-            local parts = {}
-            for _, nd in ipairs(self._dbgNodes) do
-                if entityExists(nd.id) then
-                    local _, ry, _ = getRotation(nd.id)
-                    parts[#parts+1] = string.format("%s=%.3f", nd.name, ry or 0)
-                end
-            end
-            local gry = self.grandpa and self.grandpa.rotY or 0
-            print(string.format("[ValleyLife][Walter]   rots: grandpa.rotY=%.3f | %s", gry, table.concat(parts, " ")))
-        end
-    end
-
-    if dist <= ARRIVAL_DIST then
         self:_stopWalkAnim()
         local pauseMin = target.pauseMinutes
         if pauseMin and pauseMin > 0 then
@@ -446,14 +408,36 @@ function WalterWalker:_updateWalk(cfg, dt)
             walk.pauseStartHour       = TimeHelper.getHour()
             walk.pauseMinutesRequired = pauseMin
             walk.pauseTargetRy        = target.pauseRy
-            print(string.format("[ValleyLife][Walter] reached wp%d, pausing %.0f min", walk.targetIdx, pauseMin))
+            print(string.format("[ValleyLife][Walter] reached '%s', pausing %.0f min",
+                target.name or ("wp" .. walk.targetIdx), pauseMin))
         else
             local nextIdx = walk.targetIdx + 1
             if nextIdx > #waypoints then nextIdx = 1 end
             walk.targetIdx = nextIdx
-            print(string.format("[ValleyLife][Walter] reached wp%d -> wp%d", walk.targetIdx - 1, walk.targetIdx))
+            print(string.format("[ValleyLife][Walter] reached '%s' -> '%s'",
+                target.name or "?", (waypoints[nextIdx] and waypoints[nextIdx].name) or ("wp" .. nextIdx)))
         end
+        return
     end
+
+    -- Not there yet: turn toward the target (pivot in place first if the turn is
+    -- sharp), then advance once roughly aligned.
+    local targetRy = math.atan2(dx, dz)
+    local maxTurn  = WALK_TURN_RATE * (dt / 1000)
+    self._ry       = lerpAngle(self._ry, targetRy, maxTurn)
+
+    local diff = targetRy - self._ry
+    while diff >  math.pi do diff = diff - 2 * math.pi end
+    while diff < -math.pi do diff = diff + 2 * math.pi end
+
+    self:_startWalkAnim()
+    if math.abs(diff) <= WALK_TURN_THRESHOLD then
+        self._wx = self._wx + (dx/dist)*step
+        self._wz = self._wz + (dz/dist)*step
+        self._wy = self:_surfaceY(waypoints, walk, target)
+        setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
+    end
+    -- Rotation written to graphicsRootNode in the playerGraphics:update wrapper (last line).
 end
 
 function WalterWalker:applyPosition()
@@ -480,4 +464,6 @@ function WalterWalker:delete()
     self.graphicsNode = nil
     self.animCharSet  = nil
     self.walk         = nil
+    self._loop        = nil
+    self._active      = false
 end

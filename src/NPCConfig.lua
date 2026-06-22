@@ -46,6 +46,7 @@ VLConfig.VILLAGER_SPAWNS = {
     marta  = { x = 412.66, y = 71.39, z = -669.52, ry = math.pi - math.rad(30),
         workLoops = {
             {
+                name = "morningRounds",
                 startHour = 6, endHour = 9,
                 speed = 1.2,
                 waypoints = {
@@ -63,6 +64,7 @@ VLConfig.VILLAGER_SPAWNS = {
                 },
             },
             {
+                name = "afternoonRounds",
                 startHour = 13, endHour = 16,
                 speed = 1.2,
                 waypoints = {
@@ -94,6 +96,7 @@ VLConfig.VILLAGER_SPAWNS = {
                 },
             },
             {
+                name = "eveningHome",
                 startHour = 16,
                 speed = 1.2,
                 despawnOnEnd = true,
@@ -105,6 +108,7 @@ VLConfig.VILLAGER_SPAWNS = {
                 },
             },
             {
+                name = "morningCommute",
                 startHour = 5.5, endHour = 6,
                 speed = 1.2,
                 waypoints = {
@@ -118,17 +122,36 @@ VLConfig.VILLAGER_SPAWNS = {
     },
 }
 
--- Walter (GRANDPA) walk loop — waypoints are world X/Z; Y is read from terrain.
--- startHour/endHour use in-game hours (0-24). speed is units/sec.
--- pauseMinutes is in in-game minutes. pauseRy is optional facing rotation (radians).
--- Add waypoints by walking the route in-game and recording positions with vlPos.
+-- Walter (GRANDPA) walk schedule — named, callable loops (same convention as
+-- Marta's workLoops; both resolve through WorkLoopHelper).
+--   * loops is an ORDERED array; each loop is auto-selected by [startHour,endHour)
+--     and re-fires on the 2-hour tick, or force-started with: vlWalk grandpa <name>
+--   * waypoint [1] is always "home" — it starts AND ends the circuit; when Walter
+--     returns to it the base game resumes idle control (he stays the real GRANDPA,
+--     so there is NO despawn, unlike Marta's eveningHome).
+--   * x/z are world coords (vlPos). Optional y (also from vlPos) is interpolated
+--     along a segment to follow porches/stairs the terrain heightmap omits; without
+--     y, height snaps to terrain. pauseMinutes is in-game minutes; pauseRy is an
+--     optional facing (radians) held during the pause.
+-- TODO: every stop below tagged PLACEHOLDER needs real coords — stand on the spot
+--       in-game, run vlPos, and paste { x, z } here. Tune startHour/endHour to taste.
 VLConfig.WALTER_WALK = {
-    startHour = 0,      -- set to real hours once waypoints are confirmed
-    endHour   = 24,
-    speed     = 0.8,
-    waypoints = {
-        { x = -758.2, z = 94.3,  pauseMinutes = 2  },  -- home (farmhouse)
-        { x = -752.0, z = 94.3,  pauseMinutes = 2  },  -- placeholder: replace with vlPos
+    speed      = 0.8,
+    homeRy     = 0.5236,  -- idle facing when a loop ends (GRANDPA's spawn heading, ~30°)
+    yOffset    = 0,       -- meters subtracted from his driven height (fixes float; tune live with vlWalterYOffset)
+    stairLift  = 0.15,    -- bow-lift on sloped segments to clear step noses; tune live with vlWalterStairLift
+    loops = {
+        -- Captured 2026-06-21 with vlPos. Other loops (morningRounds, middayPorch,
+        -- afternoonStroll, ...) get added back here as we record their stops.
+        {
+            name = "eveningReturn", startHour = 17, endHour = 18,
+            waypoints = {
+                { name = "home",         x = -758.2,  y = 47.0,  z = 94.3 },                    -- [1] start/end (GRANDPA_FARMHOUSE spot)
+                { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                   -- [2] base of the stairs; ground level so home->here stays flat
+                { name = "stairMid",     x = -760.90, y = 47.0,  z = 96.23 },                   -- [3] foot of the stairs at ground level → incline begins here (not before)
+                { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61, pauseMinutes = 2 }, -- [4] threshold (future hideOnEnd point); porch floor (vlPos read 47.99 high by ~0.3, corrected)
+            },
+        },
     },
 }
 
