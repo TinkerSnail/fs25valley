@@ -526,6 +526,15 @@ function VLConsole:walterDoor(dir)
     return ok and "[ValleyLife] Walter woodshop door triggered." or "[ValleyLife] door not resolved."
 end
 
+-- vlWalterLights <1=on|0=off>: TEST Walter's own woodshop-lights control.
+function VLConsole:walterLights(on)
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    local ok = g_valleyLife.walterWalker:_setWoodshopLights(tonumber(on) == 1)
+    return ok and "[ValleyLife] Walter woodshop lights triggered." or "[ValleyLife] lights not resolved."
+end
+
 -- vlWalterMorning: trigger the morning departure now (reveal at the door, walk down to home) for
 -- testing without waiting for the 5am wake.
 function VLConsole:walterMorning()
@@ -924,6 +933,13 @@ end
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
 function VLConsole:skipPause(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    -- Walter (GRANDPA) is driven by WalterWalker, not g_valleyLife.npcs.
+    if npcId == "grandpa" or npcId == "walter" then
+        local ww = g_valleyLife.walterWalker
+        if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+        return ww:skipPause() and "[ValleyLife] Walter pause skipped."
+            or "[ValleyLife] Walter is not pausing right now."
+    end
     local npc = g_valleyLife.npcs[npcId]
     if npc == nil then return string.format("[ValleyLife] Unknown NPC '%s'.", tostring(npcId)) end
     local walk = npc._walk
@@ -2143,6 +2159,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
     addConsoleCommand("vlWalterMorning", "Trigger Walter's morning departure (door -> home): vlWalterMorning", "walterMorning", VLConsole)
     addConsoleCommand("vlWalterDoor", "TEST Walter's woodshop door control: vlWalterDoor <1=open|-1=close>", "walterDoor", VLConsole)
+    addConsoleCommand("vlWalterLights", "TEST Walter's woodshop lights control: vlWalterLights <1on/0off>", "walterLights", VLConsole)
     addConsoleCommand("vlDoorScan", "DIAGNOSTIC: find woodshop door + open methods: vlDoorScan [x] [z] [radius]", "doorScan", VLConsole)
     addConsoleCommand("vlDoorObj", "DIAGNOSTIC: dump nearest placeable's animated objects + open methods: vlDoorObj [x] [z]", "doorObj", VLConsole)
     addConsoleCommand("vlDoorAO", "DIAGNOSTIC: dump full surface of woodshop door object: vlDoorAO [x] [z]", "doorAO", VLConsole)

@@ -232,8 +232,8 @@ VLConfig.WALTER_WALK = {
                 { name = "woodShop",     x = -773.35, z = 111.71 },                     -- [2] recycled approach
                 { name = "shedApproach", x = -777.09, z = 111.10, openDoor = true },    -- [3] just outside — open the door
                 { name = "shedDoor",     x = -776.41, z = 108.35 },                     -- [4] threshold
-                { name = "shedInside",   x = -780.44, z = 106.55, pauseMinutes = 45 },  -- [5] inside — hang out
-                { name = "shedDoorB",    x = -776.41, z = 108.35 },                     -- [6] exit threshold
+                { name = "shedInside",   x = -780.44, z = 106.55, pauseMinutes = 45, lightsOn = true },  -- [5] inside — lights on, hang out
+                { name = "shedDoorB",    x = -776.41, z = 108.35, lightsOff = true },   -- [6] exit threshold — lights off
                 { name = "shedApproachB",x = -777.09, z = 111.10, closeDoor = true },   -- [7] just outside — close behind him
                 { name = "woodShopB",    x = -773.35, z = 111.71 },                     -- [8] → auto-return to home
             },
