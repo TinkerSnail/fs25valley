@@ -152,10 +152,11 @@ plus `morningDeparture` and `woodshopVisit` (manual-only).
 
 ## Diagnostics & API probes
 
-These dump live engine objects to the log to discover `.gar`-sealed APIs. The **method**
-for using them (the `_G[name]` quirk, walking metatables, calling hidden methods) is in
-[engine-api.md](engine-api.md) — read that before adding more. Probes marked **(temp)** are
-hunt scaffolding to **strip once the feature ships**.
+These probe live engine objects / state. The **method** for cracking `.gar`-sealed APIs
+with this kind of dump (the `_G[name]` quirk, walking metatables, calling hidden methods)
+is in [engine-api.md](engine-api.md) — read that before re-deriving anything. (The one-off
+door/light *dump* probes used to find those APIs were stripped after journaling; the two
+generic *testers* below remain for future buildings.)
 
 | Command | Usage | What it dumps / does |
 |---|---|---|
@@ -167,15 +168,8 @@ hunt scaffolding to **strip once the feature ships**.
 | `vlConvo` | `vlConvo` | Probe the NPC conversation system. |
 | `vlDlg` | `vlDlg` | Probe native dialog/choice widgets. |
 | `vlGuidedTour` | `vlGuidedTour` | Probe `GuidedTour` class/instance methods (hook discovery). |
-| `vlDoorScan` | `vlDoorScan [x] [z] [r]` | **(temp)** Placeables near a point + door/animation methods. |
-| `vlDoorObj` | `vlDoorObj [x] [z]` | **(temp)** Nearest placeable's animated objects + methods. |
-| `vlDoorAO` | `vlDoorAO [x] [z]` | **(temp)** Full surface of the door AnimatedObject. |
-| `vlDoorAct` | `vlDoorAct [x] [z]` | **(temp)** Door activatable / animation / controls. |
-| `vlDoorTest` | `vlDoorTest <1\|-1\|0> [which]` | **(temp)** Open/close shed door(s) directly. |
-| `vlLightScan` | `vlLightScan [x] [z]` | **(temp)** Find the lights toggle (`spec_lights`). |
-| `vlLightGroups` | `vlLightGroups [x] [z]` | **(temp)** Light groups + activatable. |
-| `vlLightTest` | `vlLightTest <1\|0>` | **(temp)** Toggle the shed lights directly. |
-| `vlLightFns` | `vlLightFns` | **(temp)** `PlaceableLights` + activatable functions. |
+| `vlDoorTest` | `vlDoorTest <1\|-1\|0> [which]` | Open/close the nearest placeable's door(s) directly — generic tester. |
+| `vlLightTest` | `vlLightTest <1\|0>` | Toggle the nearest placeable's lights directly — generic tester. |
 
 ## Notes
 
