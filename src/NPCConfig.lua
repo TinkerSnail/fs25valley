@@ -169,23 +169,53 @@ VLConfig.WALTER_WALK = {
                 { name = "home",         x = -758.2,  y = 47.0,  z = 94.3, endOnArrival = true }, -- [4] home: stop & idle (base game resumes)
             },
         },
-        -- Daytime out-and-back across the yard (he's "checking the pumps"). Captured 2026-06-21
+        -- MORNING (6-9): out-and-back across the yard, "checking the pumps". Captured 2026-06-21
         -- with vlPos (outbound leg, mirrored for the return). y omitted so he grounds to terrain
-        -- (flat yard). ~67m out, ~130m round trip. Trigger any time with `vlWalk grandpa
-        -- checkingPumps`; also auto-runs daytime. No hideOnEnd → loops back to home.
+        -- (flat yard). ~67m out, ~130m round trip. `vlWalk grandpa checkingPumps`.
         {
-            name = "checkingPumps", startHour = 6, endHour = 16,
+            name = "checkingPumps", startHour = 6, endHour = 9,
             waypoints = {
-                { name = "home", x = -758.2,  z = 94.3 },   -- [1] start/end (GRANDPA_FARMHOUSE spot)
-                { name = "out1", x = -749.15, z = 91.74 },  -- [2]
-                { name = "out2", x = -745.95, z = 93.36 },  -- [3]
-                { name = "out3", x = -740.93, z = 90.31 },  -- [4]
-                { name = "far1", x = -698.67, z = 63.05 },  -- [5] far point (~67m out)
-                { name = "turn", x = -699.08, z = 86.38 },  -- [6] turnaround (last captured)
-                { name = "far1b", x = -698.67, z = 63.05 }, -- [7] retrace far point
-                { name = "out3b", x = -740.93, z = 90.31 }, -- [8]
-                { name = "out2b", x = -745.95, z = 93.36 }, -- [9]
-                { name = "out1b", x = -749.15, z = 91.74 }, -- [10] → auto-return to home
+                { name = "home",        x = -758.2,  z = 94.3 },                      -- [1] start/end (GRANDPA_FARMHOUSE spot)
+                { name = "bench",       x = -749.15, z = 91.74 },                     -- [2]
+                { name = "swingset",    x = -745.95, z = 93.36 },                     -- [3]
+                { name = "orangeCone",  x = -740.93, z = 90.31 },                     -- [4]
+                { name = "pumphouse",   x = -698.67, z = 63.05 },                     -- [5] farthest (~67m), but 4th stop
+                { name = "gaspump",     x = -699.08, z = 86.38, pauseMinutes = 15 },  -- [6] turnaround (last), pause a moment
+                { name = "pumphouseB",  x = -698.67, z = 63.05 },                     -- [7] retrace
+                { name = "orangeConeB", x = -740.93, z = 90.31 },                     -- [8]
+                { name = "swingsetB",   x = -745.95, z = 93.36 },                     -- [9]
+                { name = "benchB",      x = -749.15, z = 91.74 },                     -- [10] → auto-return to home
+            },
+        },
+        -- MIDDAY (9-12): out to the mailbox and back, pause to check the mail. Captured 2026-06-22
+        -- with vlPos (outbound leg, mirrored). y omitted → terrain grounding. `vlWalk grandpa mailbox`.
+        {
+            name = "mailbox", startHour = 9, endHour = 12,
+            waypoints = {
+                { name = "home",         x = -758.2,  z = 94.3 },                     -- [1] start/end
+                { name = "woodShop",     x = -773.35, z = 111.71 },                   -- [2]
+                { name = "entryDrive",   x = -778.71, z = 128.54 },                   -- [3]
+                { name = "mailApproach", x = -793.01, z = 136.04 },                   -- [4]
+                { name = "mailbox",      x = -795.10, z = 128.02, pauseMinutes = 20 },-- [5] mailbox (pause to check mail)
+                { name = "mailApproachB",x = -793.01, z = 136.04 },                   -- [6] retrace
+                { name = "entryDriveB",  x = -778.71, z = 128.54 },                   -- [7]
+                { name = "woodShopB",    x = -773.35, z = 111.71 },                   -- [8] → auto-return to home
+            },
+        },
+        -- AFTERNOON (12-16): same approach as the mailbox route (woodShop/entryDrive/mailApproach)
+        -- but the final stop is the produce stand instead. New endpoint captured 2026-06-22 with
+        -- vlPos. y omitted → terrain grounding. `vlWalk grandpa produceStand`.
+        {
+            name = "produceStand", startHour = 12, endHour = 16,
+            waypoints = {
+                { name = "home",         x = -758.2,  z = 94.3 },                       -- [1] start/end
+                { name = "woodShop",     x = -773.35, z = 111.71 },                     -- [2] (shared w/ mailbox)
+                { name = "entryDrive",   x = -778.71, z = 128.54 },                     -- [3] (shared)
+                { name = "mailApproach", x = -793.01, z = 136.04 },                     -- [4] (shared)
+                { name = "produceStand", x = -797.59, z = 140.01, pauseMinutes = 20 },  -- [5] the stand (pause)
+                { name = "mailApproachB",x = -793.01, z = 136.04 },                     -- [6] retrace
+                { name = "entryDriveB",  x = -778.71, z = 128.54 },                     -- [7]
+                { name = "woodShopB",    x = -773.35, z = 111.71 },                     -- [8] → auto-return to home
             },
         },
     },
