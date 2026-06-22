@@ -155,18 +155,18 @@ function WalterWalker:_acquireNode()
                 local active = walker._active and self_pg == walker.grandpa.playerGraphics
                                and grn and entityExists(grn)
 
-                -- R17: while Walter is actively walking, SKIP orig() (the GIANTS graphics update).
-                -- orig() runs the ConditionalAnimation state machine, which flickers between walk and
-                -- garbage states (swim/fall/horse, R16) and fights our direct track-0 clip = the twitch.
-                -- Marta is clean because she never runs gfx:update during her walk (NPCEntity.lua:888-895).
-                -- The engine still advances our enabled track-0 clip without orig(). When NOT active
-                -- (idle/home), run orig() normally so conversation/facial/IK are untouched.
-                if not active then
+                -- R17: while Walter is actively walking, SKIP orig() (the GIANTS graphics update) so
+                -- its ConditionalAnimation doesn't fight our direct track-0 clip = the twitch.
+                -- BUT a CONVERSATION needs orig() to animate (face/gestures); if a route is active
+                -- during a conversation, skipping orig() starves it → he glides. So also run orig()
+                -- when in conversation, and let _updateWalk yield the route to the base game.
+                local inConvo = walker.grandpa and walker.grandpa.isInConversation
+                if (not active) or inConvo then
                     orig(self_pg, dt)
                     return
                 end
 
-                -- Active: drive facing ourselves; ConditionalAnimation stays dormant.
+                -- Active walk (not in conversation): drive facing ourselves; orig stays dormant.
                 setRotation(grn, 0, walker._ry, 0)
             end
             if cls.update then
@@ -600,10 +600,17 @@ function WalterWalker:_updateWalk(cfg, dt)
     -- Keep his map point + interaction trigger on him every active frame (R21).
     self:_syncFollowers()
 
-    -- Stop & face the player when he's near (or already talking), and hold there. His trigger is
-    -- now stationary, so walking up to him fires the normal base-game talk prompt + conversation.
-    -- We stay _active (keep driving) so the base game can't snap him home; we set facing ourselves.
-    -- Resume the loop once the player leaves and no conversation is active.
+    -- In conversation: YIELD fully to the base game. The wrapper runs orig() so the conversation
+    -- animates (face/gestures); we just revert our walk clip to idle once and stop driving. (Driving
+    -- the walk while talking starves the conversation of orig() → gliding.) He holds position because
+    -- orig() with isNPC=false doesn't move him. Resume the route when the conversation ends.
+    if self.grandpa.isInConversation then
+        self:_stopWalkAnim()
+        return
+    end
+
+    -- Stop & face the player when he's near (not talking), and hold there. His trigger is now
+    -- stationary, so walking up to him fires the normal base-game talk prompt + conversation.
     local approach   = cfg.approachRange or 6.0
     local px, _, pz  = playerWorldPos()
     local playerNear = false
@@ -611,14 +618,13 @@ function WalterWalker:_updateWalk(cfg, dt)
         local dx, dz = px - self._wx, pz - self._wz
         playerNear = (dx * dx + dz * dz) <= (approach * approach)
     end
-    if self.grandpa.isInConversation or playerNear then
+    if playerNear then
         self:_stopWalkAnim()
         if px ~= nil then
             local targetRy = math.atan2(px - self._wx, pz - self._wz)
             local maxTurn  = WALK_TURN_RATE * (dt / 1000)
             self._ry = lerpAngle(self._ry, targetRy, maxTurn)
         end
-        -- Pin him at his stop position (belt-and-suspenders against any base-game move).
         setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
         if not self._stoppedForPlayer then
             self._stoppedForPlayer = true
