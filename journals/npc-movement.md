@@ -105,6 +105,15 @@ in the waypoint config, not the code.
 
 ---
 
+## Stop-and-face (talk while mid-route)
+
+Both Marta (`VLNPCEntity:_updateWalkLoop`) and Walter (`WalterWalker:_updateWalk`) **stop walking and
+turn to face the player** when he comes within `APPROACH_RANGE` (6 m), or while she/he is talking, then
+**resume** when he leaves. This makes them "ready to talk" mid-route. Marta: reverts to the idle clip
+(`_onWalkEnd`), lerps `rotation.y` toward the player, holds position, `return`s (no waypoint advance);
+`_stoppedForPlayer` flag restarts the walk clip on resume. Walter: same, plus he must run `orig()`
+during a base-game conversation or the conversation can't animate (he'd glide).
+
 ## Waypoint design tips
 
 - **Door frames need 3 waypoints**: one just before the door, one at the

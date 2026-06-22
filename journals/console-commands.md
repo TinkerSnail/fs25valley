@@ -1,14 +1,21 @@
-# Developer Console Commands
+# Developer Console Commands — master directory
 
-The mod registers these `vl*` commands (see `main.lua`, `VLConsole`). Open the
-console with **`~`** and type a command. Most print to the console **and**
+**This is the central directory of every `vl*` command** the mod registers (source of
+truth: the `addConsoleCommand` calls in `main.lua` / `VLConsole`). Open the console with
+**`~`** and type a command. Most print to the console **and**
 `~/Library/Application Support/FarmingSimulator2025/log.txt`.
 
 After code changes, run `./repack.sh` from the project root, then **fully quit
-and relaunch** FS25. Confirm the log shows the expected mod version (e.g.
-`Valley Life 0.1.0.47 loaded`).
+and relaunch** FS25. Confirm the log shows the expected mod version.
 
-`npcId` is one of: **`elara`**, **`kenji`**, **`marta`**.
+`npcId` is one of: **`elara`**, **`kenji`**, **`marta`** (the mod NPCs). Walter is the
+base-game **`grandpa`** — `vlWalk` / `vlSkipPause` accept `grandpa`, and he has his own
+`vlWalter*` commands (see the **Walter (GRANDPA)** section).
+
+Sections: Outfit testing · Calendar & outfits · Relationship & events · World & spawn ·
+NPC movement · **Walter (GRANDPA)** · Appearance · **Diagnostics & API probes**. The probes
+are how we crack `.gar`-sealed engine APIs — the repeatable method is in
+[engine-api.md](engine-api.md).
 
 ## Outfit testing (start here)
 
@@ -74,15 +81,38 @@ yet change outfit mode.
 
 | Command | Usage | What it does |
 |---|---|---|
-| `vlWalk` | `vlWalk <npcId>` | Force-start the NPC's work loop from waypoint 2 immediately (bypasses the 2-hour tick). |
-| `vlSkipPause` | `vlSkipPause <npcId>` | Skip the current pause and trigger movement to the next waypoint. |
+| `vlWalk` | `vlWalk <npcId> [loopName\|index]` | Force-start a walk loop now (bypasses the 2-hour tick). `npcId` = `marta`/etc. **or `grandpa`** (Walter). With no loop arg, starts the loop active at the current hour; otherwise by name (e.g. `vlWalk grandpa mailbox`) or index. |
+| `vlSkipPause` | `vlSkipPause <npcId>` | Skip the current mid-route pause and send them to the next waypoint. Works for the mod NPCs **and `grandpa`**. |
 | `vlAnimClips` | `vlAnimClips <npcId>` | Enumerate all animation clip names (indices 0–120) on the NPC's char set. Useful for discovering walk/idle clip names. |
 
 Work loops only run during **work mode** (Mon–Fri 5:30 AM–4:30 PM). Use `vlWalk`
 to test without waiting for the 2-hour trigger. Use `vlSkipPause` to fast-forward
-through a `pauseMinutes` stop without touching the clock.
+through a `pauseMinutes` stop without touching the clock. Both Marta and Walter
+**stop & face the player** within ~4 m mid-route, then resume.
 
 See [npc-movement.md](npc-movement.md) for full work loop documentation.
+
+## Walter (GRANDPA)
+
+Walter is the real base-game GRANDPA, hand-driven by `WalterWalker`. His loops:
+`checkingPumps` (6–9), `mailbox` (9–12), `produceStand` (12–16), `eveningReturn` (19),
+plus `morningDeparture` and `woodshopVisit` (manual-only).
+
+| Command | Usage | What it does |
+|---|---|---|
+| `vlWalk grandpa` | `vlWalk grandpa [loop]` | Start one of his loops now (e.g. `woodshopVisit`). |
+| `vlSkipPause grandpa` | `vlSkipPause grandpa` | Skip his current pause (e.g. the 45-min woodshop hang-out). |
+| `vlWalterShow` | `vlWalterShow` | Reveal him if he "stepped inside" (door disappear). |
+| `vlWalterHide` | `vlWalterHide` | Hide him on demand (test the door disappear). |
+| `vlWalterMorning` | `vlWalterMorning` | Trigger the 5am morning departure (door → home) now. |
+| `vlWalterDoor` | `vlWalterDoor <1\|-1>` | Open (1) / close (-1) the woodshop door via his own code. |
+| `vlWalterLights` | `vlWalterLights <1\|0>` | Turn the woodshop lights on (1) / off (0). |
+| `vlWalterYOffset` | `vlWalterYOffset <m>` | Live-tune his driven height (positive lowers); fixes float. |
+| `vlWalterStairLift` | `vlWalterStairLift <m>` | Live-tune the convex bow lift on stair segments. |
+| `vlWalterIntro` | `vlWalterIntro` | Force-play his post-tour market intro (ignores the once flag). |
+| `vlWalterDump` | `vlWalterDump` | Dump GRANDPA runtime state (spot, components, graphicsNode). |
+| `vlGrandpa` | `vlGrandpa` | Probe runtime paths to GRANDPA's rootNode (walk-loop research). |
+| `vlMoveGrandpa` | `vlMoveGrandpa <x> <z>` | Teleport GRANDPA to a world position (research). |
 
 ## Appearance diagnostics
 
@@ -119,6 +149,33 @@ See [npc-movement.md](npc-movement.md) for full work loop documentation.
 | Socks | `vlSocks` | `vlSock` | `vlSockColor` |
 
 `vlFacegear` / `vlFacegears` - empty in base FS25; socks may route through footwear.
+
+## Diagnostics & API probes
+
+These dump live engine objects to the log to discover `.gar`-sealed APIs. The **method**
+for using them (the `_G[name]` quirk, walking metatables, calling hidden methods) is in
+[engine-api.md](engine-api.md) — read that before adding more. Probes marked **(temp)** are
+hunt scaffolding to **strip once the feature ships**.
+
+| Command | Usage | What it dumps / does |
+|---|---|---|
+| `vlPos` | `vlPos` | Player world position (for capturing waypoints / spawn coords). |
+| `vlNear` | `vlNear` | Player pos + nearest villager + distance. |
+| `vlStyle` | `vlStyle` | Character style configs (item/color counts) — skin/age research. |
+| `vlHairColors` | `vlHairColors` | Hair color palette (index → RGB). |
+| `vlAnimClips` | `vlAnimClips <npcId>` | All anim clip names 0–120 (walk/idle clip discovery). |
+| `vlConvo` | `vlConvo` | Probe the NPC conversation system. |
+| `vlDlg` | `vlDlg` | Probe native dialog/choice widgets. |
+| `vlGuidedTour` | `vlGuidedTour` | Probe `GuidedTour` class/instance methods (hook discovery). |
+| `vlDoorScan` | `vlDoorScan [x] [z] [r]` | **(temp)** Placeables near a point + door/animation methods. |
+| `vlDoorObj` | `vlDoorObj [x] [z]` | **(temp)** Nearest placeable's animated objects + methods. |
+| `vlDoorAO` | `vlDoorAO [x] [z]` | **(temp)** Full surface of the door AnimatedObject. |
+| `vlDoorAct` | `vlDoorAct [x] [z]` | **(temp)** Door activatable / animation / controls. |
+| `vlDoorTest` | `vlDoorTest <1\|-1\|0> [which]` | **(temp)** Open/close shed door(s) directly. |
+| `vlLightScan` | `vlLightScan [x] [z]` | **(temp)** Find the lights toggle (`spec_lights`). |
+| `vlLightGroups` | `vlLightGroups [x] [z]` | **(temp)** Light groups + activatable. |
+| `vlLightTest` | `vlLightTest <1\|0>` | **(temp)** Toggle the shed lights directly. |
+| `vlLightFns` | `vlLightFns` | **(temp)** `PlaceableLights` + activatable functions. |
 
 ## Notes
 

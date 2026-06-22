@@ -25,6 +25,10 @@ For project overview, install, and controls, see the root [README.md](../README.
 - [npc-movement.md](npc-movement.md) - **work loop system**: waypoints, walk
   animation clips, turn-then-walk behavior, `pauseMinutes` (game time), `pauseRy`,
   and hand props research.
+- [engine-api.md](engine-api.md) - **runtime introspection** of sealed (`.gar`) APIs: the
+  `_G[name]` metatable quirk, placeable **doors** (`ao:setDirection`), **lights**
+  (`spec_lights` groups + `updateLightState`), **map hotspots** (override
+  `getWorldPosition`), and **ESC-map Visit teleport** (`Player:teleportToNPC`).
 - [game-files-and-xml.md](game-files-and-xml.md) - **how to research base-game
   behavior**: resource directory paths, key XML files (`maps_npcs.xml`,
   `guidedTour_intro.xml`, `pedestrianSystem.xml`), search patterns, and what is

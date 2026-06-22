@@ -1030,6 +1030,9 @@ end
 local WALK_TURN_RATE = math.rad(240)
 -- If she needs to turn more than this before walking, she pivots in place first.
 local WALK_TURN_THRESHOLD = math.rad(25)
+-- Mid-walk, she stops and turns to face the player within this range (ready to talk), then resumes
+-- when they leave. A bit larger than INTERACT_DISTANCE so she's already facing you by talk range.
+local APPROACH_RANGE = 4.0
 
 local function lerpAngle(current, target, maxStep)
     local diff = target - current
@@ -1076,6 +1079,35 @@ function VLNPCEntity:_updateWalkLoop(dt)
 
     local walk = self._walk
     local waypoints = self._workLoop.waypoints
+
+    -- Stop & turn to face the player when he's near (or she's already talking), ready to talk; hold
+    -- in place and resume the loop once he leaves. Mirrors Walter's stop-and-face.
+    local player = g_localPlayer or (g_currentMission and g_currentMission.player)
+    local px, pz
+    if player and player.rootNode then
+        local a, _, c = getWorldTranslation(player.rootNode)
+        px, pz = a, c
+    end
+    local near = false
+    if px ~= nil then
+        local ddx, ddz = px - self.position.x, pz - self.position.z
+        near = (ddx * ddx + ddz * ddz) <= (APPROACH_RANGE * APPROACH_RANGE)
+    end
+    if self.isTalking or near then
+        self:_onWalkEnd()  -- revert to idle clip (idempotent)
+        if px ~= nil then
+            local maxStep = WALK_TURN_RATE * (dt / 1000)
+            self.rotation.y = lerpAngle(self.rotation.y, math.atan2(px - self.position.x, pz - self.position.z), maxStep)
+        end
+        if not self._stoppedForPlayer then
+            self._stoppedForPlayer = true
+            print(string.format("[ValleyLife] '%s' stopping to face player", self.name))
+        end
+        return  -- hold; don't advance the loop
+    elseif self._stoppedForPlayer then
+        self._stoppedForPlayer = false
+        if walk.state == "walking" then self:_onWalkStart() end  -- resume the walk clip
+    end
 
     if walk.state == "pausing" then
         if walk.pauseTargetRy then

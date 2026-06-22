@@ -31,13 +31,13 @@ function VLRelationshipManager:getTier(npcId)
 end
 
 function VLRelationshipManager:hasTalkedToday(npcId)
-    local today = TimeHelper.getDay()
+    local today = TimeHelper.getMonotonicDay()
     if today ~= self.lastDay then return false end
     return self.talkedToday[npcId] == true
 end
 
 function VLRelationshipManager:tryTalk(npcId)
-    local today = TimeHelper.getDay()
+    local today = TimeHelper.getMonotonicDay()
     if today ~= self.lastDay then
         self.talkedToday = {}
         self.lastDay = today
