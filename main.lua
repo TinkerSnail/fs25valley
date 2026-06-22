@@ -517,6 +517,96 @@ function VLConsole:walterHide()
     return "[ValleyLife] Walter hidden."
 end
 
+-- vlWalterMarker: DIAGNOSTIC. Dump GRANDPA's fields to locate his map hotspot object and
+-- learn how it is positioned (so we can make it follow his driven walk position). Logs:
+--   - top-level grandpa keys (key = type [scalar/string value]),
+--   - grandpa.x/y/z vs the driven graphicsRootNode world position,
+--   - any table field whose name or sub-keys look hotspot-like (hotspot/icon/worldX/xMapPos).
+function VLConsole:walterMarker()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    local grandpa = ww and ww.grandpa
+    if grandpa == nil then return "[ValleyLife] Walter/GRANDPA not acquired yet." end
+
+    print("[ValleyLife][Marker] ---- grandpa top-level fields ----")
+    for k, v in pairs(grandpa) do
+        local t = type(v)
+        if t == "number" or t == "boolean" or t == "string" then
+            print(string.format("[ValleyLife][Marker]   %s = %s (%s)", tostring(k), tostring(v), t))
+        else
+            print(string.format("[ValleyLife][Marker]   %s : %s", tostring(k), t))
+        end
+    end
+
+    -- grandpa position fields vs where we actually drive him
+    if ww.graphicsNode and entityExists(ww.graphicsNode) then
+        local gx, gy, gz = getWorldTranslation(ww.graphicsNode)
+        print(string.format("[ValleyLife][Marker] grandpa.x/y/z = %s / %s / %s | graphicsNode world = %.2f / %.2f / %.2f",
+            tostring(grandpa.x), tostring(grandpa.y), tostring(grandpa.z), gx, gy, gz))
+    end
+
+    -- scan one level deep for a hotspot-like table
+    local function looksHotspot(name, tbl)
+        local n = tostring(name):lower()
+        if n:find("hotspot") or n:find("marker") or n:find("icon") then return true end
+        if type(tbl) == "table" then
+            for kk in pairs(tbl) do
+                local sk = tostring(kk):lower()
+                if sk == "worldx" or sk == "worldz" or sk == "xmappos" or sk == "zmappos"
+                   or sk:find("hotspot") or sk:find("mapposition") then return true end
+            end
+        end
+        return false
+    end
+    for k, v in pairs(grandpa) do
+        if type(v) == "table" and looksHotspot(k, v) then
+            print(string.format("[ValleyLife][Marker] >> candidate '%s':", tostring(k)))
+            for kk, vv in pairs(v) do
+                local tv = type(vv)
+                if tv == "number" or tv == "boolean" or tv == "string" then
+                    print(string.format("[ValleyLife][Marker]      .%s = %s (%s)", tostring(kk), tostring(vv), tv))
+                else
+                    print(string.format("[ValleyLife][Marker]      .%s : %s", tostring(kk), tv))
+                end
+            end
+        end
+    end
+    print("[ValleyLife][Marker] ---- end ----")
+    return "[ValleyLife] Walter marker dump written to log."
+end
+
+-- vlWalterApi: DIAGNOSTIC. Walk GRANDPA's metatable chain and list method names, highlighting
+-- anything conversation/interaction/talk/start/trigger-related, so we can find how to start his
+-- base-game conversation programmatically (the physics trigger won't fire while he walks).
+function VLConsole:walterApi()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    local grandpa = ww and ww.grandpa
+    if grandpa == nil then return "[ValleyLife] Walter/GRANDPA not acquired yet." end
+
+    local seen = {}
+    local function scan(tbl, depth)
+        if tbl == nil or depth > 6 or seen[tbl] then return end
+        seen[tbl] = true
+        for k, v in pairs(tbl) do
+            if type(v) == "function" and type(k) == "string" then
+                local lk = k:lower()
+                local hot = lk:find("convers") or lk:find("interact") or lk:find("talk")
+                           or lk:find("start") or lk:find("trigger") or lk:find("dialog")
+                print(string.format("[ValleyLife][Api] %s%s", hot and ">> " or "   ", k))
+            end
+        end
+        local mt = getmetatable(tbl)
+        if type(mt) == "table" then
+            scan(rawget(mt, "__index"), depth + 1)
+        end
+    end
+    print("[ValleyLife][Api] ---- grandpa methods (>> = conversation/interaction-ish) ----")
+    scan(grandpa, 0)
+    local mt = getmetatable(grandpa)
+    if type(mt) == "table" then scan(mt.__index, 1) end
+    print("[ValleyLife][Api] ---- end ----")
+    return "[ValleyLife] Walter API dump written to log."
+end
+
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
 function VLConsole:skipPause(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -1737,6 +1827,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterStairLift", "Tune Walter's stair bow-lift on sloped segments: vlWalterStairLift <n>", "setWalterStairLift", VLConsole)
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)
     addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
+    addConsoleCommand("vlWalterMarker", "DIAGNOSTIC: dump GRANDPA fields to find his map hotspot: vlWalterMarker", "walterMarker", VLConsole)
+    addConsoleCommand("vlWalterApi", "DIAGNOSTIC: list GRANDPA methods to find conversation-start API: vlWalterApi", "walterApi", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)

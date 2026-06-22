@@ -33,6 +33,14 @@ local function terrainY(x, z, fallback)
     return y
 end
 
+local function playerWorldPos()
+    local player = g_localPlayer or (g_currentMission and g_currentMission.player)
+    if player == nil or player.rootNode == nil then return nil end
+    local ok, px, py, pz = pcall(getWorldTranslation, player.rootNode)
+    if not ok or type(px) ~= "number" then return nil end
+    return px, py, pz
+end
+
 local function findClip(charSet, candidates)
     if charSet == nil or charSet == 0 then return -1, nil end
     for _, name in ipairs(candidates) do
@@ -49,6 +57,9 @@ function WalterWalker.new()
     self.grandpa      = nil
     self.graphicsNode = nil
     self.spotNode     = nil
+    self.triggerNode  = nil   -- grandpa.interactionTriggerNode; moved to follow him so you can talk mid-walk
+    self.hotspot      = nil   -- grandpa.mapHotspot; we shadow its getWorldPosition so the map icon follows
+    self._origGetWP   = nil   -- saved original hotspot getWorldPosition (restored on delete)
     self.animCharSet  = nil
     self._walkClipIdx = -1
     self._idleClipIdx = -1
@@ -60,6 +71,7 @@ function WalterWalker.new()
     self.walk         = nil
     self._active      = false
     self._hidden      = false  -- true while Walter has "stepped inside" (graphicsRootNode invisible)
+    self._inConvo     = false  -- true while a conversation paused his walk (so we log start/end once)
     self._lastWakeDay = nil    -- monotonicDay of his last 5am wake-up (so it fires once per day)
     self._loop        = nil
     self._lastTick    = -1
@@ -93,6 +105,28 @@ function WalterWalker:_acquireNode()
     -- no fight, because we feed its input instead of overwriting its output.
     local sn = grandpa.spot and grandpa.spot.node
     self.spotNode = (sn ~= nil and sn ~= 0 and entityExists(sn)) and sn or nil
+
+    -- Interaction trigger (the "press to talk" zone). Base-game it sits at his home spot;
+    -- we move it to his driven position each active frame so he's talkable mid-walk.
+    local tn = grandpa.interactionTriggerNode
+    self.triggerNode = (tn ~= nil and tn ~= 0 and entityExists(tn)) and tn or nil
+
+    -- Map icon: the NPC hotspot's getWorldPosition() returns a STATIC internal value (GRANDPA's
+    -- spawn point) and ignores worldX/Z fields, setWorldPosition, grandpa.x/z and all nodes (R29).
+    -- Shadow getWorldPosition on the instance so the map (which calls hs:getWorldPosition()) reads
+    -- his driven position while he's walking, and the base value when he's idle.
+    local hs = grandpa.mapHotspot
+    self.hotspot = hs
+    if hs ~= nil and self._origGetWP == nil and type(hs.getWorldPosition) == "function" then
+        local walker = self
+        local orig   = hs.getWorldPosition
+        hs.getWorldPosition = function(selfHs)
+            if walker._active then return walker._wx, walker._wz end
+            return orig(selfHs)
+        end
+        self._origGetWP = orig
+        print("[ValleyLife][Walter] hotspot getWorldPosition overridden")
+    end
 
     -- Seed facing + world position from the current graphicsNode so he doesn't snap.
     if self.graphicsNode then
@@ -261,6 +295,33 @@ function WalterWalker:_stopWalkAnim()
     end
 end
 
+-- Keep everything that should travel with Walter pinned to his driven position each active frame.
+-- The base game leaves all of these at grandpa.x/z (his home spot) and never tracks our
+-- graphicsRootNode walk (R21). We run AFTER g_npcManager.update, so our writes win.
+function WalterWalker:_syncFollowers()
+    local grandpa = self.grandpa
+    if grandpa == nil then return end
+    local x, y, z = self._wx, self._wy, self._wz
+
+    -- NPC position fields (base game derives range/trigger logic from these; body is separate).
+    grandpa.x, grandpa.y, grandpa.z = x, y, z
+
+    -- Map icon follows via the getWorldPosition override installed in _acquireNode (R30).
+    -- Interaction trigger follows too (setWorldTranslation does move it — R28).
+    if self.triggerNode and entityExists(self.triggerNode) then
+        pcall(function() setWorldTranslation(self.triggerNode, x, y, z) end)
+    end
+
+    -- Mark him in range by our own distance check (the physics trigger won't fire while dragged,
+    -- R26). Harmless on its own; kept for systems that read isPlayerInRange.
+    local range = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.interactRange) or 4.5
+    local px, _, pz = playerWorldPos()
+    if px ~= nil then
+        local dx, dz = px - x, pz - z
+        grandpa.isPlayerInRange = (dx * dx + dz * dz) <= (range * range)
+    end
+end
+
 function WalterWalker:_loopRunnable(loop)
     return type(loop) == "table" and type(loop.waypoints) == "table" and #loop.waypoints >= 2
 end
@@ -296,6 +357,7 @@ function WalterWalker:_revealAtHome(cfg)
             setTranslation(self.graphicsNode, home.x, home.y - (self._yOffset or 0), home.z)
             setRotation(self.graphicsNode, 0, self._ry, 0)
         end)
+        self:_syncFollowers()  -- put the map point + trigger back at home with him
     end
     self:_reveal()
     print("[ValleyLife][Walter] started his day (revealed at home)")
@@ -414,6 +476,32 @@ function WalterWalker:_updateWalk(cfg, dt)
     local waypoints = loop.waypoints
     local speed     = loop.speed or cfg.speed or 0.8
 
+    -- Keep his map point + interaction trigger on him every active frame (R21).
+    self:_syncFollowers()
+
+    -- Player started a conversation mid-walk: stop, turn to face them, and hold in place
+    -- until it ends, then resume the loop. We stay _active (keep driving) so the base game
+    -- can't snap him home; we set facing ourselves toward the player.
+    if self.grandpa.isInConversation then
+        self:_stopWalkAnim()
+        local px, _, pz = playerWorldPos()
+        if px ~= nil then
+            local targetRy = math.atan2(px - self._wx, pz - self._wz)
+            local maxTurn  = WALK_TURN_RATE * (dt / 1000)
+            self._ry = lerpAngle(self._ry, targetRy, maxTurn)
+        end
+        -- Pin him at his stop position (belt-and-suspenders against any base-game move).
+        setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
+        if not self._inConvo then
+            self._inConvo = true
+            print(string.format("[ValleyLife][Walter] conversation started; stopping to face player at (%.1f, %.1f)", self._wx, self._wz))
+        end
+        return
+    elseif self._inConvo then
+        self._inConvo = false
+        print("[ValleyLife][Walter] conversation ended; resuming walk")
+    end
+
     if walk.state == "pausing" then
         self:_stopWalkAnim()
         if walk.pauseTargetRy then
@@ -526,6 +614,12 @@ function WalterWalker:delete()
         self._origPlayerGraphicsUpdate = nil
         self._patchedClass = nil
     end
+    -- Restore the hotspot's original getWorldPosition (we shadowed it on the instance).
+    if self._origGetWP and self.hotspot then
+        pcall(function() self.hotspot.getWorldPosition = self._origGetWP end)
+    end
+    self._origGetWP = nil
+    self.hotspot    = nil
     self:_stopWalkAnim()
     self.grandpa      = nil
     self.graphicsNode = nil

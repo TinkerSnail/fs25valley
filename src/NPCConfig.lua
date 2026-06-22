@@ -141,6 +141,7 @@ VLConfig.WALTER_WALK = {
     yOffset      = 0,       -- meters subtracted from his driven height (fixes float; tune live with vlWalterYOffset)
     stairLift    = 0.15,    -- bow-lift on sloped segments to clear step noses; tune live with vlWalterStairLift
     dayStartHour = 5,       -- he "starts his day" at 5am: fires once per day (edge-triggered) to reappear at home if he stepped inside last evening
+    interactRange = 4.5,    -- meters: how close the player must be to his walked position for the talk prompt (we set isPlayerInRange ourselves; the physics trigger is unreliable while walking)
     home         = { x = -758.2, y = 47.0, z = 94.3 },  -- GRANDPA_FARMHOUSE spot; where the morning reveal places him
     loops = {
         -- Captured 2026-06-21 with vlPos. Other loops (morningRounds, middayPorch,
@@ -152,6 +153,25 @@ VLConfig.WALTER_WALK = {
                 { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                   -- [2] base of the stairs; ground level so home->here stays flat
                 { name = "stairMid",     x = -760.90, y = 47.0,  z = 96.23 },                   -- [3] foot of the stairs at ground level → incline begins here (not before)
                 { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61, pauseMinutes = 2, hideOnEnd = true }, -- [4] threshold; pause then "step inside" (setVisibility false); porch floor (vlPos read 47.99 high by ~0.3, corrected)
+            },
+        },
+        -- Long out-and-back across the yard for testing (talk-mid-walk, map point, facing).
+        -- Captured 2026-06-21 with vlPos (outbound leg, mirrored for the return). y omitted so
+        -- he grounds to terrain (flat yard). ~67m out, ~130m round trip. Trigger any time with
+        -- `vlWalk grandpa dayStroll`; also auto-runs daytime. No hideOnEnd → loops back to home.
+        {
+            name = "dayStroll", startHour = 6, endHour = 16,
+            waypoints = {
+                { name = "home", x = -758.2,  z = 94.3 },   -- [1] start/end (GRANDPA_FARMHOUSE spot)
+                { name = "out1", x = -749.15, z = 91.74 },  -- [2]
+                { name = "out2", x = -745.95, z = 93.36 },  -- [3]
+                { name = "out3", x = -740.93, z = 90.31 },  -- [4]
+                { name = "far1", x = -698.67, z = 63.05 },  -- [5] far point (~67m out)
+                { name = "turn", x = -699.08, z = 86.38 },  -- [6] turnaround (last captured)
+                { name = "far1b", x = -698.67, z = 63.05 }, -- [7] retrace far point
+                { name = "out3b", x = -740.93, z = 90.31 }, -- [8]
+                { name = "out2b", x = -745.95, z = 93.36 }, -- [9]
+                { name = "out1b", x = -749.15, z = 91.74 }, -- [10] → auto-return to home
             },
         },
     },
