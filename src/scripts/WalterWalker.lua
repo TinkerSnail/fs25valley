@@ -372,6 +372,32 @@ function WalterWalker:_revealAtHome(cfg)
     print("[ValleyLife][Walter] started his day (revealed at home)")
 end
 
+-- Morning departure: at 5am he steps out the door and walks down to home. Reveal him AT the door
+-- (waypoint[1] of the morningDeparture loop), face the next waypoint, then run the loop. Falls back
+-- to a plain home-reveal if the loop is missing. Mirror of eveningReturn (which ends by hiding at
+-- the door); this ends at home via the endOnArrival waypoint.
+function WalterWalker:_startMorningDeparture(cfg)
+    local loop = cfg and WorkLoopHelper.findByName(cfg.loops, "morningDeparture")
+    if loop == nil or not self:_loopRunnable(loop) then
+        self:_revealAtHome(cfg)  -- no morning loop captured → just appear at home
+        return
+    end
+    local door = loop.waypoints[1]
+    local nxt  = loop.waypoints[2]
+    self._wx, self._wy, self._wz = door.x, door.y or self._wy, door.z
+    if nxt then self._ry = math.atan2(nxt.x - door.x, nxt.z - door.z) end  -- face down the steps
+    if self.graphicsNode and entityExists(self.graphicsNode) then
+        pcall(function()
+            setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
+            setRotation(self.graphicsNode, 0, self._ry, 0)
+        end)
+    end
+    self:_reveal()        -- make him visible at the door
+    self:_beginLoop(loop) -- walk door -> stairMid -> doorApproach -> home (ends there)
+    self:_syncFollowers()
+    print("[ValleyLife][Walter] morning departure: stepping out the door")
+end
+
 function WalterWalker:_beginLoop(loop)
     if self._hidden then self:_reveal() end  -- a loop start always brings him back outside
     self._loop   = loop
@@ -433,7 +459,8 @@ function WalterWalker:update(dt)
         local day = TimeHelper.getMonotonicDay() or 0
         if day ~= self._lastWakeDay then
             self._lastWakeDay = day
-            if self._hidden then self:_revealAtHome(cfg) end
+            -- If he stepped inside last evening, walk him back out the door (morning departure).
+            if self._hidden then self:_startMorningDeparture(cfg); return end
         end
     end
 
@@ -568,6 +595,12 @@ function WalterWalker:_updateWalk(cfg, dt)
         end
         self:_stopWalkAnim()
         local pauseMin = target.pauseMinutes
+        -- endOnArrival: a one-way route's final waypoint (e.g. morningDeparture's home) — stop &
+        -- idle here, base game resumes control. Don't loop back to waypoint[1].
+        if target.endOnArrival then
+            self:_endLoop(cfg)
+            return
+        end
         -- hideOnEnd with no pause: step inside the moment he arrives.
         if target.hideOnEnd and not (pauseMin and pauseMin > 0) then
             self:_hide()

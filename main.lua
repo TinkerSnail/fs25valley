@@ -517,6 +517,16 @@ function VLConsole:walterHide()
     return "[ValleyLife] Walter hidden."
 end
 
+-- vlWalterMorning: trigger the morning departure now (reveal at the door, walk down to home) for
+-- testing without waiting for the 5am wake.
+function VLConsole:walterMorning()
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    g_valleyLife.walterWalker:_startMorningDeparture(VLConfig.WALTER_WALK)
+    return "[ValleyLife] Walter morning departure triggered."
+end
+
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
 function VLConsole:skipPause(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -1737,6 +1747,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterStairLift", "Tune Walter's stair bow-lift on sloped segments: vlWalterStairLift <n>", "setWalterStairLift", VLConsole)
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)
     addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
+    addConsoleCommand("vlWalterMorning", "Trigger Walter's morning departure (door -> home): vlWalterMorning", "walterMorning", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)

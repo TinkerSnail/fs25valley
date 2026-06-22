@@ -154,7 +154,19 @@ VLConfig.WALTER_WALK = {
                 { name = "home",         x = -758.2,  y = 47.0,  z = 94.3 },                    -- [1] start/end (GRANDPA_FARMHOUSE spot)
                 { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                   -- [2] base of the stairs; ground level so home->here stays flat
                 { name = "stairMid",     x = -760.90, y = 47.0,  z = 96.23 },                   -- [3] foot of the stairs at ground level → incline begins here (not before)
-                { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61, pauseMinutes = 2, hideOnEnd = true }, -- [4] threshold; pause then "step inside" (setVisibility false); porch floor (vlPos read 47.99 high by ~0.3, corrected)
+                { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61, hideOnEnd = true }, -- [4] threshold; step inside on arrival (setVisibility false); porch floor (vlPos read 47.99 high by ~0.3, corrected)
+            },
+        },
+        -- Morning version of the door run, REVERSED: he emerges from the house at 5am and walks
+        -- down to home. Triggered by the wake-up (placed at the door, then this runs) — manualOnly
+        -- so the hourly auto-selector never fires it. Ends at home (endOnArrival), no hide.
+        {
+            name = "morningDeparture", manualOnly = true,
+            waypoints = {
+                { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61 },                  -- [1] start: at the door (revealed here)
+                { name = "stairMid",     x = -760.90, y = 47.0,  z = 96.23 },                  -- [2] foot of the stairs
+                { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                  -- [3] base of the stairs
+                { name = "home",         x = -758.2,  y = 47.0,  z = 94.3, endOnArrival = true }, -- [4] home: stop & idle (base game resumes)
             },
         },
         -- Long out-and-back across the yard for testing (talk-mid-walk, map point, facing).

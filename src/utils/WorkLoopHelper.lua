@@ -13,7 +13,9 @@ WorkLoopHelper = {}
 function WorkLoopHelper.getActiveLoop(loops, hour)
     if type(loops) ~= "table" then return nil end
     for i, loop in ipairs(loops) do
-        if hour >= (loop.startHour or 0) and hour < (loop.endHour or 24) then
+        -- manualOnly loops are triggered explicitly (e.g. the 5am morning departure), never by hour.
+        if not loop.manualOnly
+           and hour >= (loop.startHour or 0) and hour < (loop.endHour or 24) then
             return loop, i
         end
     end
