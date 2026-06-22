@@ -205,11 +205,11 @@ VLConfig.WALTER_WALK = {
                 { name = "woodShopB",    x = -773.35, z = 111.71 },                   -- [8] → auto-return to home
             },
         },
-        -- AFTERNOON (12-16): same approach as the mailbox route (woodShop/entryDrive/mailApproach)
-        -- but the final stop is the produce stand instead. New endpoint captured 2026-06-22 with
-        -- vlPos. y omitted → terrain grounding. `vlWalk grandpa produceStand`.
+        -- EARLY AFTERNOON (12-14): same approach as the mailbox route (woodShop/entryDrive/
+        -- mailApproach) but the final stop is the produce stand. y omitted → terrain grounding.
+        -- `vlWalk grandpa produceStand`.
         {
-            name = "produceStand", startHour = 12, endHour = 16,
+            name = "produceStand", startHour = 12, endHour = 14,
             waypoints = {
                 { name = "home",         x = -758.2,  z = 94.3 },                       -- [1] start/end
                 { name = "woodShop",     x = -773.35, z = 111.71 },                     -- [2] (shared w/ mailbox)
@@ -221,12 +221,12 @@ VLConfig.WALTER_WALK = {
                 { name = "woodShopB",    x = -773.35, z = 111.71 },                     -- [8] → auto-return to home
             },
         },
-        -- WOODSHOP VISIT: walk to the shed, OPEN its door (doorRotate02), step inside and hang out,
-        -- then come back out and close it. Reuses the woodShop approach point; new points captured
-        -- 2026-06-22 with vlPos. manualOnly (test with `vlWalk grandpa woodshopVisit`) until we slot
-        -- a time. Door is cosmetic (Walter has no collider) — openDoor/closeDoor just swing it on cue.
+        -- LATE AFTERNOON (14-16): walk to the shed, OPEN its door (doorRotate02), step inside and
+        -- hang out (lights on), then come back out, lights off, close the door. His craftsman hour.
+        -- Reuses the woodShop approach point; points captured 2026-06-22 with vlPos. Door is cosmetic
+        -- (Walter has no collider) — openDoor/closeDoor just swing it on cue. `vlWalk grandpa woodshopVisit`.
         {
-            name = "woodshopVisit", manualOnly = true,
+            name = "woodshopVisit", startHour = 14, endHour = 16,
             waypoints = {
                 { name = "home",         x = -758.2,  z = 94.3 },                       -- [1] start/end
                 { name = "woodShop",     x = -773.35, z = 111.71 },                     -- [2] recycled approach
