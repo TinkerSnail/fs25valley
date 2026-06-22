@@ -930,6 +930,54 @@ function VLConsole:lightTest(on, x, z)
     return string.format("[ValleyLife] light test on=%s via=%s.", tostring(state), how)
 end
 
+-- vlLightFns [x] [z]: DIAGNOSTIC. Dump the PlaceableLights spec module functions and the lights
+-- activatable's methods, to find the proper toggle (instead of poking group.isActive, which makes
+-- updateLightState feed nil to setVisibility).
+function VLConsole:lightFns(x, z)
+    -- PlaceableLights module (via metatable lookup).
+    local PL = _G["PlaceableLights"]
+    print("[ValleyLife][LFn] ---- PlaceableLights functions ----")
+    if type(PL) == "table" then
+        for k, v in pairs(PL) do
+            if type(v) == "function" and type(k) == "string" then
+                local lk = k:lower()
+                if lk:find("light") or lk:find("state") or lk:find("toggle") or lk:find("set")
+                   or lk:find("activat") then
+                    print("[ValleyLife][LFn]   ." .. k)
+                end
+            end
+        end
+    else
+        print("[ValleyLife][LFn]   PlaceableLights = " .. type(PL))
+    end
+    -- The lights activatable methods.
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local placeables = g_currentMission and g_currentMission.placeableSystem and g_currentMission.placeableSystem.placeables
+    if type(placeables) == "table" then
+        local best, bestd
+        for _, p in ipairs(placeables) do
+            local px, pz
+            pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+            if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+        end
+        local act = best and best.spec_lights and best.spec_lights.activatable
+        print("[ValleyLife][LFn] ---- lights activatable methods ----")
+        if type(act) == "table" then
+            local mt = getmetatable(act)
+            local idx = type(mt) == "table" and rawget(mt, "__index") or nil
+            if type(idx) == "table" then
+                for k, v in pairs(idx) do
+                    if type(v) == "function" and type(k) == "string" then print("[ValleyLife][LFn]   :" .. k) end
+                end
+            else
+                print("[ValleyLife][LFn]   (activatable __index is " .. type(idx) .. ")")
+            end
+        end
+    end
+    print("[ValleyLife][LFn] ---- end ----")
+    return "[ValleyLife] light fns dump written to log."
+end
+
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
 function VLConsole:skipPause(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -2168,6 +2216,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlLightScan", "DIAGNOSTIC: find woodshop lights toggle: vlLightScan [x] [z]", "lightScan", VLConsole)
     addConsoleCommand("vlLightGroups", "DIAGNOSTIC: dump woodshop light groups + activatable: vlLightGroups [x] [z]", "lightGroups", VLConsole)
     addConsoleCommand("vlLightTest", "TEST woodshop lights on/off: vlLightTest <1on/0off>", "lightTest", VLConsole)
+    addConsoleCommand("vlLightFns", "DIAGNOSTIC: dump PlaceableLights + activatable toggle functions: vlLightFns", "lightFns", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
