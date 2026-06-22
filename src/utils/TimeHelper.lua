@@ -41,6 +41,16 @@ function TimeHelper.getWeekday()
     return ((month - 1) * daysPerPeriod + dayOfMonth) % 7
 end
 
+-- Total days since save start (1-based). Stable per-day key for once-a-day events.
+-- Returns nil if the engine field is unavailable (caller decides the fallback).
+function TimeHelper.getMonotonicDay()
+    local env = getEnvironment()
+    if not env then return nil end
+    local mday = env.currentMonotonicDay
+    if type(mday) == "number" and mday >= 1 then return mday end
+    return nil
+end
+
 function TimeHelper.isWeekend()
     local wd = TimeHelper.getWeekday()
     return wd == 0 or wd == 6

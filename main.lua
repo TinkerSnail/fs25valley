@@ -499,6 +499,24 @@ function VLConsole:setWalterStairLift(value)
     return string.format("[ValleyLife] Walter stairLift = %.3f m. Re-run vlWalk grandpa to see it.", n)
 end
 
+-- vlWalterShow: bring Walter back if he has "stepped inside" (hideOnEnd at the door). For testing
+-- the disappear without relaunching. vlWalterHide hides him on demand to test the visibility toggle.
+function VLConsole:walterShow()
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    g_valleyLife.walterWalker:_reveal()
+    return "[ValleyLife] Walter revealed."
+end
+
+function VLConsole:walterHide()
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    g_valleyLife.walterWalker:_hide()
+    return "[ValleyLife] Walter hidden."
+end
+
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
 function VLConsole:skipPause(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -1717,6 +1735,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalk", "Force-start a walk loop: vlWalk <npcId> [loopName|index] (npcId: marta, grandpa, ...)", "forceWalk", VLConsole)
     addConsoleCommand("vlWalterYOffset", "Tune Walter's driven height offset (meters, +lowers): vlWalterYOffset <n>", "setWalterYOffset", VLConsole)
     addConsoleCommand("vlWalterStairLift", "Tune Walter's stair bow-lift on sloped segments: vlWalterStairLift <n>", "setWalterStairLift", VLConsole)
+    addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)
+    addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)

@@ -136,10 +136,12 @@ VLConfig.VILLAGER_SPAWNS = {
 -- TODO: every stop below tagged PLACEHOLDER needs real coords — stand on the spot
 --       in-game, run vlPos, and paste { x, z } here. Tune startHour/endHour to taste.
 VLConfig.WALTER_WALK = {
-    speed      = 0.8,
-    homeRy     = 0.5236,  -- idle facing when a loop ends (GRANDPA's spawn heading, ~30°)
-    yOffset    = 0,       -- meters subtracted from his driven height (fixes float; tune live with vlWalterYOffset)
-    stairLift  = 0.15,    -- bow-lift on sloped segments to clear step noses; tune live with vlWalterStairLift
+    speed        = 0.8,
+    homeRy       = 0.5236,  -- idle facing when a loop ends (GRANDPA's spawn heading, ~30°)
+    yOffset      = 0,       -- meters subtracted from his driven height (fixes float; tune live with vlWalterYOffset)
+    stairLift    = 0.15,    -- bow-lift on sloped segments to clear step noses; tune live with vlWalterStairLift
+    dayStartHour = 5,       -- he "starts his day" at 5am: fires once per day (edge-triggered) to reappear at home if he stepped inside last evening
+    home         = { x = -758.2, y = 47.0, z = 94.3 },  -- GRANDPA_FARMHOUSE spot; where the morning reveal places him
     loops = {
         -- Captured 2026-06-21 with vlPos. Other loops (morningRounds, middayPorch,
         -- afternoonStroll, ...) get added back here as we record their stops.
@@ -149,7 +151,7 @@ VLConfig.WALTER_WALK = {
                 { name = "home",         x = -758.2,  y = 47.0,  z = 94.3 },                    -- [1] start/end (GRANDPA_FARMHOUSE spot)
                 { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                   -- [2] base of the stairs; ground level so home->here stays flat
                 { name = "stairMid",     x = -760.90, y = 47.0,  z = 96.23 },                   -- [3] foot of the stairs at ground level → incline begins here (not before)
-                { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61, pauseMinutes = 2 }, -- [4] threshold (future hideOnEnd point); porch floor (vlPos read 47.99 high by ~0.3, corrected)
+                { name = "houseDoor",    x = -761.73, y = 47.69, z = 94.61, pauseMinutes = 2, hideOnEnd = true }, -- [4] threshold; pause then "step inside" (setVisibility false); porch floor (vlPos read 47.99 high by ~0.3, corrected)
             },
         },
     },

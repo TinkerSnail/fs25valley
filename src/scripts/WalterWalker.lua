@@ -59,6 +59,8 @@ function WalterWalker.new()
     self._wz          = 0
     self.walk         = nil
     self._active      = false
+    self._hidden      = false  -- true while Walter has "stepped inside" (graphicsRootNode invisible)
+    self._lastWakeDay = nil    -- monotonicDay of his last 5am wake-up (so it fires once per day)
     self._loop        = nil
     self._lastTick    = -1
     self._yOffset     = nil   -- lazy-init from VLConfig.WALTER_WALK.yOffset; live-tunable via vlWalterYOffset
@@ -263,7 +265,44 @@ function WalterWalker:_loopRunnable(loop)
     return type(loop) == "table" and type(loop.waypoints) == "table" and #loop.waypoints >= 2
 end
 
+-- Reversible hide / reveal of GRANDPA's visual mesh. NOT a despawn (the entity stays — same
+-- mechanism Marta uses, NPCEntity.lua:1108/1022). "Stepping inside" = setVisibility(false);
+-- starting any loop (or vlWalterShow) brings him back.
+function WalterWalker:_hide()
+    if self.graphicsNode and entityExists(self.graphicsNode) then
+        setVisibility(self.graphicsNode, false)
+    end
+    self._hidden = true
+    print("[ValleyLife][Walter] stepped inside (hidden)")
+end
+
+function WalterWalker:_reveal()
+    if self.graphicsNode and entityExists(self.graphicsNode) then
+        setVisibility(self.graphicsNode, true)
+    end
+    self._hidden = false
+    print("[ValleyLife][Walter] revealed (visible)")
+end
+
+-- Morning wake-up: put him back at his farmhouse spot, then reveal. We set the position
+-- ourselves so he doesn't flash in at last night's door spot; if the base game also keeps
+-- GRANDPA at his rest spot, our write simply agrees (home == GRANDPA_FARMHOUSE spot).
+function WalterWalker:_revealAtHome(cfg)
+    local home = cfg and cfg.home
+    if home and self.graphicsNode and entityExists(self.graphicsNode) then
+        self._wx, self._wy, self._wz = home.x, home.y, home.z
+        self._ry = cfg.homeRy or self._ry
+        pcall(function()
+            setTranslation(self.graphicsNode, home.x, home.y - (self._yOffset or 0), home.z)
+            setRotation(self.graphicsNode, 0, self._ry, 0)
+        end)
+    end
+    self:_reveal()
+    print("[ValleyLife][Walter] started his day (revealed at home)")
+end
+
 function WalterWalker:_beginLoop(loop)
+    if self._hidden then self:_reveal() end  -- a loop start always brings him back outside
     self._loop   = loop
     self.walk    = { state = "walking", targetIdx = 2 }  -- wp[1] is home; head out first
     self._active = true
@@ -312,10 +351,24 @@ function WalterWalker:update(dt)
         return
     end
 
+    local hour = TimeHelper.getHour()
+
+    -- Start his day at dayStartHour. EDGE-triggered, once per calendar day: the first time
+    -- we see hour >= dayStartHour on a new monotonicDay, mark the day woken and — if he
+    -- stepped inside last evening — bring him back out at home. A daytime hide (vlWalterHide)
+    -- then STAYS hidden until the next day's 5am (or vlWalterShow), instead of being undone
+    -- the next frame the way a level-triggered window did (R19).
+    if hour >= (cfg.dayStartHour or 5) then
+        local day = TimeHelper.getMonotonicDay() or 0
+        if day ~= self._lastWakeDay then
+            self._lastWakeDay = day
+            if self._hidden then self:_revealAtHome(cfg) end
+        end
+    end
+
     -- Not walking: auto-start the loop whose window contains this hour, re-firing on
     -- the 2-hour tick (same cadence as Marta). Never interrupt a conversation.
     if self.grandpa and self.grandpa.isInConversation then return end
-    local hour = TimeHelper.getHour()
     local loop = WorkLoopHelper.getActiveLoop(cfg.loops, hour)
     if loop and self:_loopRunnable(loop) then
         local tick = math.floor(hour / 2)
@@ -373,6 +426,14 @@ function WalterWalker:_updateWalk(cfg, dt)
         local elapsed = TimeHelper.getHour() - walk.pauseStartHour
         if elapsed < 0 then elapsed = elapsed + 24 end
         if elapsed >= walk.pauseMinutesRequired / 60 then
+            -- A hideOnEnd waypoint (e.g. houseDoor): pause first ("at the door"), then step
+            -- inside — hide him and end the circuit instead of looping back.
+            local cur = waypoints[walk.targetIdx]
+            if cur and cur.hideOnEnd then
+                self:_hide()
+                self:_endLoop(cfg)
+                return
+            end
             local nextIdx = walk.targetIdx + 1
             if nextIdx > #waypoints then nextIdx = 1 end
             walk.targetIdx = nextIdx
@@ -403,6 +464,12 @@ function WalterWalker:_updateWalk(cfg, dt)
         end
         self:_stopWalkAnim()
         local pauseMin = target.pauseMinutes
+        -- hideOnEnd with no pause: step inside the moment he arrives.
+        if target.hideOnEnd and not (pauseMin and pauseMin > 0) then
+            self:_hide()
+            self:_endLoop(cfg)
+            return
+        end
         if pauseMin and pauseMin > 0 then
             walk.state                = "pausing"
             walk.pauseStartHour       = TimeHelper.getHour()
