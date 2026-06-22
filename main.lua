@@ -517,6 +517,15 @@ function VLConsole:walterHide()
     return "[ValleyLife] Walter hidden."
 end
 
+-- vlWalterDoor <dir>: TEST Walter's own woodshop-door control (resolve + setDirection). 1=open/-1=close.
+function VLConsole:walterDoor(dir)
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    local ok = g_valleyLife.walterWalker:_setWoodshopDoor(tonumber(dir) or 1)
+    return ok and "[ValleyLife] Walter woodshop door triggered." or "[ValleyLife] door not resolved."
+end
+
 -- vlWalterMorning: trigger the morning departure now (reveal at the door, walk down to home) for
 -- testing without waiting for the 5am wake.
 function VLConsole:walterMorning()
@@ -525,6 +534,391 @@ function VLConsole:walterMorning()
     end
     g_valleyLife.walterWalker:_startMorningDeparture(VLConfig.WALTER_WALK)
     return "[ValleyLife] Walter morning departure triggered."
+end
+
+-- vlDoorScan [x] [z] [radius]: DIAGNOSTIC. Find placeables near the woodshop (default coords) and
+-- list any door/open/close/animation methods, to locate the woodshop door + how to open it in code.
+function VLConsole:doorScan(x, z, r)
+    local cx, cz, rad = tonumber(x) or -773.35, tonumber(z) or 111.71, tonumber(r) or 25
+    local mission = g_currentMission
+    if mission == nil then return "[ValleyLife] no mission." end
+    local placeables
+    pcall(function() placeables = mission.placeableSystem and mission.placeableSystem.placeables end)
+    if placeables == nil then pcall(function() placeables = mission.placeables end) end
+    if type(placeables) ~= "table" then return "[ValleyLife][Door] no placeable list found." end
+
+    local function doorish(k)
+        local lk = tostring(k):lower()
+        return lk:find("door") or lk:find("open") or lk:find("close") or lk:find("animat")
+            or lk:find("toggle") or lk:find("activat")
+    end
+    print(string.format("[ValleyLife][Door] scanning %d placeables near (%.1f,%.1f) r=%.0f", #placeables, cx, cz, rad))
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px and ((px - cx)^2 + (pz - cz)^2) <= rad * rad then
+            local nm = "?"
+            pcall(function() nm = p.configFileName or (p.getName and p:getName()) or tostring(p) end)
+            print(string.format("[ValleyLife][Door] @(%.1f,%.1f) %s", px, pz, tostring(nm)))
+            -- scan this placeable's methods + spec/field methods for door-ish names
+            local seen = {}
+            local function scan(t, d, lbl)
+                if t == nil or d > 4 or seen[t] then return end
+                seen[t] = true
+                for k, v in pairs(t) do
+                    if type(v) == "function" and type(k) == "string" and doorish(k) then
+                        print("[ValleyLife][Door]     " .. lbl .. ":" .. k)
+                    end
+                end
+                local mt = getmetatable(t)
+                if type(mt) == "table" then scan(rawget(mt, "__index"), d + 1, lbl) end
+            end
+            scan(p, 0, "p")
+        end
+    end
+    print("[ValleyLife][Door] ---- end ----")
+    return "[ValleyLife] door scan written to log."
+end
+
+-- vlDoorObj [x] [z]: DIAGNOSTIC. For the placeable nearest the coords (default = tinyShed01 woodshop),
+-- dump its animated-object list, each object's state-ish fields, and the open/close/animation methods
+-- on the placeable + the AnimatedObject class, to find how to open the door in code.
+function VLConsole:doorObj(x, z)
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+    end
+    if best == nil then return "[ValleyLife] no nearest placeable." end
+    local nm = "?"; pcall(function() nm = best.configFileName end)
+    print("[ValleyLife][DoorObj] nearest placeable: " .. tostring(nm))
+
+    local function dumpMethods(o, lbl)
+        local seen = {}
+        local function scan(t, d)
+            if t == nil or d > 3 or seen[t] then return end
+            seen[t] = true
+            for k, v in pairs(t) do
+                if type(v) == "function" and type(k) == "string" then
+                    local lk = k:lower()
+                    if lk:find("anim") or lk:find("open") or lk:find("close") or lk:find("toggle")
+                       or lk:find("state") or lk:find("move") or lk:find("play") or lk:find("trigger")
+                       or lk:find("settime") or lk:find("direction") then
+                        print("[ValleyLife][DoorObj]   " .. lbl .. ":" .. k)
+                    end
+                end
+            end
+            local mt = getmetatable(t); if type(mt) == "table" then scan(rawget(mt, "__index"), d + 1) end
+        end
+        scan(o, 0)
+    end
+
+    -- animated objects list (try spec field, then plain)
+    local aos
+    pcall(function() aos = best.spec_animatedObjects and best.spec_animatedObjects.animatedObjects end)
+    if aos == nil then pcall(function() aos = best.animatedObjects end) end
+    if type(aos) == "table" then
+        print(string.format("[ValleyLife][DoorObj] %d animated object(s)", #aos))
+        for i, ao in ipairs(aos) do
+            local fields = {}
+            for _, f in ipairs({ "saveId", "animTime", "animeTime", "time", "state", "direction", "isMoving" }) do
+                if ao[f] ~= nil then fields[#fields + 1] = f .. "=" .. tostring(ao[f]) end
+            end
+            print(string.format("[ValleyLife][DoorObj] AO[%d] %s", i, table.concat(fields, " ")))
+            if i == 1 then dumpMethods(ao, "AO") end  -- methods are shared on the class; dump once
+        end
+    else
+        print("[ValleyLife][DoorObj] no animatedObjects list found; placeable anim methods:")
+    end
+    dumpMethods(best, "placeable")
+    print("[ValleyLife][DoorObj] ---- end ----")
+    return "[ValleyLife] door object dump written to log."
+end
+
+-- vlDoorAO [x] [z]: DIAGNOSTIC. Dump the FULL surface of the nearest placeable's first animated
+-- object (the woodshop door doorRotate01) — every method name and every scalar field — to find the
+-- open/move call and the time/direction fields that define open vs closed.
+function VLConsole:doorAO(x, z)
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+    end
+    local aos
+    pcall(function() aos = best.spec_animatedObjects and best.spec_animatedObjects.animatedObjects end)
+    if aos == nil then pcall(function() aos = best.animatedObjects end) end
+    if type(aos) ~= "table" or aos[1] == nil then return "[ValleyLife] no animated objects." end
+    local ao = aos[1]
+    print("[ValleyLife][AO] ---- doorRotate01 fields ----")
+    for k, v in pairs(ao) do
+        local t = type(v)
+        if t == "number" or t == "boolean" or t == "string" then
+            print(string.format("[ValleyLife][AO]   %s = %s (%s)", tostring(k), tostring(v), t))
+        elseif t == "table" then
+            print(string.format("[ValleyLife][AO]   %s : table", tostring(k)))
+        end
+    end
+    print("[ValleyLife][AO] ---- doorRotate01 methods (full) ----")
+    local seen = {}
+    local function scan(t, d)
+        if t == nil or d > 4 or seen[t] then return end
+        seen[t] = true
+        for k, v in pairs(t) do
+            if type(v) == "function" and type(k) == "string" then
+                print("[ValleyLife][AO]   :" .. k)
+            end
+        end
+        local mt = getmetatable(t); if type(mt) == "table" then scan(rawget(mt, "__index"), d + 1) end
+    end
+    scan(ao, 0)
+    print("[ValleyLife][AO] ---- end ----")
+    return "[ValleyLife] door AO dump written to log."
+end
+
+-- vlDoorAct [x] [z]: DIAGNOSTIC. Dump doorRotate01's activatable (the interaction run when the player
+-- presses the key), animation (open/close state), and controls sub-tables, to find the open call.
+function VLConsole:doorAct(x, z)
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+    end
+    local aos
+    pcall(function() aos = best.spec_animatedObjects and best.spec_animatedObjects.animatedObjects end)
+    if aos == nil then pcall(function() aos = best.animatedObjects end) end
+    if type(aos) ~= "table" or aos[1] == nil then return "[ValleyLife] no animated objects." end
+    local ao = aos[1]
+
+    local function dump(name, tbl)
+        if type(tbl) ~= "table" then print("[ValleyLife][Act] " .. name .. " = " .. type(tbl)); return end
+        print("[ValleyLife][Act] ---- " .. name .. " ----")
+        for k, v in pairs(tbl) do
+            local t = type(v)
+            if t == "number" or t == "boolean" or t == "string" then
+                print(string.format("[ValleyLife][Act]   %s = %s (%s)", tostring(k), tostring(v), t))
+            else
+                print(string.format("[ValleyLife][Act]   %s : %s", tostring(k), t))
+            end
+        end
+        local mt = getmetatable(tbl)
+        local idx = type(mt) == "table" and rawget(mt, "__index") or nil
+        if type(idx) == "table" then
+            for k, v in pairs(idx) do
+                if type(v) == "function" and type(k) == "string" then
+                    print("[ValleyLife][Act]   :" .. k)
+                end
+            end
+        end
+    end
+    dump("activatable", ao.activatable)
+    dump("animation", ao.animation)
+    dump("controls", ao.controls)
+    print("[ValleyLife][Act] ---- end ----")
+    return "[ValleyLife] door activatable dump written to log."
+end
+
+-- vlDoorTest <dir> [x] [z]: TEST. Set the woodshop doors' animation direction (1=open, -1=close,
+-- 0=stop) directly and let the AnimatedObjects spec animate them. Confirms the open mechanism before
+-- wiring it into Walter. Acts on BOTH doorRotate01/02.
+-- vlDoorTest <dir> [which]: dir 1=open/-1=close/0=stop; which = door index 1 or 2 (omit = both).
+-- Logs each door's saveId + world position so we can identify which side is Walter's entry.
+function VLConsole:doorTest(dir, which)
+    local d  = tonumber(dir) or 1
+    local wi = tonumber(which)
+    local cx, cz = -778.6, 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local dd = (px-cx)^2 + (pz-cz)^2; if bestd == nil or dd < bestd then best, bestd = p, dd end end
+    end
+    local aos
+    pcall(function() aos = best.spec_animatedObjects and best.spec_animatedObjects.animatedObjects end)
+    if aos == nil then pcall(function() aos = best.animatedObjects end) end
+    if type(aos) ~= "table" then return "[ValleyLife] no animated objects." end
+    for i, ao in ipairs(aos) do
+        if wi == nil or wi == i then
+            local how = "none"
+            if type(ao.setDirection) == "function" then
+                if pcall(function() ao:setDirection(d) end) then how = "setDirection" end
+            end
+            if how == "none" and type(ao.setAnimTime) == "function" then
+                if pcall(function() ao:setAnimTime(d > 0 and 1 or 0, true) end) then how = "setAnimTime" end
+            end
+            if how == "none" and type(ao.animation) == "table" then
+                ao.animation.direction = d; ao.isMoving = (d ~= 0); how = "field"
+            end
+            local nx, nz
+            pcall(function() local a, _, c = getWorldTranslation(ao.nodeId); nx, nz = a, c end)
+            print(string.format("[ValleyLife][DoorT] AO[%d] saveId=%s via=%s pos=(%.1f,%.1f)",
+                i, tostring(ao.saveId), how, nx or 0, nz or 0))
+        end
+    end
+    return string.format("[ValleyLife] door test dir=%d which=%s fired.", d, tostring(wi or "both"))
+end
+
+-- vlLightScan [x] [z]: DIAGNOSTIC. On the woodshop placeable, dump its spec_* table names, any
+-- light-related spec fields/methods, and getPropertyState across a range, to find the lights toggle.
+function VLConsole:lightScan(x, z)
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+    end
+    if best == nil then return "[ValleyLife] no placeable." end
+    print("[ValleyLife][Light] placeable: " .. tostring(best.configFileName))
+    -- all spec_* tables (find the lights spec)
+    print("[ValleyLife][Light] ---- spec_* tables ----")
+    for k, v in pairs(best) do
+        if type(k) == "string" and k:find("spec") and type(v) == "table" then
+            print("[ValleyLife][Light]   " .. k)
+            if k:lower():find("light") then
+                for kk, vv in pairs(v) do
+                    local t = type(vv)
+                    if t == "number" or t == "boolean" or t == "string" then
+                        print(string.format("[ValleyLife][Light]       .%s = %s (%s)", tostring(kk), tostring(vv), t))
+                    else
+                        print(string.format("[ValleyLife][Light]       .%s : %s", tostring(kk), t))
+                    end
+                end
+            end
+        end
+    end
+    -- light/property methods
+    print("[ValleyLife][Light] ---- light/property methods ----")
+    local seen = {}
+    local function scan(t, d)
+        if t == nil or d > 3 or seen[t] then return end
+        seen[t] = true
+        for k, v in pairs(t) do
+            if type(v) == "function" and type(k) == "string" then
+                local lk = k:lower()
+                if lk:find("light") or lk:find("lamp") or lk:find("property") or lk:find("illumin") then
+                    print("[ValleyLife][Light]   :" .. k)
+                end
+            end
+        end
+        local mt = getmetatable(t); if type(mt) == "table" then scan(rawget(mt, "__index"), d + 1) end
+    end
+    scan(best, 0)
+    -- current property states
+    print("[ValleyLife][Light] ---- getPropertyState(0..15) ----")
+    if type(best.getPropertyState) == "function" then
+        for i = 0, 15 do
+            local ok, val = pcall(function() return best:getPropertyState(i) end)
+            if ok and val ~= nil then print(string.format("[ValleyLife][Light]   [%d] = %s", i, tostring(val))) end
+        end
+    end
+    print("[ValleyLife][Light] ---- end ----")
+    return "[ValleyLife] light scan written to log."
+end
+
+-- vlLightGroups [x] [z]: DIAGNOSTIC. Dump the woodshop's spec_lights groups (state fields + methods),
+-- the lights activatable, and triggerToGroup, to find how to turn the lights on in code.
+function VLConsole:lightGroups(x, z)
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+    end
+    local sp = best and best.spec_lights
+    if type(sp) ~= "table" then return "[ValleyLife] no spec_lights." end
+
+    local function dumpTbl(label, t)
+        if type(t) ~= "table" then print("[ValleyLife][LG] " .. label .. " = " .. type(t)); return end
+        print("[ValleyLife][LG] ---- " .. label .. " ----")
+        for k, v in pairs(t) do
+            local ty = type(v)
+            if ty == "number" or ty == "boolean" or ty == "string" then
+                print(string.format("[ValleyLife][LG]   %s = %s (%s)", tostring(k), tostring(v), ty))
+            else
+                print(string.format("[ValleyLife][LG]   %s : %s", tostring(k), ty))
+            end
+        end
+        local mt = getmetatable(t)
+        local idx = type(mt) == "table" and rawget(mt, "__index") or nil
+        if type(idx) == "table" then
+            for k, v in pairs(idx) do
+                if type(v) == "function" and type(k) == "string" then print("[ValleyLife][LG]   :" .. k) end
+            end
+        end
+    end
+
+    local groups = sp.groups
+    if type(groups) == "table" then
+        print(string.format("[ValleyLife][LG] %d light group(s)", #groups))
+        for i, g in ipairs(groups) do dumpTbl("group[" .. i .. "]", g) end
+    end
+    dumpTbl("activatable", sp.activatable)
+    -- triggerToGroup keys
+    if type(sp.triggerToGroup) == "table" then
+        local n = 0; for _ in pairs(sp.triggerToGroup) do n = n + 1 end
+        print("[ValleyLife][LG] triggerToGroup has " .. n .. " entries")
+    end
+    print("[ValleyLife][LG] ---- end ----")
+    return "[ValleyLife] light groups dump written to log."
+end
+
+-- vlLightTest <1=on|0=off> [x] [z]: TEST turning the woodshop lights (group 1) on/off in code.
+-- Tries placeable:setLightState, then setLightsState, then a manual isActive + updateLightState.
+function VLConsole:lightTest(on, x, z)
+    local state = tonumber(on) == 1
+    local cx, cz = tonumber(x) or -778.6, tonumber(z) or 106.7
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[ValleyLife] no placeables." end
+    local best, bestd
+    for _, p in ipairs(placeables) do
+        local px, pz
+        pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+        if px then local d = (px-cx)^2 + (pz-cz)^2; if bestd == nil or d < bestd then best, bestd = p, d end end
+    end
+    local sp = best and best.spec_lights
+    local group = sp and sp.groups and sp.groups[1]
+    if group == nil then return "[ValleyLife] no light group." end
+    local how = "none"
+    if type(best.setLightState) == "function" then
+        if pcall(function() best:setLightState(1, state, true) end) then how = "setLightState" end
+    end
+    if how == "none" and type(best.setLightsState) == "function" then
+        if pcall(function() best:setLightsState(1, state, true) end) then how = "setLightsState" end
+    end
+    if how == "none" then
+        pcall(function() group.isActive = state end)
+        if type(best.updateLightState) == "function" then pcall(function() best:updateLightState(1) end) end
+        if type(best.lightSetupChanged) == "function" then pcall(function() best:lightSetupChanged() end) end
+        how = "manual"
+    end
+    print(string.format("[ValleyLife][LightT] state=%s via=%s isActive=%s", tostring(state), how, tostring(group.isActive)))
+    return string.format("[ValleyLife] light test on=%s via=%s.", tostring(state), how)
 end
 
 -- vlSkipPause: end the current mid-route pause immediately and send the NPC to their next waypoint.
@@ -1748,6 +2142,15 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)
     addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
     addConsoleCommand("vlWalterMorning", "Trigger Walter's morning departure (door -> home): vlWalterMorning", "walterMorning", VLConsole)
+    addConsoleCommand("vlWalterDoor", "TEST Walter's woodshop door control: vlWalterDoor <1=open|-1=close>", "walterDoor", VLConsole)
+    addConsoleCommand("vlDoorScan", "DIAGNOSTIC: find woodshop door + open methods: vlDoorScan [x] [z] [radius]", "doorScan", VLConsole)
+    addConsoleCommand("vlDoorObj", "DIAGNOSTIC: dump nearest placeable's animated objects + open methods: vlDoorObj [x] [z]", "doorObj", VLConsole)
+    addConsoleCommand("vlDoorAO", "DIAGNOSTIC: dump full surface of woodshop door object: vlDoorAO [x] [z]", "doorAO", VLConsole)
+    addConsoleCommand("vlDoorAct", "DIAGNOSTIC: dump woodshop door activatable/animation: vlDoorAct [x] [z]", "doorAct", VLConsole)
+    addConsoleCommand("vlDoorTest", "TEST: open/close woodshop doors: vlDoorTest <1=open|-1=close|0=stop> [x] [z]", "doorTest", VLConsole)
+    addConsoleCommand("vlLightScan", "DIAGNOSTIC: find woodshop lights toggle: vlLightScan [x] [z]", "lightScan", VLConsole)
+    addConsoleCommand("vlLightGroups", "DIAGNOSTIC: dump woodshop light groups + activatable: vlLightGroups [x] [z]", "lightGroups", VLConsole)
+    addConsoleCommand("vlLightTest", "TEST woodshop lights on/off: vlLightTest <1on/0off>", "lightTest", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)

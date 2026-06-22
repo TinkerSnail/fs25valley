@@ -145,6 +145,9 @@ VLConfig.WALTER_WALK = {
     approachRange = 6.0,    -- meters: he stops walking & turns to face the player within this range, so his stationary trigger fires the normal base conversation; resumes when they leave
     visitOffset   = 2.0,    -- meters: ESC-map "Visit" drops the player this far in front of Walter (his facing) instead of inside his model
     home         = { x = -758.2, y = 47.0, z = 94.3 },  -- GRANDPA_FARMHOUSE spot; where the morning reveal places him
+    -- Woodshop door (cosmetic): the placeable tinyShed01 nearest `near`, animated object `saveId`.
+    -- A waypoint with openDoor/closeDoor triggers it via ao:setDirection(+1/-1). doorRotate02 = entry side.
+    woodshopDoor = { near = { x = -778.6, z = 106.7 }, config = "tinyShed01", saveId = "doorRotate02" },
     loops = {
         -- Captured 2026-06-21 with vlPos. Other loops (morningRounds, middayPorch,
         -- afternoonStroll, ...) get added back here as we record their stops.
@@ -215,6 +218,23 @@ VLConfig.WALTER_WALK = {
                 { name = "produceStand", x = -797.59, z = 140.01, pauseMinutes = 20 },  -- [5] the stand (pause)
                 { name = "mailApproachB",x = -793.01, z = 136.04 },                     -- [6] retrace
                 { name = "entryDriveB",  x = -778.71, z = 128.54 },                     -- [7]
+                { name = "woodShopB",    x = -773.35, z = 111.71 },                     -- [8] → auto-return to home
+            },
+        },
+        -- WOODSHOP VISIT: walk to the shed, OPEN its door (doorRotate02), step inside and hang out,
+        -- then come back out and close it. Reuses the woodShop approach point; new points captured
+        -- 2026-06-22 with vlPos. manualOnly (test with `vlWalk grandpa woodshopVisit`) until we slot
+        -- a time. Door is cosmetic (Walter has no collider) — openDoor/closeDoor just swing it on cue.
+        {
+            name = "woodshopVisit", manualOnly = true,
+            waypoints = {
+                { name = "home",         x = -758.2,  z = 94.3 },                       -- [1] start/end
+                { name = "woodShop",     x = -773.35, z = 111.71 },                     -- [2] recycled approach
+                { name = "shedApproach", x = -777.09, z = 111.10, openDoor = true },    -- [3] just outside — open the door
+                { name = "shedDoor",     x = -776.41, z = 108.35 },                     -- [4] threshold
+                { name = "shedInside",   x = -780.44, z = 106.55, pauseMinutes = 45 },  -- [5] inside — hang out
+                { name = "shedDoorB",    x = -776.41, z = 108.35 },                     -- [6] exit threshold
+                { name = "shedApproachB",x = -777.09, z = 111.10, closeDoor = true },   -- [7] just outside — close behind him
                 { name = "woodShopB",    x = -773.35, z = 111.71 },                     -- [8] → auto-return to home
             },
         },

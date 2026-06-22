@@ -60,6 +60,7 @@ function WalterWalker.new()
     self.triggerNode  = nil   -- grandpa.interactionTriggerNode; moved to follow him so you can talk mid-walk
     self.hotspot      = nil   -- grandpa.mapHotspot; we shadow its instance getWorldPosition so the icon follows
     self._origGetWP   = nil   -- saved original hotspot getWorldPosition (restored on delete)
+    self._woodshopDoorAO = nil -- cached AnimatedObject for the woodshop door (openDoor/closeDoor waypoints)
     self.animCharSet  = nil
     self._walkClipIdx = -1
     self._idleClipIdx = -1
@@ -331,6 +332,53 @@ function WalterWalker:_syncFollowers()
     end
 end
 
+-- Open (+1) / close (-1) the woodshop door by driving its AnimatedObject directly. The door is
+-- purely cosmetic for Walter (he has no collider), so this just plays the swing animation on cue.
+-- Resolves the AO once (tinyShed01 placeable nearest the configured point, animated object by saveId)
+-- and caches it; re-resolves if the cached node is gone.
+function WalterWalker:_setWoodshopDoor(dir)
+    local dcfg = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.woodshopDoor
+    if type(dcfg) ~= "table" then return false end
+    local ao = self._woodshopDoorAO
+    local valid = ao ~= nil and ao.nodeId ~= nil and entityExists(ao.nodeId)
+    if not valid then
+        ao = nil
+        local placeables = g_currentMission and g_currentMission.placeableSystem
+                           and g_currentMission.placeableSystem.placeables
+        if type(placeables) == "table" then
+            local best, bestd
+            for _, p in ipairs(placeables) do
+                local nameOk = true
+                if dcfg.config then
+                    local cf = p.configFileName
+                    nameOk = type(cf) == "string" and cf:find(dcfg.config, 1, true) ~= nil
+                end
+                if nameOk then
+                    local px, pz
+                    pcall(function() local a, _, c = getWorldTranslation(p.rootNode); px, pz = a, c end)
+                    if px then
+                        local d = (px - dcfg.near.x)^2 + (pz - dcfg.near.z)^2
+                        if bestd == nil or d < bestd then best, bestd = p, d end
+                    end
+                end
+            end
+            if best ~= nil then
+                local aos = best.spec_animatedObjects and best.spec_animatedObjects.animatedObjects
+                if type(aos) == "table" then
+                    for _, a in ipairs(aos) do
+                        if a.saveId == dcfg.saveId then ao = a; break end
+                    end
+                end
+            end
+        end
+        self._woodshopDoorAO = ao
+    end
+    if ao == nil or type(ao.setDirection) ~= "function" then return false end
+    pcall(function() ao:setDirection(dir) end)
+    print(string.format("[ValleyLife][Walter] woodshop door setDirection(%d)", dir))
+    return true
+end
+
 function WalterWalker:_loopRunnable(loop)
     return type(loop) == "table" and type(loop.waypoints) == "table" and #loop.waypoints >= 2
 end
@@ -587,6 +635,10 @@ function WalterWalker:_updateWalk(cfg, dt)
         self._wz = target.z
         self._wy = (target.y ~= nil) and target.y or terrainY(self._wx, self._wz, self._wy)
         setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
+
+        -- Reached a waypoint that opens/closes the woodshop door (cosmetic swing on cue).
+        if target.openDoor  then self:_setWoodshopDoor(1)  end
+        if target.closeDoor then self:_setWoodshopDoor(-1) end
 
         -- Back at waypoint [1] (home) → circuit done; idle, base game resumes control.
         if walk.targetIdx == 1 then
