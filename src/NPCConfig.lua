@@ -169,12 +169,12 @@ VLConfig.WALTER_WALK = {
                 { name = "home",         x = -758.2,  y = 47.0,  z = 94.3, endOnArrival = true }, -- [4] home: stop & idle (base game resumes)
             },
         },
-        -- Long out-and-back across the yard for testing (talk-mid-walk, map point, facing).
-        -- Captured 2026-06-21 with vlPos (outbound leg, mirrored for the return). y omitted so
-        -- he grounds to terrain (flat yard). ~67m out, ~130m round trip. Trigger any time with
-        -- `vlWalk grandpa dayStroll`; also auto-runs daytime. No hideOnEnd → loops back to home.
+        -- Daytime out-and-back across the yard (he's "checking the pumps"). Captured 2026-06-21
+        -- with vlPos (outbound leg, mirrored for the return). y omitted so he grounds to terrain
+        -- (flat yard). ~67m out, ~130m round trip. Trigger any time with `vlWalk grandpa
+        -- checkingPumps`; also auto-runs daytime. No hideOnEnd → loops back to home.
         {
-            name = "dayStroll", startHour = 6, endHour = 16,
+            name = "checkingPumps", startHour = 6, endHour = 16,
             waypoints = {
                 { name = "home", x = -758.2,  z = 94.3 },   -- [1] start/end (GRANDPA_FARMHOUSE spot)
                 { name = "out1", x = -749.15, z = 91.74 },  -- [2]
