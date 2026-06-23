@@ -19,6 +19,9 @@ For project overview, install, and controls, see the root [README.md](../README.
   *not* to do (PNG 9-slice corners).
 - [lifecycle-and-hooks.md](lifecycle-and-hooks.md) - **mission hooks**,
   per-frame update/draw chain, save/load, NPC spawn, idle animation.
+- [walter-daily-life.md](walter-daily-life.md) - **Walter's full system + 2026-06-22 session
+  log**: daily schedule, disappear/morning-departure, stairs, stop-and-face, map icon, Visit
+  teleport, woodshop door+lights, time-of-day greetings, the `getDay` crash fix, and config knobs.
 - [walter-guided-tour.md](walter-guided-tour.md) - base-game intro tour: why
   Walter's `.gar` dialog is **un-editable**, his reconstructed closing speech,
   and the `GuidedTour.finish`/`cancel` **injection seam** for a post-tour town beat.
