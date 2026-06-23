@@ -141,6 +141,23 @@ VLConfig.WALTER_WALK = {
     yOffset      = 0,       -- meters subtracted from his driven height (fixes float; tune live with vlWalterYOffset)
     stairLift    = 0.15,    -- bow-lift on sloped segments to clear step noses; tune live with vlWalterStairLift
     dayStartHour = 5,       -- he "starts his day" at 5am: fires once per day (edge-triggered) to reappear at home if he stepped inside last evening
+    nightWoodshopHour   = 22,  -- hour after which the OCCASIONAL "couldn't sleep" woodshop visit may trigger (once per night, only while he's hidden/asleep inside)
+    nightWoodshopChance = 0.4, -- deterministic per-night probability he actually goes (0..1) — keeps it occasional but stable across save/reload
+    -- Hand prop: the BASE-GAME flashlight, held + lit while he's out walking after the seasonal dusk
+    -- hour (on during eveningReturn / the night woodshop trip; off in daylight & when idle/inside).
+    -- Lives in his LEFT hand so it pairs with the chainsaw_walk carry (both hands forward, no swing).
+    -- offset/rot below are the OFFICIAL left-hand pose, baked 2026-06-23 from the live FS25 log
+    -- (vlWalterFlashHand left → vlFlash → vlFlashRot). Re-tune live with vlFlash / vlFlashRot if needed.
+    flashlight = {
+        i3d        = "$data/handTools/brandless/flashlight/flashlight.i3d",
+        handBone   = "LeftHand",
+        graphicsIndex = "0>0",                      -- i3dMapping for the visible model (flashlight.xml)
+        handNodeIndex = "0>1",                      -- i3dMapping for the grip-alignment node
+        lightIndex = "0>0|1",                       -- i3dMapping for the spotlight node (from flashlight.xml)
+        offset     = { x = 0.078, y = 0.004, z = 0.061 },  -- local position in the LEFT hand (meters); tuned into his grip (vlFlash).
+        rot        = { x = 0.2618, y = 3.1416, z = 0.5236 },  -- local rotation (radians) ON TOP of the auto grip rotation = deg(15, 180, 30); the left hand's axes are mirrored, so the beam needs this to point forward (vlFlashRot).
+    },
+    flashlightDusk = { spring = 18, summer = 19, autumn = 18, winter = 17 },  -- hour the light comes on while walking
     interactRange = 4.5,    -- meters: how close the player must be to his walked position for the talk prompt (we set isPlayerInRange ourselves; the physics trigger is unreliable while walking)
     approachRange = 4.0,    -- meters: he stops walking & turns to face the player within this range, so his stationary trigger fires the normal base conversation; resumes when they leave
     greetRange    = 5.0,    -- meters: he speaks an ambient time-of-day line on approach (just before he stops to face you); base "press to talk" conversation is untouched
@@ -238,6 +255,33 @@ VLConfig.WALTER_WALK = {
                 { name = "shedDoorB",    x = -776.41, z = 108.35, lightsOff = true },   -- [6] exit threshold — lights off
                 { name = "shedApproachB",x = -777.09, z = 111.10, closeDoor = true },   -- [7] just outside — close behind him
                 { name = "woodShopB",    x = -773.35, z = 111.71 },                     -- [8] → auto-return to home
+            },
+        },
+        -- OCCASIONAL NIGHT VISIT — some nights he can't sleep and slips out to the woodshop, its
+        -- lights glowing in the dark, then comes back and steps inside again. manualOnly + edge-
+        -- triggered in WalterWalker:update() once per night (nightWoodshopHour) with a deterministic
+        -- per-night chance (nightWoodshopChance), so it's occasional yet stable across save/reload.
+        -- Starts AND ends at the door: revealed at wp[1] (like morningDeparture), re-hidden at the
+        -- final houseDoor (hideOnEnd, like eveningReturn). Reuses the eveningReturn stairs + the
+        -- woodshopVisit shed points — no new coords. `vlWalterNight` forces it for testing.
+        {
+            name = "nightWoodshop", manualOnly = true,
+            waypoints = {
+                { name = "houseDoor",     x = -761.73, y = 47.69, z = 94.61 },                  -- [1] start: at the door (revealed here)
+                { name = "stairMid",      x = -760.90, y = 47.0,  z = 96.23 },                  -- [2] down the steps
+                { name = "doorApproach",  x = -760.32, y = 47.0,  z = 97.06 },                  -- [3] base of the stairs
+                { name = "home",          x = -758.2,  y = 47.0,  z = 94.3 },                   -- [4] yard
+                { name = "woodShop",      x = -773.35, z = 111.71 },                            -- [5] approach
+                { name = "shedApproach",  x = -777.09, z = 111.10, openDoor = true },           -- [6] just outside — open the door
+                { name = "shedDoor",      x = -776.41, z = 108.35 },                            -- [7] threshold
+                { name = "shedInside",    x = -780.44, z = 106.55, pauseMinutes = 30, lightsOn = true }, -- [8] inside — lights on, work a while
+                { name = "shedDoorB",     x = -776.41, z = 108.35, lightsOff = true },          -- [9] exit threshold — lights off
+                { name = "shedApproachB", x = -777.09, z = 111.10, closeDoor = true },          -- [10] just outside — close behind him
+                { name = "woodShopB",     x = -773.35, z = 111.71 },                            -- [11] back across the yard
+                { name = "homeB",         x = -758.2,  y = 47.0,  z = 94.3 },                   -- [12] yard
+                { name = "doorApproachB", x = -760.32, y = 47.0,  z = 97.06 },                  -- [13] back to the stairs
+                { name = "stairMidB",     x = -760.90, y = 47.0,  z = 96.23 },                  -- [14] up the steps
+                { name = "houseDoorB",    x = -761.73, y = 47.69, z = 94.61, hideOnEnd = true },-- [15] step inside; vanish for the night
             },
         },
     },

@@ -7,6 +7,10 @@ For project overview, install, and controls, see the root [README.md](../README.
 
 ## Index
 
+- [character-systems.md](character-systems.md) - **START HERE for characters**: the big-picture
+  model — every character is the same player rig (player-can ⇒ NPC-can), the two implementation
+  paths (Walter/GRANDPA vs fabricated `VLNPCEntity`), a **capability catalog**, and the governing
+  principles. Ties the per-topic journals together.
 - [outfits-and-schedule.md](outfits-and-schedule.md) - **work/leisure rules**,
   holidays, seasons, birthdays, per-villager assignment matrix, baking checklist.
 - [character-appearance.md](character-appearance.md) - character style configs

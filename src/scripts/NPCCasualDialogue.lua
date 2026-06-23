@@ -117,6 +117,17 @@ function VLCasualDialogue:pickTimeOfDayLine(npcId)
     return self:nextFromPool(npcId, pool)
 end
 
+-- A line from an arbitrarily-named pool (e.g. "nightWoodshop"), rotated, no first-meet/already-talked
+-- gating. For ambient event barks that aren't tied to a time-of-day bucket.
+function VLCasualDialogue:pickNamedPool(npcId, key)
+    if type(npcId) == "string" then npcId = string.lower(npcId) end
+    local def = POOLS[npcId]
+    if def == nil then return nil end
+    local pool = asPool(def[key])
+    if #pool == 0 then return nil end
+    return self:nextFromPool(npcId, pool)
+end
+
 function VLCasualDialogue:resetNPC(npcId)
     if type(npcId) == "string" then npcId = string.lower(npcId) end
     self.met[npcId] = nil

@@ -25,6 +25,10 @@ deepest schedule + dialog by design; other villagers stay lighter.
       `morningDeparture` + `eveningReturn` are "set"; the daytime loops are still being tuned.)
 - [ ] Optional polish: **no-"press Enter" ambient styling** for the greeting popup (it currently
       reuses the standard speech box).
+- [ ] **Occasional middle-of-the-night "checking pumps" wander** — sometimes he can't sleep and
+      emerges from the house in the dead of night (flashlight lit) to walk the `checkingPumps` yard
+      route, then back inside. Reuses the `nightWoodshop` machinery (reveal-at-door + deterministic
+      per-night roll + hideOnEnd) pointed at the existing `checkingPumps` waypoints — cheap to add.
 
 ## Other villagers (Elara, Kenji, Marta)
 - [ ] Lighter-but-real **schedules / routes** (Marta has stop-and-face + a loop; flesh out the rest).

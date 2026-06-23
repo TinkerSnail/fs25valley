@@ -73,6 +73,27 @@ NPCs use **direct-track animation** (same pattern as idle):
 Clip indices are from `getAnimClipName(charSet, index)` enumeration (0–120).
 NPC clips are prioritized in `WALK_CLIP_CANDIDATES_FEMALE/MALE` arrays.
 
+### Swapping the clip to change POSE (2026-06-23) — the lever for a held/steady arm
+
+The body is driven by whichever clip is on track 0 — **NOT** by bone posing (runtime `setRotation` on
+bones loses to the clip at render: R13, see [[walter-walker-history]]). So to change his whole-body
+pose you assign a DIFFERENT clip. `vlWalterClip <name|index|off>` does this (sets `_clipOverride`;
+`_startWalkAnim` plays it instead of the walk clip — visible only while he's actively WALKING, since
+idle runs `orig()` over track 0). Full `vlAnimClips grandpa` dump = 87 clips (0–86); the prop-relevant ones:
+
+| Clip | Poses | Use / catch |
+|---|---|---|
+| `chainsaw_walkSource` [56] / `chainsaw_idleSource` [31] (+ strafe/backward/cut) | walk/idle **gripping a tool**, arms steady & forward, NO swing | the only COMPLETE walk-while-holding (legs AND arms correct) — but **two-handed**, imperfect for a 1-handed flashlight |
+| `horse*` [4–21] (horseIdle02, horseWalk/Canter/Trot…) | arms **bent at the elbow, hands forward** (reins) — nicer "holding" shape | but poses the LEGS astride → breaks the walk. Good arms, wrong legs |
+
+- **There is NO flashlight / generic one-handed-hold clip** — the flashlight is a "simple" handtool
+  with no third-person body anim (also why the player only holds it in first person). The chainsaw is
+  the one tool with full third-person hold/use anims.
+- **"Held arms + walking legs" would need clip BLENDING** (walk on one track + an arm pose on a higher
+  track with a bone mask) — possible in principle, a real step up, and the base clips aren't masked for
+  it. Practical flashlight options: (a) `chainsaw_walk` if the two-handed look passes, or (b) accept
+  the open hand + natural swing.
+
 ---
 
 ## Rotation & turn-then-walk
@@ -154,3 +175,130 @@ No clipboard or paper-based prop exists in FS25 base `data/handTools/`.
 Available hand tools: flashlight, horse brush (Husqvarna, Jonsered, McCulloch,
 Stihl chainsaw variants), Kärcher pressure washer lance, and spray cans.
 A custom i3d prop would be needed to give Marta something to hold.
+
+### CONFIRMED: NPCs have named, animated hand bones (2026-06-22, `vlWalterBones`)
+
+Dumped GRANDPA's full node tree (`vlWalterBones` in main.lua — recursive walk of
+`graphicsRootNode`, kept as a reusable research command). He uses the standard **`playerM`**
+rig — **the same skeleton the player uses** (confirms [[feedback-npc-can-do-what-player-can]]:
+a player handtool attaches to an NPC the same way). Named bones, Mixamo-style:
+
+```
+playerM/player_skeletonRootNode/animationRootNode/root/Hips/Spine/Spine1/Spine2/
+  RightShoulder/RightArm/RightForeArm/RightHand   ← the grip bone (this session id=21916)
+  ...                                LeftHand      ← (id=21896)  + every finger joint
+```
+
+- **The hand bone is REAL and ANIMATED.** It lives under `animationRootNode/root/Hips`, so the
+  walk/idle clips pose it every frame → a node `link()`ed as a child of `RightHand` follows the
+  hand through the arm swing for free. No bone-driving code needed.
+- **Resolve it BY NAME, never by id** — node ids change every session (the iron rule of this
+  project). Walk the named path or `getChild`/`I3DUtil.indexToObject` from `graphicsRootNode`.
+- Beware NON-bone decoys named "hands": `playerM/GEO/bodyParts/mBody01/hands` and
+  `.../GEO/attachments/.../hands` are **mesh groups**, not the skeleton. The bone is the one
+  under `player_skeletonRootNode/animationRootNode/root/Hips/...`.
+
+**To actually hold a flashlight (remaining work, NOT yet built):** (1) **use the BASE-GAME
+flashlight** — the player equips `data/handTools/.../flashlight` at runtime, so that i3d
+demonstrably loads on demand (player-can ⇒ NPC-can). The "i3d can't load from a pak at runtime"
+limit is about VEHICLES ([[project-open-decisions]]), a different/narrower case — do NOT assume it
+blocks handtools; default to the base asset and only fall back to a mod-bundled copy if a real load
+attempt fails. The most faithful path is to reuse the player's flashlight **handtool** itself (it
+already carries its hand-link node + spotlight); attaching just the i3d is the simpler fallback.
+(2) load/resolve it, `link(RightHand, prop)`, set a small local translation/rotation so it sits in
+the palm; (3) the beam comes with the handtool, or attach/enable a spotlight. Caveat: the walk/idle
+clips pose an OPEN, swinging hand (no grip pose — we don't drive bone-level animation), so the prop
+follows the hand but won't look gripped up close.
+
+### Full base-game handtool palette (dump, 2026-06-22)
+
+Everything a character could plausibly hold, from `$DATA/handTools/` (readable; path in
+[game-files-and-xml.md](game-files-and-xml.md)). Six functional types, ~13 model variants:
+
+| Holdable | `type` | XML (under `$DATA/handTools/`) | Notes |
+|---|---|---|---|
+| **Flashlight** | `flashlight` | `brandless/flashlight/flashlight.xml` | model + **real spotlight** (IES beam, 50 m, 60° cone) + lens self-illum. **Our target.** |
+| Horse brush | `horseBrush` | `brandless/horseBrush/horseBrush.xml` | small handheld brush |
+| Chainsaw — Husqvarna XP550 | `chainsaw` | `husqvarna/xp550/xp550.xml` | + shared `treeCutters/` + exhaust i3ds. Thematic for Walter (woodshop). |
+| Chainsaw — Jonsered CS2252 | `chainsaw` | `jonsered/cs2252/cs2252.xml` | |
+| Chainsaw — McCulloch CS410 | `chainsaw` | `mcCulloch/cs410/cs410.xml` | |
+| Chainsaw — Stihl MS261 | `chainsaw` | `stihl/ms261/ms261.xml` | |
+| Pressure-washer lance | `highPressureWasherLance` | `kaercher/hds9184M/hds9184MLance.xml` | Kärcher lance |
+| Spray can (7 colors) | `sprayCan` | `stihl/sprayCan/sprayCan{Blue,Green,Orange,Pink,Red,White,Yellow}.xml` | marking spray |
+| (empty hands) | `hands` | `hands.xml` | the default "nothing held" |
+
+**Universal attach pattern** (from `flashlight.xml` `<base>`):
+
+```xml
+<base>
+  <filename>$data/handTools/brandless/flashlight/flashlight.i3d</filename>
+  <graphics  node="graphics"/>        <!-- the visible model -->
+  <handNode  node="handNode"/>        <!-- the GRIP-MOUNT node — align THIS to the hand bone -->
+  <firstPersonNode node="firstPersonNode"/>
+</base>
+<flashlight>
+  <light node="lightNode" mesh="selfIllum" distance="50" coneAngle="60" iesProfile="...flashlight.ies"/>
+</flashlight>
+```
+
+Every handtool defines a **`handNode`** (its grip origin) — that's the lever for putting any of these
+in `RightHand`: load the tool's i3d, position so `handNode` coincides with `RightHand`, link it as a
+child so it follows the animated hand. The flashlight additionally has a `lightNode` we enable for the
+beam.
+
+**Can't copy the player's hold (2026-06-23):** FS25 **blocks third-person view while a handtool is
+equipped**, so the player never holds a flashlight on the visible BODY skeleton — it's attached to the
+first-person camera/arms rig (the i3d's `firstPersonNode`), whose transform is camera-relative and
+useless for a third-person NPC body. So there is no player third-person hold to read off and copy.
+Use the tool's own `handNode` (the authored third-person grip) + manual seating instead. `vlPlayerFlashlight`
+confirmed: no `flash` node under `g_localPlayer.rootNode`/`graphicsRootNode` while holding it.
+### Hand SHAPES / grip poses — the `<pose>` system (2026-06-23)
+
+A "hand shape" in FS25 is a **`<pose>`** (defined in `player.xsd`): an `id`, an `isDefaultPose` flag,
+and a list of **`<rotationNode index="…" rotation="…"/>`** — i.e. *curl these finger bones by these
+rotations*. The player config also carries an **IK chain** system (`target`, `targetOffset`,
+`numIterations`, `positionThreshold`) for reaching. So a grip = a named set of finger-bone rotations.
+
+**The base-game pose LIST is NOT dumpable — it's sealed.** No loose player/character config exists
+under `$DATA` (no `player*.xml`/`playerModels.xml` data, no `<pose>` in loose XML, no `character/`
+dir — verified 2026-06-23); `playerModels.xsd` points to a `filename` that resolves into `dataS2.gar`.
+We have the SCHEMA (structure) but not the concrete pose ids/rotations. NPCs (GRANDPA via g_npcManager)
+likely don't even load the player pose system.
+
+**Walter's finger bones are all named and addressable** (`RightHandIndex1/2/3`,
+`…Middle/Ring/Pinky/Thumb1/2/3` — from `vlWalterBones`), and a `vlGrip` tester `setRotation`s them.
+
+**RESULT (2026-06-23): runtime finger posing FAILS — the ATTACH-vs-OVERRIDE rule.** `setRotation` on
+the finger bones is wiped by the animation clip every render frame (the R13 wall — the engine
+re-poses the whole skeleton from the active clip *after* all Lua). This also explains why the
+flashlight works but a grip doesn't:
+
+> **You can ATTACH a child to an animated bone (`link(RightHand, prop)`) — it INHERITS the animated
+> pose and rides along. You CANNOT OVERRIDE a bone's own transform while a clip drives it — the clip
+> wins.** Hanging props off the hand ✅; reshaping the hand itself ❌ (without baked animation clips).
+
+So Walter holds the flashlight in an **open hand** — accepted. `vlGrip` is kept as an inert tester.
+**DO NOT re-attempt finger posing via `setRotation`** (it's the same battle as R0–R17). The same rule
+covers any future hand prop: attach it to `RightHand`, never try to curl the fingers around it.
+
+**Working recipe (DONE, build 01:30):** load via `g_i3DManager:loadI3DFile("data/handTools/.../flashlight.i3d")`
+(bare `loadI3DFile`/`$data` fails); resolve sub-nodes BY NAME (`graphics`/`handNode`/`lightNode` — NOT
+`I3DUtil.indexToObject`, which returned nil); `link(RightHand, root)`; rotation = `-handNode.rot`
+(beam faces forward ✅); position = an eyeballed offset into the palm — for the flashlight on GRANDPA:
+**`(-0.102, 0.004, -0.079)`**; toggle visibility on the **graphics subtree recursively** (root-only
+isn't enough) + the `lightNode`. Implemented in `WalterWalker` `_ensureFlashlight`/`_setFlashlight`.
+
+**OFFICIAL POSE — LEFT hand (baked 2026-06-23).** The flashlight now lives in his **LEFT** hand so it
+pairs with the `chainsaw_walk` carry (both hands forward, no arm swing — solves the swing the right way:
+clip-swap + hand switch, no bone-fighting). Switch hands live with `vlWalterFlashHand left|right`
+(drops + reloads the prop on the new bone). The left hand's bone axes are **mirrored** from the right, so
+the auto grip rotation (`-handNode.rot`) alone points the beam wrong → a manual `rot` adjustment is needed
+on top (tap `vlFlashRot x±/y±/z±`, 15°/tap; `vlFlashRot 0` resets; stored in `fc.rot` as **radians**).
+Final values, tuned live and read from `log.txt` (the in-game console prints them, but the numbers only
+survive in the live log — not the chat transcript), baked into `NPCConfig.WALTER_WALK.flashlight`:
+- `handBone = "LeftHand"`
+- `offset = { x = 0.078, y = 0.004, z = 0.061 }`  (meters; `vlFlash` nudges 1cm/tap)
+- `rot = { x = 0.2618, y = 3.1416, z = 0.5236 }`  = **deg(15, 180, 30)** (radians; on top of auto grip)
+
+The old right-hand offset `(-0.102, 0.004, -0.079)` is **obsolete** — there is a single shared `offset`,
+so the left-hand numbers replace it.

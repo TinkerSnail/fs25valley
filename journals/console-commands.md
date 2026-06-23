@@ -83,7 +83,7 @@ yet change outfit mode.
 |---|---|---|
 | `vlWalk` | `vlWalk <npcId> [loopName\|index]` | Force-start a walk loop now (bypasses the 2-hour tick). `npcId` = `marta`/etc. **or `grandpa`** (Walter). With no loop arg, starts the loop active at the current hour; otherwise by name (e.g. `vlWalk grandpa mailbox`) or index. |
 | `vlSkipPause` | `vlSkipPause <npcId>` | Skip the current mid-route pause and send them to the next waypoint. Works for the mod NPCs **and `grandpa`**. |
-| `vlAnimClips` | `vlAnimClips <npcId>` | Enumerate all animation clip names (indices 0–120) on the NPC's char set. Useful for discovering walk/idle clip names. |
+| `vlAnimClips` | `vlAnimClips <npcId>` | Enumerate all animation clip names (indices 0–120) on the char set. Accepts **`grandpa`** (reads `walterWalker.animCharSet`). Useful for discovering walk/idle **and tool-holding** clip names (chainsaw_walk, etc.). |
 
 Work loops only run during **work mode** (Mon–Fri 5:30 AM–4:30 PM). Use `vlWalk`
 to test without waiting for the 2-hour trigger. Use `vlSkipPause` to fast-forward
@@ -95,8 +95,10 @@ See [npc-movement.md](npc-movement.md) for full work loop documentation.
 ## Walter (GRANDPA)
 
 Walter is the real base-game GRANDPA, hand-driven by `WalterWalker`. His loops:
-`checkingPumps` (6–9), `mailbox` (9–12), `produceStand` (12–16), `eveningReturn` (19),
-plus `morningDeparture` and `woodshopVisit` (manual-only).
+`checkingPumps` (6–9), `mailbox` (9–12), `produceStand` (12–14), `woodshopVisit` (14–16),
+`eveningReturn` (19), the occasional `nightWoodshop` (~22, "couldn't sleep"), plus
+`morningDeparture` (manual). He carries a **lit flashlight** while walking after the seasonal
+dusk hour (summer 19:00 / winter 17:00).
 
 | Command | Usage | What it does |
 |---|---|---|
@@ -105,6 +107,17 @@ plus `morningDeparture` and `woodshopVisit` (manual-only).
 | `vlWalterShow` | `vlWalterShow` | Reveal him if he "stepped inside" (door disappear). |
 | `vlWalterHide` | `vlWalterHide` | Hide him on demand (test the door disappear). |
 | `vlWalterMorning` | `vlWalterMorning` | Trigger the 5am morning departure (door → home) now. |
+| `vlWalterNight` | `vlWalterNight` | Trigger the occasional ~10pm "couldn't sleep" woodshop visit now (door → lit shed → back inside). |
+| `vlWalterSay` | `vlWalterSay` | Preview his current time-of-day casual line (morning/midday/evening/night) in the speech box. |
+| `vlWalterFlashlight` | `vlWalterFlashlight <1\|0\|auto>` | Force his flashlight ON/OFF, or `auto` = on while walking after the seasonal dusk hour. |
+| `vlFlash` | `vlFlash <x+\|x-\|y+\|y-\|z+\|z->` | Nudge the flashlight 1 cm in his hand; bake into `NPCConfig.flashlight.offset`. |
+| `vlWalterFlashlightPose` | `vlWalterFlashlightPose <x> <y> <z>` | Set the flashlight's exact local position in his hand (position only; rotation stays the auto `handNode` grip). `vlFlash` is the easier nudge. |
+| `vlPose` | `vlPose <thumb\|index\|middle\|ring\|pinky\|shoulder\|arm\|forearm\|wrist> [1-3] <x±\|y±\|z±\|0>` | Rotate a finger/arm bone 10°/tap (hand-pose research). NOTE: clip-driven bones get re-posed by the anim each frame — see [npc-movement.md](npc-movement.md). |
+| `vlWalterClip` | `vlWalterClip <index\|name\|off>` | Play a specific anim clip on Walter (test tool-holding clips, e.g. `chainsaw_walk`); only shows while he's walking. |
+| `vlWalterApproach` | `vlWalterApproach <m>` | Live-set his stop-and-face range; **0 = off** (he walks past you — lets you observe him up close while walking). Restore with `4`. |
+| `vlWalterReset` | `vlWalterReset` | Undo all live pose/clip/approach tweaks in one shot (clears finger/arm poses, drops the clip override, restores stop-and-face). |
+| `vlWalterBones` | `vlWalterBones` | Dump GRANDPA's skeleton node tree (find hand/finger/arm bone names for props & posing). |
+| `vlPlayerFlashlight` | `vlPlayerFlashlight` | While the PLAYER holds a flashlight, dump its parent bone + local transform (attach research). |
 | `vlWalterDoor` | `vlWalterDoor <1\|-1>` | Open (1) / close (-1) the woodshop door via his own code. |
 | `vlWalterLights` | `vlWalterLights <1\|0>` | Turn the woodshop lights on (1) / off (0). |
 | `vlWalterYOffset` | `vlWalterYOffset <m>` | Live-tune his driven height (positive lowers); fixes float. |
@@ -148,7 +161,7 @@ plus `morningDeparture` and `woodshopVisit` (manual-only).
 | Headgear | `vlHats` | `vlHat` | `vlHatColor` |
 | Socks | `vlSocks` | `vlSock` | `vlSockColor` |
 
-`vlFacegear` / `vlFacegears` - empty in base FS25; socks may route through footwear.
+`vlFacegear` / `vlFacegears` / `vlFacegearColor` - facegear is empty in base FS25; socks may route through footwear.
 
 ## Diagnostics & API probes
 

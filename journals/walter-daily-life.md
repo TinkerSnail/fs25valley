@@ -29,6 +29,7 @@ the walk-loop basics in [npc-movement.md](npc-movement.md); commands in
 | 14–16 | `woodshopVisit` | Walks to `tinyShed01`, **opens the door**, steps inside, **lights on**, hangs out 45 min, **lights off**, **closes the door**, home. His craftsman hour. |
 | 16–19 | (idle) | Deliberate **home stretch** — he relaxes around the farm. |
 | 19:00 | `eveningReturn` | Walks to the door and **steps inside** (vanishes) for the night. |
+| ~22 (some nights) | `nightWoodshop` (manual, occasional) | **Can't sleep** — emerges from the door, walks to the woodshop, **lights on** (glowing in the dark), works ~30 min, **lights off**, returns and **steps back inside** (re-hidden). Deterministic per-night chance (`nightWoodshopChance`), so it's occasional but stable across save/reload. Reveals at the door + re-hides at the door — a night twin of `morningDeparture` + `woodshopVisit` + `eveningReturn`. An ambient quip addresses the late hour when you approach the lit shed. `vlWalterNight` forces it. |
 
 Loops are `VLConfig.WALTER_WALK.loops`, selected by hour via `WorkLoopHelper.getActiveLoop`
 (re-fires on the 2-hour tick). `morningDeparture` + `woodshopVisit` carry no hour window when
@@ -142,8 +143,8 @@ metatable quirk + a multi-step hunt — see engine-api.md.)
 ## New `VLConfig.WALTER_WALK` knobs
 
 `speed`, `homeRy`, `home`, `yOffset`, `stairLift`, `dayStartHour` (5), `approachRange` (4),
-`greetRange` (5), `greetCooldownMs` (20000), `visitOffset` (2), `woodshopDoor` (`{near, config,
-saveId}`), and `loops` (the schedule).
+`greetRange` (5), `greetCooldownMs` (20000), `visitOffset` (2), `nightWoodshopHour` (22),
+`nightWoodshopChance` (0.4), `woodshopDoor` (`{near, config, saveId}`), and `loops` (the schedule).
 
 ## Design intent
 

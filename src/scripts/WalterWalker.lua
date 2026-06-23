@@ -65,6 +65,7 @@ function WalterWalker.new()
     self.animCharSet  = nil
     self._walkClipIdx = -1
     self._idleClipIdx = -1
+    self._clipOverride = nil   -- if set, _startWalkAnim plays this clip index on track 0 (clip testing)
     self._isWalking   = false
     self._ry          = 0
     self._wx          = 0
@@ -77,6 +78,18 @@ function WalterWalker.new()
     self._greetNear   = false  -- true while the player is within greet range (edge-trigger the bark)
     self._greetCooldown = 0    -- ms remaining before he'll greet again
     self._lastWakeDay = nil    -- monotonicDay of his last 5am wake-up (so it fires once per day)
+    self._nightShopDay    = nil   -- monotonicDay of his last night-woodshop roll (fires/decides once per night)
+    self._nightShopActive = false -- true while he's out for the occasional night visit (gates the "couldn't sleep" quip)
+    self._handBone            = nil   -- cached RightHand skeleton bone (hand props link here)
+    self._flashlightNode      = nil   -- loaded flashlight i3d root, linked under the hand bone
+    self._flashlightLightNode = nil   -- its spotlight node (toggled on/off with the model)
+    self._flashlightGraphics  = nil   -- the visible model subtree (0>0); visibility toggled here
+    self._flashlightBaseRot   = nil   -- auto grip rotation (-handNode.rot); fc.rot adjusts on top (vlFlashRot)
+    self._flashlightOn        = false
+    self._flashlightFailed    = false -- i3d load failed once; don't retry it every frame
+    self._flashlightForce     = nil   -- console override: true/false forces, nil = automatic (seasonal dusk)
+    self._gripActive          = false -- re-apply posed digits each frame (the anim re-poses the skeleton)
+    self._digits              = nil   -- per-digit { bones, angle{x,y,z} } for independent finger/thumb posing
     self._loop        = nil
     self._lastTick    = -1
     self._yOffset     = nil   -- lazy-init from VLConfig.WALTER_WALK.yOffset; live-tunable via vlWalterYOffset
@@ -165,11 +178,14 @@ function WalterWalker:_acquireNode()
                 local inConvo = walker.grandpa and walker.grandpa.isInConversation
                 if (not active) or inConvo then
                     orig(self_pg, dt)
+                    -- Re-assert the finger grip AFTER orig() poses the skeleton (latest Lua write).
+                    if walker._gripActive then walker:_applyHandPose() end
                     return
                 end
 
                 -- Active walk (not in conversation): drive facing ourselves; orig stays dormant.
                 setRotation(grn, 0, walker._ry, 0)
+                if walker._gripActive then walker:_applyHandPose() end
             end
             if cls.update then
                 cls.update = patched
@@ -272,14 +288,33 @@ function WalterWalker:_setAnimParams(walking)
     set("rotationVelocity",  0)
 end
 
+-- Test lever (R43): force a specific animation clip index onto track 0 instead of the walk clip,
+-- e.g. a chainsaw (tool-holding) walk. Only visible in the active/skip-orig regime (while walking);
+-- idle runs orig() which re-poses over track 0. Pass nil to clear.
+function WalterWalker:setClipOverride(idx)
+    self._clipOverride = idx
+    if self._isWalking and self.animCharSet ~= nil then
+        local clip = idx or self._walkClipIdx
+        if clip and clip >= 0 then
+            pcall(function()
+                clearAnimTrackClip(self.animCharSet, 0)
+                assignAnimTrackClip(self.animCharSet, 0, clip)
+                setAnimTrackLoopState(self.animCharSet, 0, true)
+                enableAnimTrack(self.animCharSet, 0)
+            end)
+        end
+    end
+end
+
 function WalterWalker:_startWalkAnim()
     if self._isWalking then return end
     self._isWalking = true
     self:_setAnimParams(true)
-    if self.animCharSet ~= nil and self._walkClipIdx >= 0 then
+    local clip = self._clipOverride or self._walkClipIdx  -- _clipOverride lets us test a tool-holding clip
+    if self.animCharSet ~= nil and clip and clip >= 0 then
         pcall(function()
             clearAnimTrackClip(self.animCharSet, 0)
-            assignAnimTrackClip(self.animCharSet, 0, self._walkClipIdx)
+            assignAnimTrackClip(self.animCharSet, 0, clip)
             setAnimTrackLoopState(self.animCharSet, 0, true)
             enableAnimTrack(self.animCharSet, 0)
         end)
@@ -413,6 +448,291 @@ function WalterWalker:_setWoodshopLights(on)
     return true
 end
 
+-- ───────────────────────── Hand SHAPE / arm pose ─────────────────────────
+-- "Hand shapes" in FS25 are <pose> = bone rotations (the base list is sealed in dataS2.gar), so we
+-- author our own. Each PART is posed INDEPENDENTLY: rotate its joint(s) about a local axis, re-applied
+-- each frame while _gripActive. The 5 digits have 3 joints each. The ARM parts (shoulder/arm/forearm/
+-- wrist) extend the hand out front + freezing them counters the walk-swing — BUT the arm is
+-- clip-DRIVEN, so per R13 our override may lose to the render-time clip (fingers may be exempt if the
+-- clip doesn't keyframe them).
+WalterWalker.POSE_PARTS = {
+    thumb    = { "RightHandThumb1",  "RightHandThumb2",  "RightHandThumb3"  },
+    index    = { "RightHandIndex1",  "RightHandIndex2",  "RightHandIndex3"  },
+    middle   = { "RightHandMiddle1", "RightHandMiddle2", "RightHandMiddle3" },
+    ring     = { "RightHandRing1",   "RightHandRing2",   "RightHandRing3"   },
+    pinky    = { "RightHandPinky1",  "RightHandPinky2",  "RightHandPinky3"  },
+    shoulder = { "RightShoulder" },
+    arm      = { "RightArm" },      -- upper arm: lift to raise the hand out front
+    forearm  = { "RightForeArm" },  -- elbow: bend to bring the flashlight forward
+    wrist    = { "RightHand" },     -- the flashlight is linked here, so it follows this bone
+}
+
+-- Resolve (and cache) a digit's 3 joints, each with its rest rotation + its OWN accumulated delta
+-- (dx/dy/dz) so joints pose independently. d.bones is ordered joint 1 → 2 → 3 (knuckle → tip).
+function WalterWalker:_resolveDigit(name)
+    self._digits = self._digits or {}
+    local d = self._digits[name]
+    if d and d.bones then return d end
+    local boneNames = WalterWalker.POSE_PARTS[name]
+    if boneNames == nil or self.graphicsNode == nil then return nil end
+    local bones = {}
+    for _, bn in ipairs(boneNames) do
+        local n = self:_findNodeByName(self.graphicsNode, bn)
+        if n then
+            local ox, oy, oz = 0, 0, 0
+            pcall(function() ox, oy, oz = getRotation(n) end)
+            bones[#bones + 1] = { node = n, ox = ox, oy = oy, oz = oz, dx = 0, dy = 0, dz = 0 }
+        end
+    end
+    if #bones == 0 then return nil end
+    self._digits[name] = { bones = bones }
+    return self._digits[name]
+end
+
+-- Apply a digit: each joint = its rest rotation + its own accumulated delta.
+function WalterWalker:_applyDigit(name)
+    local d = self._digits and self._digits[name]
+    if d == nil then return end
+    for _, b in ipairs(d.bones) do
+        pcall(function() setRotation(b.node, b.ox + b.dx, b.oy + b.dy, b.oz + b.dz) end)
+    end
+end
+
+-- Console-driven: nudge a digit. joint = 1|2|3 targets that joint; joint = nil moves all three.
+-- axis "reset" zeroes the targeted joint(s) back to rest.
+function WalterWalker:nudgeDigit(name, joint, axis, deltaRad)
+    local d = self:_resolveDigit(name)
+    if d == nil then return nil end
+    local targets = (joint and d.bones[joint]) and { d.bones[joint] } or d.bones
+    if axis == "reset" then
+        for _, b in ipairs(targets) do b.dx, b.dy, b.dz = 0, 0, 0 end
+    else
+        local key = "d" .. axis  -- dx / dy / dz
+        for _, b in ipairs(targets) do b[key] = (b[key] or 0) + deltaRad end
+        self._gripActive = true
+    end
+    self:_applyDigit(name)
+    return d
+end
+
+-- Re-assert every posed digit each frame (the anim re-poses the skeleton otherwise).
+function WalterWalker:_applyHandPose()
+    if self._digits == nil then return end
+    for name in pairs(self._digits) do self:_applyDigit(name) end
+end
+
+-- ───────────────────────── Hand prop: flashlight ─────────────────────────
+-- First prop attached to an NPC hand in this project. Loads the BASE-GAME flashlight i3d and links
+-- it under the RightHand skeleton bone so it follows the animated hand (player-can ⇒ NPC-can; the
+-- bone was confirmed by vlWalterBones). The i3d carries its own spotlight (lightNode); we toggle the
+-- model + light together. UNPROVEN engine path — every step is pcall-wrapped + logged. Eyeball the
+-- in-hand pose live with vlWalterFlashlightPose, then bake offset/rot into NPCConfig.
+
+function WalterWalker:_findNodeByName(root, name)
+    if root == nil or not entityExists(root) then return nil end
+    if getName(root) == name then return root end
+    for i = 0, getNumOfChildren(root) - 1 do
+        local found = self:_findNodeByName(getChildAt(root, i), name)
+        if found then return found end
+    end
+    return nil
+end
+
+function WalterWalker:_resolveHandBone(name)
+    if self._handBone ~= nil and entityExists(self._handBone) then return self._handBone end
+    if self.graphicsNode == nil then return nil end
+    self._handBone = self:_findNodeByName(self.graphicsNode, name or "RightHand")
+    return self._handBone
+end
+
+-- Set visibility on a node AND its whole subtree (root-only setVisibility didn't show the model —
+-- the graphics mesh sub-node carried its own hidden flag).
+function WalterWalker:_setTreeVisibility(node, on)
+    if node == nil or not entityExists(node) then return end
+    setVisibility(node, on)
+    for i = 0, getNumOfChildren(node) - 1 do
+        self:_setTreeVisibility(getChildAt(node, i), on)
+    end
+end
+
+-- Diagnostic: log the prop subtree (name / visible / local pos) so we can see what loaded and where
+-- each piece sits relative to the hand.
+function WalterWalker:_dumpFlashlightTree(node, depth)
+    if node == nil or not entityExists(node) or depth > 4 then return end
+    local vis, x, y, z = nil, 0, 0, 0
+    pcall(function() vis = getVisibility(node) end)
+    pcall(function() x, y, z = getTranslation(node) end)
+    print(string.format("[FlashTree]%s%s vis=%s pos(%.3f,%.3f,%.3f)",
+        string.rep("  ", depth), tostring(getName(node)), tostring(vis), x, y, z))
+    for i = 0, getNumOfChildren(node) - 1 do
+        self:_dumpFlashlightTree(getChildAt(node, i), depth + 1)
+    end
+end
+
+-- Resolve an i3dMapping index (e.g. "0>0") to a node under root; nil if unavailable.
+function WalterWalker:_i3dIndex(root, s)
+    local n = nil
+    pcall(function()
+        if I3DUtil and I3DUtil.indexToObject then n = I3DUtil.indexToObject(root, s) end
+    end)
+    if n ~= nil and n ~= 0 and entityExists(n) then return n end
+    return nil
+end
+
+-- Load the flashlight i3d, trying several loaders/path forms (the bare global loadI3DFile does NOT
+-- expand "$data/" — R41 build 00:11). Logs which method wins so we can simplify later. Returns a
+-- root node or nil.
+function WalterWalker:_loadFlashlightI3D(path)
+    local dataRel = path:gsub("^%$data/", "data/")   -- the form the engine logs on its own loads
+    local attempts = {}
+    if g_i3DManager ~= nil then
+        if g_i3DManager.loadI3DFile then
+            attempts[#attempts+1] = { "g_i3DManager:loadI3DFile $data",
+                function() return g_i3DManager:loadI3DFile(path, false, false, false) end }
+            attempts[#attempts+1] = { "g_i3DManager:loadI3DFile data/",
+                function() return g_i3DManager:loadI3DFile(dataRel, false, false, false) end }
+        end
+        if g_i3DManager.loadSharedI3DFile then
+            attempts[#attempts+1] = { "g_i3DManager:loadSharedI3DFile $data",
+                function() return g_i3DManager:loadSharedI3DFile(path, false, false, false) end }
+        end
+    end
+    attempts[#attempts+1] = { "loadI3DFile data/", function() return loadI3DFile(dataRel, false, false, false) end }
+
+    for _, a in ipairs(attempts) do
+        local node = nil
+        pcall(function() node = a[2]() end)
+        if node ~= nil and node ~= 0 and entityExists(node) then
+            print("[ValleyLife][Walter] flashlight loaded via " .. a[1])
+            return node
+        end
+        print("[ValleyLife][Walter] flashlight load failed via " .. a[1])
+    end
+    return nil
+end
+
+-- Lazy-load the flashlight i3d ONCE and link it under the hand bone. Returns true when it's ready.
+function WalterWalker:_ensureFlashlight(cfg)
+    if self._flashlightNode ~= nil then return true end
+    if self._flashlightFailed then return false end
+    local fc = cfg and cfg.flashlight
+    if fc == nil then return false end
+    local hand = self:_resolveHandBone(fc.handBone or "RightHand")
+    if hand == nil then return false end  -- skeleton not ready yet; caller retries later
+
+    local root = self:_loadFlashlightI3D(fc.i3d)
+    if root == nil then
+        self._flashlightFailed = true
+        print("[ValleyLife][Walter] flashlight i3d FAILED to load (all methods): " .. tostring(fc.i3d))
+        return false
+    end
+
+    pcall(function() link(hand, root) end)
+
+    -- Resolve model / spotlight / grip nodes BY NAME. I3DUtil.indexToObject proved unreliable here
+    -- (returned nil though the nodes exist — build 00:35); the getChildAt name search always finds them.
+    local graphics  = self:_findNodeByName(root, "graphics")  or root
+    local lightNode = self:_findNodeByName(root, "lightNode")
+    local handNode  = self:_findNodeByName(root, "handNode")
+
+    -- SEAT IT THE WAY THE PLAYER DOES. The tool defines a `handNode` (its grip origin) that the game
+    -- aligns to the hand. So place root so handNode lands ON the bone: offset by -handNode.pos and
+    -- counter-rotate by -handNode.rot. A non-zero config offset/rot OVERRIDES (manual fine-tune/bake).
+    local hp = { x = 0, y = 0, z = 0 }
+    local hr = { x = 0, y = 0, z = 0 }
+    if handNode then
+        pcall(function() hp.x, hp.y, hp.z = getTranslation(handNode) end)
+        pcall(function() hr.x, hr.y, hr.z = getRotation(handNode) end)
+        print(string.format("[ValleyLife][Walter] flashlight handNode local pos(%.3f,%.3f,%.3f) rot(%.1f,%.1f,%.1f deg)",
+            hp.x, hp.y, hp.z, math.deg(hr.x), math.deg(hr.y), math.deg(hr.z)))
+    end
+    -- ROTATION: the grip orientation from handNode — this got the beam facing forward, so keep it
+    -- ALWAYS. POSITION: a non-zero config.offset (set live via vlWalterFlashlightPose) wins; otherwise
+    -- start from the handNode-derived seat (-handNode.pos). Position tunes without touching rotation.
+    local o, r = fc.offset or {}, fc.rot or {}
+    local hasOffset = (o.x or 0) ~= 0 or (o.y or 0) ~= 0 or (o.z or 0) ~= 0
+    self._flashlightBaseRot = { x = -hr.x, y = -hr.y, z = -hr.z }  -- auto grip rotation; fc.rot adjusts it
+    pcall(function()
+        local br = self._flashlightBaseRot
+        setRotation(root, br.x + (r.x or 0), br.y + (r.y or 0), br.z + (r.z or 0))
+        if hasOffset then
+            setTranslation(root, o.x or 0, o.y or 0, o.z or 0)
+        else
+            setTranslation(root, -hp.x, -hp.y, -hp.z)
+        end
+    end)
+
+    self._flashlightNode      = root
+    self._flashlightGraphics  = graphics
+    self._flashlightLightNode = lightNode
+
+    self:_dumpFlashlightTree(root, 0)
+    self:_setFlashlight(false)  -- start OFF (visibility applied to the graphics subtree)
+    print(string.format("[ValleyLife][Walter] flashlight ready (%s pos): graphics=%s light=%s on %s",
+        hasOffset and "config" or "handNode", tostring(graphics), tostring(lightNode), tostring(getName(hand))))
+    return true
+end
+
+function WalterWalker:_setFlashlight(on)
+    if on and not self:_ensureFlashlight(VLConfig.WALTER_WALK) then return false end
+    if self._flashlightNode == nil then return false end
+    pcall(function()
+        -- Show/hide the whole model subtree (root-only wasn't enough), then the spotlight.
+        self:_setTreeVisibility(self._flashlightGraphics or self._flashlightNode, on)
+        if self._flashlightLightNode and entityExists(self._flashlightLightNode) then
+            setVisibility(self._flashlightLightNode, on)
+        end
+    end)
+    self._flashlightOn = on
+    return true
+end
+
+-- Switch the flashlight to the other hand (e.g. LeftHand to pair with chainsaw_walk). Drops the
+-- loaded prop so it re-loads + re-seats (handNode auto-seat) on the new bone. Offset is per-hand —
+-- re-tune with vlFlash after switching. Returns true if it (re)attached.
+function WalterWalker:setFlashlightHand(boneName)
+    local fc = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.flashlight
+    if fc == nil then return false end
+    fc.handBone = boneName
+    self._handBone = nil  -- force re-resolve of the hand bone
+    if self._flashlightNode ~= nil then
+        pcall(function() if entityExists(self._flashlightNode) then delete(self._flashlightNode) end end)
+        self._flashlightNode      = nil
+        self._flashlightGraphics  = nil
+        self._flashlightLightNode = nil
+        self._flashlightOn        = false
+        self._flashlightFailed    = false
+    end
+    return self:_setFlashlight(true)  -- reload + seat on the new hand, turned on
+end
+
+-- Re-apply the flashlight's local rotation = auto grip rotation + fc.rot adjustment (vlFlashRot). The
+-- prop is a child we control (not a clip-driven bone), so setting it once holds — no per-frame redo.
+function WalterWalker:_applyFlashlightRot()
+    if self._flashlightNode == nil or self._flashlightBaseRot == nil then return end
+    local fc = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.flashlight
+    local r  = (fc and fc.rot) or {}
+    local br = self._flashlightBaseRot
+    pcall(function()
+        setRotation(self._flashlightNode, br.x + (r.x or 0), br.y + (r.y or 0), br.z + (r.z or 0))
+    end)
+end
+
+function WalterWalker:_duskHour(cfg)
+    local season = (TimeHelper.getSeason and TimeHelper.getSeason()) or "summer"
+    local t = (cfg and cfg.flashlightDusk) or {}
+    return t[season] or 19
+end
+
+-- On while he's OUT WALKING (active route) and visible, after the seasonal dusk hour. A console force
+-- (vlWalterFlashlight 1/0) overrides; vlWalterFlashlight auto clears it.
+function WalterWalker:_updateFlashlight(cfg, hour)
+    if cfg.flashlight == nil then return end
+    local want = self._active and (not self._hidden) and (hour >= self:_duskHour(cfg))
+    if self._flashlightForce ~= nil then want = self._flashlightForce end
+    if want ~= self._flashlightOn then self:_setFlashlight(want) end
+end
+
 -- Ambient greeting: when the player approaches (entering greetRange), Walter speaks a time-of-day
 -- line as an auto-dismissing popup. ADDITIVE — his base-game "press to talk" conversation is left
 -- fully intact. Edge-triggered + cooldown so it never spams; suppressed during a conversation, while
@@ -436,7 +756,15 @@ function WalterWalker:_maybeGreet(dt)
         local dlg = vl and vl.dialog
         local busy = (dlg and dlg.speech ~= nil) or (vl and vl.sequencer and vl.sequencer.active)
         if dlg and not busy and vl.casualDialogue then
-            local line = vl.casualDialogue:pickTimeOfDayLine("grandpa")
+            -- While out for the occasional night woodshop visit, address it directly ("couldn't
+            -- sleep") instead of the generic night line; fall back to the time-of-day line.
+            local line = nil
+            if self._nightShopActive then
+                line = vl.casualDialogue:pickNamedPool("grandpa", "nightWoodshop")
+            end
+            if line == nil then
+                line = vl.casualDialogue:pickTimeOfDayLine("grandpa")
+            end
             if line then
                 dlg:showSpeechBox("Walter", line, nil, { ttl = 4 })
                 self._greetCooldown = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.greetCooldownMs) or 20000
@@ -513,8 +841,42 @@ function WalterWalker:_startMorningDeparture(cfg)
     print("[ValleyLife][Walter] morning departure: stepping out the door")
 end
 
+-- Deterministic pseudo-random in [0,1) from an integer (the calendar day). Lets the "occasional"
+-- night visit decide ONCE per night and STAY decided across a save/reload, instead of rerolling
+-- every frame. Simple integer hash; no global randomseed side effect.
+function WalterWalker._nightRoll(n)
+    local x = ((n or 0) * 1103515245 + 12345) % 2147483648
+    return x / 2147483648
+end
+
+-- Occasional night visit: he couldn't sleep, so he slips out the door and walks to the woodshop
+-- (lights glowing in the dark), works a while, then comes back and steps inside again. Mirror of
+-- _startMorningDeparture: reveal him AT the door (wp[1]), face down the steps, run the nightWoodshop
+-- loop (which ends by hiding at the door). _nightShopActive flags the "couldn't sleep" ambient quip.
+function WalterWalker:_startNightWoodshop(cfg)
+    local loop = cfg and WorkLoopHelper.findByName(cfg.loops, "nightWoodshop")
+    if loop == nil or not self:_loopRunnable(loop) then return false end
+    local door = loop.waypoints[1]
+    local nxt  = loop.waypoints[2]
+    self._wx, self._wy, self._wz = door.x, door.y or self._wy, door.z
+    if nxt then self._ry = math.atan2(nxt.x - door.x, nxt.z - door.z) end  -- face down the steps
+    if self.graphicsNode and entityExists(self.graphicsNode) then
+        pcall(function()
+            setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz)
+            setRotation(self.graphicsNode, 0, self._ry, 0)
+        end)
+    end
+    self:_reveal()
+    self:_beginLoop(loop)         -- clears _nightShopActive...
+    self._nightShopActive = true  -- ...so set it AFTER _beginLoop
+    self:_syncFollowers()
+    print("[ValleyLife][Walter] couldn't sleep — heading out to the woodshop")
+    return true
+end
+
 function WalterWalker:_beginLoop(loop)
     if self._hidden then self:_reveal() end  -- a loop start always brings him back outside
+    self._nightShopActive = false            -- cleared by default; _startNightWoodshop re-sets it after this
     self._loop   = loop
     self.walk    = { state = "walking", targetIdx = 2 }  -- wp[1] is home; head out first
     self._active = true
@@ -524,6 +886,7 @@ end
 function WalterWalker:_endLoop(cfg)
     self:_stopWalkAnim()
     self._active = false
+    self._nightShopActive = false
     self.walk    = nil
     self._loop   = nil
     -- Settle facing to home heading; the base game resumes idle control next frame
@@ -571,12 +934,18 @@ function WalterWalker:update(dt)
     -- Ambient time-of-day greeting on approach (whether he's walking or idle). Base convo untouched.
     self:_maybeGreet(dt)
 
+    -- Flashlight: on while he's out walking after the seasonal dusk hour. Runs whether active or idle
+    -- so it switches off the moment he settles at home or steps inside.
+    local hour = TimeHelper.getHour()
+    self:_updateFlashlight(cfg, hour)
+
+    -- Re-assert posed digits each frame (the anim clip may re-pose the fingers otherwise).
+    if self._gripActive then self:_applyHandPose() end
+
     if self._active then
         self:_updateWalk(cfg, dt)
         return
     end
-
-    local hour = TimeHelper.getHour()
 
     -- Start his day at dayStartHour. EDGE-triggered, once per calendar day: the first time
     -- we see hour >= dayStartHour on a new monotonicDay, mark the day woken and — if he
@@ -589,6 +958,20 @@ function WalterWalker:update(dt)
             self._lastWakeDay = day
             -- If he stepped inside last evening, walk him back out the door (morning departure).
             if self._hidden then self:_startMorningDeparture(cfg); return end
+        end
+    end
+
+    -- Occasional NIGHT WOODSHOP visit: some nights he can't sleep and slips out to the lit shed.
+    -- Only while he's hidden (asleep inside), after nightWoodshopHour, edge-triggered once per night
+    -- via its own day marker, with a deterministic per-night chance so it's occasional but never
+    -- rerolls per frame or on reload. Ends by stepping back inside (hideOnEnd) — re-hidden for the night.
+    if self._hidden and hour >= (cfg.nightWoodshopHour or 22) then
+        local nightDay = TimeHelper.getMonotonicDay() or 0
+        if nightDay ~= self._nightShopDay then
+            self._nightShopDay = nightDay
+            if WalterWalker._nightRoll(nightDay) < (cfg.nightWoodshopChance or 0.4) then
+                self:_startNightWoodshop(cfg); return
+            end
         end
     end
 
@@ -810,6 +1193,13 @@ function WalterWalker:delete()
     end
     self._origGetWP = nil
     self.hotspot    = nil
+    -- Drop the flashlight prop we loaded + linked to his hand.
+    if self._flashlightNode ~= nil then
+        pcall(function() if entityExists(self._flashlightNode) then delete(self._flashlightNode) end end)
+        self._flashlightNode      = nil
+        self._flashlightLightNode = nil
+        self._handBone            = nil
+    end
     self:_stopWalkAnim()
     self.grandpa      = nil
     self.graphicsNode = nil

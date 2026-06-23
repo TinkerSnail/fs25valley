@@ -331,9 +331,16 @@ end
 -- Tries engine enumeration APIs first, then brute-forces a wide name list.
 function VLConsole:dumpAnimClips(npcId)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
-    local npc = g_valleyLife.npcs[npcId or "marta"]
-    if npc == nil then return "[ValleyLife] NPC not found." end
-    local charSet = npc.animCharSet
+    local lid = string.lower(tostring(npcId or "marta"))
+    local charSet
+    if lid == "grandpa" or lid == "walter" then
+        local ww = g_valleyLife.walterWalker  -- Walter's charSet lives on the walker, not g_valleyLife.npcs
+        charSet = ww and ww.animCharSet
+    else
+        local npc = g_valleyLife.npcs[npcId or "marta"]
+        if npc == nil then return "[ValleyLife] NPC not found." end
+        charSet = npc.animCharSet
+    end
     if charSet == nil or charSet == 0 then return "[ValleyLife] No animCharSet (model not loaded yet?)." end
 
     -- Try engine APIs that enumerate clips by index.
@@ -556,6 +563,326 @@ function VLConsole:walterMorning()
     end
     g_valleyLife.walterWalker:_startMorningDeparture(VLConfig.WALTER_WALK)
     return "[ValleyLife] Walter morning departure triggered."
+end
+
+-- vlWalterNight: force the occasional night woodshop visit now (reveal at door -> lit shed -> back
+-- inside) for testing, without waiting for the random ~10pm roll.
+function VLConsole:walterNight()
+    if g_valleyLife == nil or g_valleyLife.walterWalker == nil then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    local ok = g_valleyLife.walterWalker:_startNightWoodshop(VLConfig.WALTER_WALK)
+    return ok and "[ValleyLife] Walter night woodshop visit triggered."
+        or "[ValleyLife] nightWoodshop loop missing/unrunnable (check NPCConfig)."
+end
+
+-- vlWalterBones: RESEARCH SPIKE — recursively dump GRANDPA's node/skeleton tree (name + id + depth)
+-- so we can find an addressable HAND bone to attach a hand prop (e.g. a flashlight) to. Read-only.
+-- Look at the [Bones] log lines, especially the "candidate HAND nodes" summary at the end.
+function VLConsole:walterBones()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local root = ww.graphicsNode
+    if root == nil or not entityExists(root) then
+        pcall(function() ww:_acquireNode() end)  -- try once more
+        root = ww.graphicsNode
+    end
+    if root == nil or not entityExists(root) then
+        return "[ValleyLife] Walter graphicsRootNode not available (is he spawned/active?)."
+    end
+
+    local count, MAX = 0, 800
+    local hands = {}
+    local function walk(node, depth, path)
+        if count >= MAX or node == nil or not entityExists(node) then return end
+        local name = getName(node) or "?"
+        print(string.format("[Bones]%s%s  (id=%s)", string.rep("  ", depth), name, tostring(node)))
+        count = count + 1
+        local lname = string.lower(name)
+        if lname:find("hand") or lname:find("wrist") or lname:find("palm") or lname:find("finger") then
+            table.insert(hands, path .. "/" .. name .. "  (id=" .. tostring(node) .. ")")
+        end
+        local n = getNumOfChildren(node)
+        for i = 0, n - 1 do
+            walk(getChildAt(node, i), depth + 1, path .. "/" .. name)
+        end
+    end
+    walk(root, 0, "")
+
+    print("[Bones] ===== candidate HAND nodes (hand/wrist/palm/finger) =====")
+    if #hands == 0 then
+        print("[Bones] (none matched — scan the full tree above for the right bone)")
+    else
+        for _, h in ipairs(hands) do print("[Bones] " .. h) end
+    end
+    return string.format("[ValleyLife] dumped %d nodes; %d hand candidate(s). See log [Bones] lines.",
+        count, #hands)
+end
+
+-- vlWalterFlashlight: force Walter's flashlight ON/OFF, or 'auto' to resume the seasonal-dusk rule.
+function VLConsole:walterFlashlight(arg)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    if arg == nil or string.lower(tostring(arg)) == "auto" then
+        ww._flashlightForce = nil
+        return "[ValleyLife] flashlight: AUTO (on while walking after the seasonal dusk hour)."
+    end
+    local a  = string.lower(tostring(arg))
+    local on = (a == "1" or a == "on" or a == "true")
+    ww._flashlightForce = on
+    local ok = ww:_setFlashlight(on)
+    return string.format("[ValleyLife] flashlight forced %s%s (vlWalterFlashlight auto to release).",
+        on and "ON" or "OFF", ok and "" or " — but _setFlashlight failed (see log)")
+end
+
+-- vlWalterFlashlightPose: live-tune the flashlight's POSITION in his hand (rotation stays the auto
+-- grip orientation from handNode, which is already correct). Usage: vlWalterFlashlightPose <x> <y> <z>
+function VLConsole:walterFlashlightPose(x, y, z)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil or ww._flashlightNode == nil then
+        return "[ValleyLife] flashlight not loaded yet — force it on first: vlWalterFlashlight 1"
+    end
+    local px, py, pz = tonumber(x) or 0, tonumber(y) or 0, tonumber(z) or 0
+    pcall(function() setTranslation(ww._flashlightNode, px, py, pz) end)  -- position only; rotation untouched
+    local fc = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.flashlight
+    if fc then fc.offset = { x = px, y = py, z = pz } end
+    return string.format("[ValleyLife] flashlight offset (%.3f, %.3f, %.3f) — bake into NPCConfig.flashlight.offset.",
+        px, py, pz)
+end
+
+-- vlFlash: dead-simple 1cm nudger for seating the flashlight in Walter's hand without typing decimals.
+-- Usage: vlFlash x+   (or x-, y+, y-, z+, z-). No arg = print current offset. Live; prints the offset.
+function VLConsole:flashNudge(dir)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil or ww._flashlightNode == nil then
+        return "[ValleyLife] flashlight not loaded — run vlWalterFlashlight 1 first."
+    end
+    local fc = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.flashlight
+    if fc == nil then return "[ValleyLife] no flashlight config." end
+    local o = fc.offset or { x = 0, y = 0, z = 0 }
+    o.x, o.y, o.z = o.x or 0, o.y or 0, o.z or 0
+    local step = 0.01
+    dir = string.lower(tostring(dir or ""))
+    if     dir == "x+" then o.x = o.x + step
+    elseif dir == "x-" then o.x = o.x - step
+    elseif dir == "y+" then o.y = o.y + step
+    elseif dir == "y-" then o.y = o.y - step
+    elseif dir == "z+" then o.z = o.z + step
+    elseif dir == "z-" then o.z = o.z - step
+    elseif dir ~= "" then
+        return "[ValleyLife] usage: vlFlash x+ (or x- y+ y- z+ z-). 1cm steps."
+    end
+    fc.offset = o
+    pcall(function() setTranslation(ww._flashlightNode, o.x, o.y, o.z) end)
+    return string.format("[ValleyLife] flashlight offset (%.3f, %.3f, %.3f)", o.x, o.y, o.z)
+end
+
+-- vlPose: pose a finger/thumb independently, 10deg per tap, optionally ONE joint at a time. Usage:
+--   vlPose <thumb|index|middle|ring|pinky> [joint 1-3] <x+|x-|y+|y-|z+|z-|0>
+--   (short digit: t/i/m/r/p; joint omitted = all 3 joints; joint 1=knuckle..3=tip; 0 = reset)
+function VLConsole:pose(digit, a, b)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local map = { t = "thumb", i = "index", m = "middle", r = "ring", p = "pinky",
+                  thumb = "thumb", index = "index", middle = "middle", ring = "ring", pinky = "pinky",
+                  shoulder = "shoulder", arm = "arm", upperarm = "arm",
+                  forearm = "forearm", elbow = "forearm", wrist = "wrist", hand = "wrist" }
+    local name = map[string.lower(tostring(digit or ""))]
+    if name == nil then
+        return "[ValleyLife] usage: vlPose <thumb|index|middle|ring|pinky|shoulder|arm|forearm|wrist> [1-3] <x+|x-|y+|y-|z+|z-|0>"
+    end
+    -- Optional joint number as the 2nd token; otherwise the 2nd token is the direction (all joints).
+    local joint, dir
+    local jn = tonumber(a)
+    if jn ~= nil and jn >= 1 and jn <= 3 then joint, dir = math.floor(jn), b else joint, dir = nil, a end
+    dir = string.lower(tostring(dir or ""))
+    local step = math.rad(10)
+    local axis, sign
+    if     dir == "x+" then axis, sign = "x",  1
+    elseif dir == "x-" then axis, sign = "x", -1
+    elseif dir == "y+" then axis, sign = "y",  1
+    elseif dir == "y-" then axis, sign = "y", -1
+    elseif dir == "z+" then axis, sign = "z",  1
+    elseif dir == "z-" then axis, sign = "z", -1
+    elseif dir == "0" or dir == "reset" then
+        if ww:nudgeDigit(name, joint, "reset") == nil then return "[ValleyLife] couldn't resolve " .. name .. " bones." end
+        return string.format("[ValleyLife] %s%s reset.", name, joint and (" joint " .. joint) or "")
+    else
+        return "[ValleyLife] usage: vlPose " .. name .. " [1-3] <x+|x-|y+|y-|z+|z-|0>"
+    end
+    local d = ww:nudgeDigit(name, joint, axis, sign * step)
+    if d == nil then return "[ValleyLife] couldn't resolve " .. name .. " bones (is Walter spawned?)." end
+    local bn = d.bones[joint or 1]
+    return string.format("[ValleyLife] %s %s deg(%.0f, %.0f, %.0f)",
+        name, joint and ("joint " .. joint) or "all (j1)", math.deg(bn.dx), math.deg(bn.dy), math.deg(bn.dz))
+end
+
+-- vlWalterFlashHand: move the flashlight to his left or right hand (left pairs with chainsaw_walk).
+function VLConsole:walterFlashHand(side)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local s = string.lower(tostring(side or ""))
+    local bone = (s == "left" or s == "l") and "LeftHand" or (s == "right" or s == "r") and "RightHand" or nil
+    if bone == nil then return "[ValleyLife] usage: vlWalterFlashHand <left|right>" end
+    local ok = ww:setFlashlightHand(bone)
+    return string.format("[ValleyLife] flashlight -> %s%s. Re-tune offset with vlFlash.",
+        bone, ok and "" or " (load/seat FAILED — see log)")
+end
+
+-- vlWalterReset: undo all live hand/arm posing + clip override + restore stop-and-face, in one shot.
+function VLConsole:walterReset()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    if ww._digits then
+        for _, d in pairs(ww._digits) do
+            if d.bones then
+                for _, b in ipairs(d.bones) do pcall(function() setRotation(b.node, b.ox, b.oy, b.oz) end) end
+            end
+        end
+        ww._digits = {}
+    end
+    ww._gripActive = false
+    if ww.setClipOverride then ww:setClipOverride(nil) end  -- back to the normal walk clip
+    local cfg = VLConfig.WALTER_WALK
+    if cfg then cfg.approachRange = 4.0 end
+    return "[ValleyLife] Walter reset: pose cleared, clip override off, stop-and-face restored (4 m)."
+end
+
+-- vlWalterApproach: live-set his stop-and-face range. 0 = OFF, so he keeps walking even when you
+-- stand right next to him — lets you observe his hand up close while he's in the walking (skip-orig)
+-- regime. Restore with vlWalterApproach 4.
+function VLConsole:walterApproach(m)
+    local cfg = VLConfig.WALTER_WALK
+    if cfg == nil then return "[ValleyLife] no WALTER_WALK config." end
+    local v = tonumber(m)
+    if v == nil then
+        return string.format("[ValleyLife] approachRange = %s m. Usage: vlWalterApproach <meters> (0 = stop-and-face OFF).",
+            tostring(cfg.approachRange))
+    end
+    cfg.approachRange = v
+    return string.format("[ValleyLife] approachRange = %.1f m%s.",
+        v, (v <= 0) and " — stop-and-face OFF (he walks past you)" or "")
+end
+
+-- vlWalterClip: play a specific animation clip on Walter (by index from vlAnimClips, or by name) so
+-- we can test tool-holding clips like chainsaw_walk. "off" clears it. Test while he's WALKING
+-- (vlWalterNight) — idle re-poses over it. e.g. vlWalterClip 56  /  vlWalterClip chainsaw_walk
+function VLConsole:walterClip(arg)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local cs = ww.animCharSet
+    if cs == nil or cs == 0 then return "[ValleyLife] Walter animCharSet not ready (is he spawned?)." end
+    if arg == nil or string.lower(tostring(arg)) == "off" then
+        ww:setClipOverride(nil)
+        return "[ValleyLife] clip override OFF (back to the normal walk/idle)."
+    end
+    local idx = tonumber(arg)
+    if idx == nil then
+        local q = string.lower(tostring(arg))
+        for i = 0, 200 do
+            local nm = nil
+            pcall(function() nm = getAnimClipName(cs, i) end)
+            if type(nm) == "string" and string.find(string.lower(nm), q, 1, true) then idx = i; break end
+        end
+        if idx == nil then return "[ValleyLife] no clip matching '" .. tostring(arg) .. "' (try an index from vlAnimClips grandpa)." end
+    end
+    ww:setClipOverride(math.floor(idx))
+    local nm = nil; pcall(function() nm = getAnimClipName(cs, math.floor(idx)) end)
+    return string.format("[ValleyLife] Walter clip override -> [%d] %s. Walk him (vlWalterNight) to see it.",
+        math.floor(idx), tostring(nm))
+end
+
+-- vlFlashRot: rotate the flashlight 15deg/tap to aim the beam (on top of the auto grip rotation —
+-- needed e.g. for the LEFT hand, whose axes are mirrored). Usage: vlFlashRot <x+|x-|y+|y-|z+|z-|0>
+function VLConsole:flashRot(dir)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil or ww._flashlightNode == nil then
+        return "[ValleyLife] flashlight not loaded — run vlWalterFlashlight 1 first."
+    end
+    local fc = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.flashlight
+    if fc == nil then return "[ValleyLife] no flashlight config." end
+    local r = fc.rot or { x = 0, y = 0, z = 0 }
+    r.x, r.y, r.z = r.x or 0, r.y or 0, r.z or 0
+    local step = math.rad(15)
+    dir = string.lower(tostring(dir or ""))
+    if     dir == "x+" then r.x = r.x + step
+    elseif dir == "x-" then r.x = r.x - step
+    elseif dir == "y+" then r.y = r.y + step
+    elseif dir == "y-" then r.y = r.y - step
+    elseif dir == "z+" then r.z = r.z + step
+    elseif dir == "z-" then r.z = r.z - step
+    elseif dir == "0" or dir == "reset" then r.x, r.y, r.z = 0, 0, 0
+    else
+        return "[ValleyLife] usage: vlFlashRot x+ (or x- y+ y- z+ z- 0). 15deg/tap, on top of the auto grip rotation."
+    end
+    fc.rot = r
+    ww:_applyFlashlightRot()
+    return string.format("[ValleyLife] flashlight rot adjust deg(%.0f, %.0f, %.0f)", math.deg(r.x), math.deg(r.y), math.deg(r.z))
+end
+
+-- vlPlayerFlashlight: while the PLAYER is holding a flashlight, find that node in the player's
+-- hierarchy and report its parent bone + exact LOCAL transform — so we can copy how the player holds
+-- it onto Walter verbatim. Read-only research spike.
+function VLConsole:playerFlashlight()
+    -- Discovery: surface any tool/hand/flashlight references on the player object (the held handtool
+    -- lives there even if it's not under the body skeleton in first-person view).
+    if g_localPlayer ~= nil then
+        local keys = {}
+        pcall(function()
+            for k, v in pairs(g_localPlayer) do
+                local lk = string.lower(tostring(k))
+                if lk:find("tool") or lk:find("hand") or lk:find("flash") then
+                    keys[#keys+1] = tostring(k) .. "(" .. type(v) .. ")"
+                end
+            end
+        end)
+        if #keys > 0 then print("[PlayerFlash] g_localPlayer fields: " .. table.concat(keys, ", ")) end
+    end
+
+    local roots = {}
+    local function addRoot(n) if type(n) == "number" and n ~= 0 and entityExists(n) then roots[#roots+1] = n end end
+    pcall(function() addRoot(g_localPlayer and g_localPlayer.rootNode) end)
+    pcall(function() addRoot(g_localPlayer and g_localPlayer.graphicsComponent and g_localPlayer.graphicsComponent.graphicsRootNode) end)
+
+    local matches = {}
+    local function search(n, depth)
+        if n == nil or n == 0 or not entityExists(n) or depth > 18 then return end
+        local nm = nil; pcall(function() nm = getName(n) end)
+        if nm and string.find(string.lower(nm), "flash") then matches[#matches+1] = n end
+        local cn = 0; pcall(function() cn = getNumOfChildren(n) end)
+        for i = 0, cn - 1 do
+            local c = nil; pcall(function() c = getChildAt(n, i) end)
+            search(c, depth + 1)
+        end
+    end
+    for _, r in ipairs(roots) do search(r, 0) end
+
+    if #matches == 0 then
+        return "[ValleyLife] no 'flash' node under the player body. Switch to THIRD-PERSON camera while "
+            .. "holding it (first-person attaches to the camera rig, not the body skeleton), then retry. "
+            .. "See the [PlayerFlash] fields line above for the handtool object."
+    end
+
+    for _, found in ipairs(matches) do
+        local lx, ly, lz, rx, ry, rz = 0, 0, 0, 0, 0, 0
+        pcall(function() lx, ly, lz = getTranslation(found) end)
+        pcall(function() rx, ry, rz = getRotation(found) end)
+        local p, pName, nm = nil, "?", "?"
+        pcall(function() nm = getName(found) end)
+        pcall(function() p = getParent(found) end)
+        if p then pcall(function() pName = getName(p) end) end
+        print(string.format("[PlayerFlash] '%s' id=%s parent='%s' LOCAL pos(%.4f,%.4f,%.4f) rotDeg(%.2f,%.2f,%.2f)",
+            tostring(nm), tostring(found), tostring(pName), lx, ly, lz, math.deg(rx), math.deg(ry), math.deg(rz)))
+        local chain, cur, n = {}, p, 0
+        while cur and n < 8 do
+            local cnm = "?"; pcall(function() cnm = getName(cur) end)
+            chain[#chain+1] = cnm
+            local nxt = nil; pcall(function() nxt = getParent(cur) end)
+            cur, n = nxt, n + 1
+        end
+        print("[PlayerFlash]   chain: " .. table.concat(chain, " <- "))
+    end
+    return string.format("[ValleyLife] found %d 'flash' node(s) under the player — see [PlayerFlash] log.", #matches)
 end
 
 -- vlDoorTest <dir> [x] [z]: TEST. Set the woodshop doors' animation direction (1=open, -1=close,
@@ -1863,6 +2190,18 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)
     addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
     addConsoleCommand("vlWalterMorning", "Trigger Walter's morning departure (door -> home): vlWalterMorning", "walterMorning", VLConsole)
+    addConsoleCommand("vlWalterNight", "Trigger Walter's occasional night woodshop visit (door -> lit shed -> inside): vlWalterNight", "walterNight", VLConsole)
+    addConsoleCommand("vlWalterBones", "Dump GRANDPA's node/skeleton tree to find the hand bone (hand-prop research): vlWalterBones", "walterBones", VLConsole)
+    addConsoleCommand("vlWalterFlashlight", "Force Walter's flashlight on/off or auto: vlWalterFlashlight <1|0|auto>", "walterFlashlight", VLConsole)
+    addConsoleCommand("vlWalterFlashlightPose", "Tune flashlight POSITION in hand (rotation stays auto): vlWalterFlashlightPose <x y z>", "walterFlashlightPose", VLConsole)
+    addConsoleCommand("vlPlayerFlashlight", "While holding a flashlight, dump its parent bone + local transform (to copy onto Walter): vlPlayerFlashlight", "playerFlashlight", VLConsole)
+    addConsoleCommand("vlFlash", "Nudge Walter's flashlight 1cm: vlFlash <x+|x-|y+|y-|z+|z->", "flashNudge", VLConsole)
+    addConsoleCommand("vlPose", "Pose a digit/arm part 10deg: vlPose <thumb|index|middle|ring|pinky|shoulder|arm|forearm|wrist> [1-3] <x+|..|0>", "pose", VLConsole)
+    addConsoleCommand("vlWalterClip", "Play a clip on Walter (test tool-holding anims): vlWalterClip <index|name|off>", "walterClip", VLConsole)
+    addConsoleCommand("vlWalterApproach", "Set Walter's stop-and-face range (0=off, so he walks past you): vlWalterApproach <m>", "walterApproach", VLConsole)
+    addConsoleCommand("vlWalterReset", "Undo all live pose/clip/approach tweaks on Walter in one shot: vlWalterReset", "walterReset", VLConsole)
+    addConsoleCommand("vlWalterFlashHand", "Move the flashlight to his left/right hand (left pairs with chainsaw_walk): vlWalterFlashHand <left|right>", "walterFlashHand", VLConsole)
+    addConsoleCommand("vlFlashRot", "Aim the flashlight beam 15deg/tap (on top of auto grip rotation): vlFlashRot <x+|x-|y+|y-|z+|z-|0>", "flashRot", VLConsole)
     addConsoleCommand("vlWalterSay", "Preview Walter's current time-of-day line: vlWalterSay", "walterSay", VLConsole)
     addConsoleCommand("vlWalterDoor", "TEST Walter's woodshop door control: vlWalterDoor <1=open|-1=close>", "walterDoor", VLConsole)
     addConsoleCommand("vlWalterLights", "TEST Walter's woodshop lights control: vlWalterLights <1on/0off>", "walterLights", VLConsole)
