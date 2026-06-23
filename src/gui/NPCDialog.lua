@@ -492,6 +492,7 @@ function VLNPCDialog:showSpeechBox(speaker, text, onClose, opts)
         inlineSpeaker = inlineSpeaker,
         lines      = lines,
         onClose    = onClose,
+        ttl        = opts and opts.ttl or nil,  -- seconds; auto-dismiss (ambient barks). nil = manual.
         eventIds   = {},
         boxLeft     = boxLeft,
         boxBottom   = SPEECH_BOX_BOTTOM,
@@ -929,6 +930,16 @@ function VLNPCDialog:delete()
 end
 
 function VLNPCDialog:update(dt)
+    -- Auto-dismiss timed speech (ambient barks): tick the TTL and close when it runs out.
+    if self.speech ~= nil and self.speech.ttl ~= nil then
+        self.speech.ttl = self.speech.ttl - dt / 1000
+        if self.speech.ttl <= 0 then
+            local onClose = self.speech.onClose
+            self:closeSpeech()
+            if onClose then pcall(onClose) end
+        end
+    end
+
     -- Don't offer interaction while an event is playing.
     if self.npcSystem.sequencer.active then
         self:setPrompt(nil)

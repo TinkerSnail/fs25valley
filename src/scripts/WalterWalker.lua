@@ -74,6 +74,8 @@ function WalterWalker.new()
     self._active      = false
     self._hidden      = false  -- true while Walter has "stepped inside" (graphicsRootNode invisible)
     self._stoppedForPlayer = false  -- true while he's halted to face a nearby player (logs once)
+    self._greetNear   = false  -- true while the player is within greet range (edge-trigger the bark)
+    self._greetCooldown = 0    -- ms remaining before he'll greet again
     self._lastWakeDay = nil    -- monotonicDay of his last 5am wake-up (so it fires once per day)
     self._loop        = nil
     self._lastTick    = -1
@@ -411,6 +413,39 @@ function WalterWalker:_setWoodshopLights(on)
     return true
 end
 
+-- Ambient greeting: when the player approaches (entering greetRange), Walter speaks a time-of-day
+-- line as an auto-dismissing popup. ADDITIVE — his base-game "press to talk" conversation is left
+-- fully intact. Edge-triggered + cooldown so it never spams; suppressed during a conversation, while
+-- he's inside (hidden), or when a mod speech / heart event is already on screen.
+function WalterWalker:_maybeGreet(dt)
+    if self._greetCooldown and self._greetCooldown > 0 then
+        self._greetCooldown = self._greetCooldown - dt
+    end
+    local grandpa = self.grandpa
+    if grandpa == nil or self.graphicsNode == nil or not entityExists(self.graphicsNode) then return end
+    if self._hidden or grandpa.isInConversation then self._greetNear = false; return end
+
+    local px, _, pz = playerWorldPos()
+    if px == nil then self._greetNear = false; return end
+    local gx, _, gz = getWorldTranslation(self.graphicsNode)
+    local range = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.greetRange) or 5
+    local near  = ((px - gx)^2 + (pz - gz)^2) <= (range * range)
+
+    if near and not self._greetNear and (self._greetCooldown or 0) <= 0 then
+        local vl  = g_valleyLife
+        local dlg = vl and vl.dialog
+        local busy = (dlg and dlg.speech ~= nil) or (vl and vl.sequencer and vl.sequencer.active)
+        if dlg and not busy and vl.casualDialogue then
+            local line = vl.casualDialogue:pickTimeOfDayLine("grandpa")
+            if line then
+                dlg:showSpeechBox("Walter", line, nil, { ttl = 4 })
+                self._greetCooldown = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.greetCooldownMs) or 20000
+            end
+        end
+    end
+    self._greetNear = near
+end
+
 function WalterWalker:_loopRunnable(loop)
     return type(loop) == "table" and type(loop.waypoints) == "table" and #loop.waypoints >= 2
 end
@@ -532,6 +567,9 @@ function WalterWalker:update(dt)
     if type(cfg) ~= "table" or type(cfg.loops) ~= "table" then return end
     if self._yOffset    == nil then self._yOffset   = cfg.yOffset   or 0    end
     if self._stairLift  == nil then self._stairLift = cfg.stairLift or 0.15 end
+
+    -- Ambient time-of-day greeting on approach (whether he's walking or idle). Base convo untouched.
+    self:_maybeGreet(dt)
 
     if self._active then
         self:_updateWalk(cfg, dt)

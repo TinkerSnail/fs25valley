@@ -143,6 +143,8 @@ VLConfig.WALTER_WALK = {
     dayStartHour = 5,       -- he "starts his day" at 5am: fires once per day (edge-triggered) to reappear at home if he stepped inside last evening
     interactRange = 4.5,    -- meters: how close the player must be to his walked position for the talk prompt (we set isPlayerInRange ourselves; the physics trigger is unreliable while walking)
     approachRange = 4.0,    -- meters: he stops walking & turns to face the player within this range, so his stationary trigger fires the normal base conversation; resumes when they leave
+    greetRange    = 5.0,    -- meters: he speaks an ambient time-of-day line on approach (just before he stops to face you); base "press to talk" conversation is untouched
+    greetCooldownMs = 20000,-- ms before he'll greet again, so it never spams
     visitOffset   = 2.0,    -- meters: ESC-map "Visit" drops the player this far in front of Walter (his facing) instead of inside his model
     home         = { x = -758.2, y = 47.0, z = 94.3 },  -- GRANDPA_FARMHOUSE spot; where the morning reveal places him
     -- Woodshop door (cosmetic): the placeable tinyShed01 nearest `near`, animated object `saveId`.

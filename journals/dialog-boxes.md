@@ -6,6 +6,11 @@ the screen - the approach that actually worked in FS25.
 **Implementation:** `src/gui/NPCDialog.lua`  
 **Draw hook:** `main.lua` → `FSBaseMission.draw` → `g_valleyLife.dialog:draw()`
 
+> **PRINCIPLE — mod dialog is ADDITIVE; never override or erase base-game dialog.** Do not suppress,
+> replace, or block any base-game conversation/interaction (e.g. Walter/GRANDPA's "press to talk").
+> Mod lines layer on top — Walter's time-of-day greetings are an **ambient popup on approach** while
+> his base conversation stays fully reachable. Preserving base-game content is a standing rule.
+
 ---
 
 ## Why we roll our own
