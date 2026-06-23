@@ -31,6 +31,7 @@ source(modDir .. "src/NPCSystem.lua")
 source(modDir .. "src/content/Elara.lua")
 source(modDir .. "src/content/Kenji.lua")
 source(modDir .. "src/content/Marta.lua")
+source(modDir .. "src/content/Walter.lua")  -- Walter casual/time-of-day lines (grandpa)
 
 -- Post-tour beat: hooks GuidedTour.finish/cancel to introduce Marta + the market.
 source(modDir .. "src/content/WalterIntro.lua")
@@ -533,6 +534,18 @@ function VLConsole:walterLights(on)
     end
     local ok = g_valleyLife.walterWalker:_setWoodshopLights(tonumber(on) == 1)
     return ok and "[ValleyLife] Walter woodshop lights triggered." or "[ValleyLife] lights not resolved."
+end
+
+-- vlWalterSay: show Walter's current time-of-day line (morning/midday/evening/night) in the speech
+-- box — for previewing/iterating his dialog. Cycles the bucket; no first-meet/already-talked gating.
+function VLConsole:walterSay()
+    if g_valleyLife == nil or g_valleyLife.casualDialogue == nil then
+        return "[ValleyLife] casual dialogue unavailable."
+    end
+    local text = g_valleyLife.casualDialogue:pickTimeOfDayLine("grandpa")
+    if text == nil then return "[ValleyLife] No Walter line for this time of day (check Walter.lua)." end
+    if g_valleyLife.dialog then g_valleyLife.dialog:showSpeechBox("Walter", text, nil) end
+    return "[ValleyLife] Walter: " .. text
 end
 
 -- vlWalterMorning: trigger the morning departure now (reveal at the door, walk down to home) for
@@ -1850,6 +1863,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)
     addConsoleCommand("vlWalterHide", "Hide Walter on demand (test the door disappear): vlWalterHide", "walterHide", VLConsole)
     addConsoleCommand("vlWalterMorning", "Trigger Walter's morning departure (door -> home): vlWalterMorning", "walterMorning", VLConsole)
+    addConsoleCommand("vlWalterSay", "Preview Walter's current time-of-day line: vlWalterSay", "walterSay", VLConsole)
     addConsoleCommand("vlWalterDoor", "TEST Walter's woodshop door control: vlWalterDoor <1=open|-1=close>", "walterDoor", VLConsole)
     addConsoleCommand("vlWalterLights", "TEST Walter's woodshop lights control: vlWalterLights <1on/0off>", "walterLights", VLConsole)
     addConsoleCommand("vlDoorTest", "TEST: open/close woodshop doors: vlDoorTest <1=open|-1=close|0=stop> [x] [z]", "doorTest", VLConsole)

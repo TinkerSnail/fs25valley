@@ -22,6 +22,16 @@ local function asPool(entry)
     return entry
 end
 
+-- Time-of-day bucket from the in-game hour. Lets a villager carry morning/midday/evening/night
+-- line pools that get mixed into their greeting (schedule-independent — robust to route changes).
+local function timeBucket()
+    local h = (TimeHelper and TimeHelper.getHour and TimeHelper.getHour()) or 12
+    if     h >= 5  and h < 11 then return "morning"
+    elseif h >= 11 and h < 16 then return "midday"
+    elseif h >= 16 and h < 20 then return "evening"
+    else                           return "night" end
+end
+
 function VLCasualDialogue.new()
     local self = setmetatable({}, VLCasualDialogue)
     self.met       = {}   -- npcId -> bool (first-meet intro shown)
@@ -42,6 +52,11 @@ function VLCasualDialogue:buildGreetingPool(npcId, tierKey)
 
     local pool = {}
     for _, line in ipairs(asPool(def[tierKey] or def.stranger)) do
+        table.insert(pool, line)
+    end
+
+    -- Mix in the current time-of-day pool if the villager defines one (morning/midday/evening/night).
+    for _, line in ipairs(asPool(def[timeBucket()])) do
         table.insert(pool, line)
     end
 
@@ -89,6 +104,17 @@ function VLCasualDialogue:pickLine(npcId)
     end
     if #pool == 0 then return nil, false end
     return self:nextFromPool(npcId, pool), true
+end
+
+-- A line from the current time-of-day pool only (no first-meet / already-talked gating). Used by
+-- the vlWalterSay tester and a good entry point for schedule-independent ambient greetings.
+function VLCasualDialogue:pickTimeOfDayLine(npcId)
+    if type(npcId) == "string" then npcId = string.lower(npcId) end
+    local def = POOLS[npcId]
+    if def == nil then return nil end
+    local pool = asPool(def[timeBucket()])
+    if #pool == 0 then return nil end
+    return self:nextFromPool(npcId, pool)
 end
 
 function VLCasualDialogue:resetNPC(npcId)
