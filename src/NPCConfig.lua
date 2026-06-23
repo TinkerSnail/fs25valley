@@ -157,6 +157,11 @@ VLConfig.WALTER_WALK = {
         offset     = { x = 0.078, y = 0.004, z = 0.061 },  -- local position in the LEFT hand (meters); tuned into his grip (vlFlash).
         rot        = { x = 0.2618, y = 3.1416, z = 0.5236 },  -- local rotation (radians) ON TOP of the auto grip rotation = deg(15, 180, 30); the left hand's axes are mirrored, so the beam needs this to point forward (vlFlashRot).
     },
+    -- While the flashlight is OUT (walking after dusk), carry it with this tool-holding walk clip so
+    -- his LEFT hand holds the light forward & steady — no arm swing. chainsaw_walkSource = both hands
+    -- forward gripping a tool (the only complete walk-while-holding clip); pairs with the left-hand
+    -- flashlight. Auto-applied on flashlight on, cleared on off. Set nil/"" to keep the open-hand swing.
+    flashlightWalkClip = "chainsaw_walkSource",
     flashlightDusk = { spring = 18, summer = 19, autumn = 18, winter = 17 },  -- hour the light comes on while walking
     interactRange = 4.5,    -- meters: how close the player must be to his walked position for the talk prompt (we set isPlayerInRange ourselves; the physics trigger is unreliable while walking)
     approachRange = 4.0,    -- meters: he stops walking & turns to face the player within this range, so his stationary trigger fires the normal base conversation; resumes when they leave

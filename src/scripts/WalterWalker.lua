@@ -88,6 +88,7 @@ function WalterWalker.new()
     self._flashlightOn        = false
     self._flashlightFailed    = false -- i3d load failed once; don't retry it every frame
     self._flashlightForce     = nil   -- console override: true/false forces, nil = automatic (seasonal dusk)
+    self._flashlightClipIdx   = nil   -- resolved index of cfg.flashlightWalkClip (carry pose); cached on first success
     self._gripActive          = false -- re-apply posed digits each frame (the anim re-poses the skeleton)
     self._digits              = nil   -- per-digit { bones, angle{x,y,z} } for independent finger/thumb posing
     self._loop        = nil
@@ -684,6 +685,7 @@ function WalterWalker:_setFlashlight(on)
         end
     end)
     self._flashlightOn = on
+    self:_applyFlashlightWalkClip(on)  -- carry pose (chainsaw_walk) while lit; normal walk when off
     return true
 end
 
@@ -724,13 +726,33 @@ function WalterWalker:_duskHour(cfg)
     return t[season] or 19
 end
 
+-- While the flashlight is OUT, carry it with the steady tool-holding walk clip (cfg.flashlightWalkClip,
+-- e.g. chainsaw_walkSource: both hands forward, no arm swing) so his LEFT hand holds the light forward.
+-- Off → clear the override, back to the normal walk. Only visible while actively walking (idle runs
+-- orig() over track 0); reuses the R43 clip-swap lever via setClipOverride — no bone posing. Set the
+-- config knob to nil/"" to keep the open-hand swing.
+function WalterWalker:_applyFlashlightWalkClip(on)
+    local name = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.flashlightWalkClip
+    if name == nil or name == "" then return end
+    if on then
+        if self._flashlightClipIdx == nil or self._flashlightClipIdx < 0 then
+            self._flashlightClipIdx = (findClip(self.animCharSet, { name }))  -- parens: take the index only
+        end
+        if self._flashlightClipIdx and self._flashlightClipIdx >= 0 then
+            self:setClipOverride(self._flashlightClipIdx)
+        end
+    else
+        self:setClipOverride(nil)
+    end
+end
+
 -- On while he's OUT WALKING (active route) and visible, after the seasonal dusk hour. A console force
 -- (vlWalterFlashlight 1/0) overrides; vlWalterFlashlight auto clears it.
 function WalterWalker:_updateFlashlight(cfg, hour)
     if cfg.flashlight == nil then return end
     local want = self._active and (not self._hidden) and (hour >= self:_duskHour(cfg))
     if self._flashlightForce ~= nil then want = self._flashlightForce end
-    if want ~= self._flashlightOn then self:_setFlashlight(want) end
+    if want ~= self._flashlightOn then self:_setFlashlight(want) end  -- _setFlashlight also swaps the carry clip
 end
 
 -- Ambient greeting: when the player approaches (entering greetRange), Walter speaks a time-of-day

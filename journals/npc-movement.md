@@ -302,3 +302,13 @@ survive in the live log — not the chat transcript), baked into `NPCConfig.WALT
 
 The old right-hand offset `(-0.102, 0.004, -0.079)` is **obsolete** — there is a single shared `offset`,
 so the left-hand numbers replace it.
+
+**AUTO carry-clip (2026-06-23).** The `chainsaw_walk` pairing is now **automatic**, not a manual test
+lever: whenever the flashlight is OUT he walks with the steady tool-holding clip (left hand forward,
+no swing), reverting to the normal walk when it goes off. Wired at the single on/off chokepoint —
+`_setFlashlight(on)` calls `_applyFlashlightWalkClip(on)`, which resolves the clip by name via
+`findClip` (cached in `_flashlightClipIdx`) and toggles it through the existing R43 `setClipOverride`
+lever (override on / nil off). So it fires for the auto seasonal-dusk path, the `vlWalterFlashlight 1`
+force, AND `vlWalterFlashHand`. Clip name is the config knob `flashlightWalkClip = "chainsaw_walkSource"`
+— set it to `nil`/`""` to ship the plain open-hand swing instead. The override only renders while he's
+actively WALKING (idle runs `orig()` over track 0), so idle = open hand, walking = steady carry.
