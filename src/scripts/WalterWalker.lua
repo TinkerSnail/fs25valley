@@ -89,6 +89,13 @@ function WalterWalker.new()
     self._flashlightFailed    = false -- i3d load failed once; don't retry it every frame
     self._flashlightForce     = nil   -- console override: true/false forces, nil = automatic (seasonal dusk)
     self._flashlightClipIdx   = nil   -- resolved index of cfg.flashlightWalkClip (carry pose); cached on first success
+    self._armIKLoaded         = false -- rightArm IK chain loaded onto model.ikChains (the game strips it from NPCs)
+    self._armIKActive         = false -- driving the chain each frame (vlWalterArmIK) → arm extends to hold a tool out
+    self._armIKFailed         = false
+    self._armIKTarget         = nil   -- transformGroup the hand reaches toward (his "hold it out" point)
+    self._armIKCbHandle       = nil   -- addPostAnimationCallback handle: solve the IK after the clip (the winning stage)
+    self._armIKTargetPos      = { x = 0.000, y = -1.500, z = 1.050 }  -- BAKED flashlight-carry pose (right, up, forward) meters — low/far target = full arm extension; tune live (vlArmTarget)
+    self._armIKTargetRot      = { x = math.rad(15), y = math.rad(-105), z = math.rad(15) } -- BAKED aim: x=yaw, y=wrist roll, z=tilt (vlArmTargetRot)
     self._gripActive          = false -- re-apply posed digits each frame (the anim re-poses the skeleton)
     self._digits              = nil   -- per-digit { bones, angle{x,y,z} } for independent finger/thumb posing
     self._loop        = nil
@@ -753,6 +760,145 @@ function WalterWalker:_updateFlashlight(cfg, hour)
     local want = self._active and (not self._hidden) and (hour >= self:_duskHour(cfg))
     if self._flashlightForce ~= nil then want = self._flashlightForce end
     if want ~= self._flashlightOn then self:_setFlashlight(want) end  -- _setFlashlight also swaps the carry clip
+end
+
+-- ───────────────────── rightArm IK: extend his arm to hold a tool out ─────────────────────
+-- The MP "arm reaches out to hold the flashlight" is the rightArm IK CHAIN (C-backed solver), which the
+-- engine STRIPS from NPCs (model.ikChains is empty on Walter). We load the base-game chain (bundled
+-- src/ik/rightArmChain.xml, copied from playerM.xml) onto his model.ikChains and drive it. node indices
+-- are relative to the model skeleton root (same playerM rig). OPEN RISK: the R42 wall — if the walk/idle
+-- clip re-poses the arm at render, the IK loses; the C solver MAY compose where setRotation lost (untested).
+function WalterWalker:_ensureArmIK()
+    if self._armIKLoaded then return true end
+    if self._armIKFailed then return false end
+    local model = self.grandpa and self.grandpa.playerGraphics and self.grandpa.playerGraphics.model
+    if model == nil or model.ikChains == nil then return false end
+    -- The ikChain node indices are relative to the i3d ROOT (one level ABOVE the skeleton "0>" node) —
+    -- the chain's hand index has one more leading "0" than playerM.xml's rightHandNode mapping. So the
+    -- base = the skeleton node's PARENT (passing the skeleton itself bound the chain into the face).
+    local skel = (model.getSkeletonNode and model:getSkeletonNode()) or model.skeleton
+    local base = (skel ~= nil and getParent(skel)) or skel
+    if base == nil or not entityExists(base) then self._armIKFailed = true; return false end
+
+    local path   = (g_valleyLifeModDir or "") .. "src/ik/rightArmChain.xml"
+    local handle = loadXMLFile("vlRightArmIK", path)
+    if handle == nil or handle == 0 then
+        print("[ValleyLife][ArmIK] FAILED to load chain xml: " .. tostring(path)); self._armIKFailed = true; return false
+    end
+    local ok = pcall(function()
+        IKUtil.loadIKChain(handle, "player.ikChains.ikChain(0)", base, base, model.ikChains)
+    end)
+    pcall(function() delete(handle) end)
+    local chain = model.ikChains.rightArm
+    if not ok or chain == nil then
+        print("[ValleyLife][ArmIK] loadIKChain FAILED ok=" .. tostring(ok) .. " chain=" .. tostring(chain))
+        self._armIKFailed = true; return false
+    end
+    -- Base-node sanity: log the bones the chain bound to (should be RightArm / RightForeArm / RightHand).
+    local names = {}
+    for i, n in ipairs(chain.nodes or {}) do
+        names[i] = (n.node and entityExists(n.node)) and (getName(n.node) or "?") or "nil"
+    end
+    print(string.format("[ValleyLife][ArmIK] chain loaded; base=%s(%s) nodes=%s",
+        tostring(base), tostring(getName(base)), table.concat(names, " / ")))
+
+    -- Keep alignToTarget ON, but we orient the target to AIM ahead (setDirection in _applyArmTarget) so
+    -- the hand/flashlight point forward. (alignToTarget=false gave a natural wrist but the flashlight then
+    -- pointed up; aiming the target the right way gives forward-point without the earlier Euler twist.)
+    chain.alignToTarget = true
+
+    -- Target the hand reaches toward: a WORLD-space node (parented to root) repositioned each frame from
+    -- his torso + facing, so the offset reads as (right, up, forward) regardless of bone axes.
+    local target = createTransformGroup("vlArmIKTarget")
+    link(getRootNode(), target)
+    self._armIKTarget = target
+    self:_applyArmTarget()
+    self._armIKLoaded = true
+    return true
+end
+
+-- Place the IK target in WORLD space: spine position + (right, up, forward) using his facing. Recomputed
+-- each frame so it tracks his turn. alignToTarget then orients the hand to the target's rotation.
+function WalterWalker:_applyArmTarget()
+    local t = self._armIKTarget
+    if t == nil or not entityExists(t) then return end
+    local pg    = self.grandpa and self.grandpa.playerGraphics
+    local model = pg and pg.model
+    local grn   = pg and pg.graphicsRootNode
+    local ref   = model and (model.thirdPersonSpineNode or model.skeleton)
+    if model == nil or grn == nil or ref == nil or not entityExists(ref) or not entityExists(grn) then return end
+    local sx, sy, sz   = getWorldTranslation(ref)
+    local fx, fy, fz   = localDirectionToWorld(grn, 0, 0, 1)    -- forward (his model faces +Z — verified: -Z put the arm behind him)
+    local rx, ry2, rz  = localDirectionToWorld(grn, -1, 0, 0)   -- his right (+X put the hand across his body)
+    local p = self._armIKTargetPos                              -- (x=right, y=up, z=forward)
+    setWorldTranslation(t, sx + rx*p.x + fx*p.z, sy + p.y + fy*p.z, sz + rz*p.x + fz*p.z)
+    -- Aim the hand/flashlight AHEAD: orient the target's forward along his facing, tilted down a touch.
+    -- alignToTarget then rotates the hand to match → the beam points where he's walking.
+    local r   = self._armIKTargetRot
+    local afx, afy, afz = localDirectionToWorld(grn, r.x, -0.20 + r.z, 1)               -- forward (+slight down); r.x=yaw, r.z=tilt
+    local aux, auy, auz = localDirectionToWorld(grn, math.sin(r.y), math.cos(r.y), 0)   -- up rolled around forward by r.y → wrist roll (vlArmTargetRot y)
+    setDirection(t, afx, afy, afz, aux, auy, auz)
+    local ik = model.ikChains
+    if ik then IKUtil.setIKChainDirty(ik, "rightArm") end
+end
+
+-- Live-nudge the IK target: position (5cm/tap) or rotation (15deg/tap). dir = x+/x-/y+/y-/z+/z- (or 0 to
+-- reset rotation). Dial the arm to hold the flashlight out front, then bake _armIKTargetPos/_armIKTargetRot.
+function WalterWalker:nudgeArmTarget(dir, isRot)
+    local step = isRot and math.rad(15) or 0.05
+    local tbl  = isRot and self._armIKTargetRot or self._armIKTargetPos
+    dir = string.lower(tostring(dir or ""))
+    if     dir == "x+" then tbl.x = tbl.x + step
+    elseif dir == "x-" then tbl.x = tbl.x - step
+    elseif dir == "y+" then tbl.y = tbl.y + step
+    elseif dir == "y-" then tbl.y = tbl.y - step
+    elseif dir == "z+" then tbl.z = tbl.z + step
+    elseif dir == "z-" then tbl.z = tbl.z - step
+    elseif dir == "0"  then tbl.x, tbl.y, tbl.z = 0, 0, 0
+    else return nil end
+    self:_applyArmTarget()
+    return tbl
+end
+
+function WalterWalker:setArmIK(on)
+    if on then
+        if not self:_ensureArmIK() then return false end
+        local ik = self.grandpa.playerGraphics.model.ikChains
+        IKUtil.setIKChainActive(ik, "rightArm")
+        IKUtil.setTarget(ik, "rightArm", { targetNode = self._armIKTarget, poseId = "narrowFingers" })
+        -- Solve the chain in a POST-ANIMATION callback = the engine's after-clip / pre-render stage
+        -- (the facial system writes the head node there and it persists). Solving in the normal update
+        -- ran BEFORE the clip eval and lost (R42); this stage is where bone writes WIN.
+        if self._armIKCbHandle == nil and addPostAnimationCallback ~= nil then
+            self._armIKCbHandle = addPostAnimationCallback(WalterWalker._armIKPostAnim, self, nil)
+            print("[ValleyLife][ArmIK] post-animation callback registered: " .. tostring(self._armIKCbHandle))
+        elseif addPostAnimationCallback == nil then
+            print("[ValleyLife][ArmIK] addPostAnimationCallback global MISSING — cannot reach the post-anim stage")
+        end
+        self._armIKActive = true
+    else
+        if self._armIKCbHandle ~= nil then
+            pcall(function() removePostAnimationCallback(self._armIKCbHandle) end)
+            self._armIKCbHandle = nil
+        end
+        local model = self.grandpa and self.grandpa.playerGraphics and self.grandpa.playerGraphics.model
+        if model and model.ikChains and model.ikChains.rightArm then
+            IKUtil.setTarget(model.ikChains, "rightArm", nil)
+            IKUtil.setIKChainInactive(model.ikChains, "rightArm")
+        end
+        self._armIKActive = false
+    end
+    return true
+end
+
+-- POST-ANIMATION callback (engine after-clip / pre-render stage). Solving the IK HERE beats the clip,
+-- where solving in the normal update lost to it (R42). Signature: called as (self, dt) by the engine.
+function WalterWalker:_armIKPostAnim(dt)
+    if not self._armIKActive then return end
+    local model = self.grandpa and self.grandpa.playerGraphics and self.grandpa.playerGraphics.model
+    if model == nil or model.ikChains == nil then return end
+    self:_applyArmTarget()   -- reposition the target to his current torso + facing (also re-dirties the chain)
+    IKUtil.updateIKChains(model.ikChains, false)
 end
 
 -- Ambient greeting: when the player approaches (entering greetRange), Walter speaks a time-of-day

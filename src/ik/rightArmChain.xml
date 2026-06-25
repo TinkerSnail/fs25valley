@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!-- Base-game player rightArm IK chain, copied verbatim from dataS/character/playerM/playerM.xml.
+     Walter is the same playerM rig, so the node indices map onto his skeleton. We load this onto his
+     model.ikChains (the game deletes it for NPCs/real-players) and drive it to extend his arm to hold a
+     handtool out — the same mechanism remote multiplayer players use. node indices are relative to the
+     model skeleton root passed to IKUtil.loadIKChain. -->
+<player>
+    <ikChains>
+        <ikChain id="rightArm" target="0" targetOffset="0.08 -0.025 0" targetRotationOffset="180 0 0" alignToTarget="true" isDirtyOnLoad="true" positionThreshold="0.001">
+            <node index="0|0|0|0|0|2|0" minRx="-90" maxRx="5" minRy="-130" maxRy="30" minRz="-90" maxRz="-20" localLimits="true"/>
+            <node index="0|0|0|0|0|2|0|0" minRx="-25" maxRx="25" minRy="-144" maxRy="-25" minRz="0" maxRz="0" localLimits="true"/>
+            <node index="0|0|0|0|0|2|0|0|1"/>
+            <pose id="narrowFingers" isDefaultPose="true">
+                <rotationNode index="0|0|0|0|0|2|0|0|1|4" rotation="4 -41 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|4|0" rotation="19 35 10"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|4|0|0" rotation="0 33 0"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|3" rotation="0 0 -65"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|3|0" rotation="0 0 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|3|0|0" rotation="0 0 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|2" rotation="0 0 -65"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|2|0" rotation="0 0 -60"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|2|0|0" rotation="0 0 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|1" rotation="0 0 -65"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|1|0" rotation="0 0 -55"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|1|0|0" rotation="0 0 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|0" rotation="0 0 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|0|0" rotation="0 0 -45"/>
+                <rotationNode index="0|0|0|0|0|2|0|0|1|0|0|0" rotation="0 0 -45"/>
+            </pose>
+        </ikChain>
+    </ikChains>
+</player>

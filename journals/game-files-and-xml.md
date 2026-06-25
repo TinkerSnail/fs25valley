@@ -17,9 +17,38 @@ $RESOURCES = .../Contents/Resources/
 $DATA      = $RESOURCES/data/
 ```
 
-The packed binary archive `dataS2.gar` (next to the app binary) contains
-character models, NPC XML, voice lines, and conversation files. **It cannot be
-opened by mods or read as files.** Everything in `$DATA/` is loose and readable.
+The packed binary archives `dataS.gar` (3.2 G — **models, the player rig + animations**, clothing) and
+`dataS2.gar` (373 M — **NPC XML, dialogue, voice/conversation files**) sit next to the app binary. They
+can't be read as files directly and mods can't load from them — BUT they **can be extracted locally** for
+study (see below). Everything in `$DATA/` is loose and readable.
+
+## Extracting the `.gar` archives (2026-06-23)
+
+Sealed at runtime, but unpackable on disk with the community Rust tool **[`scfmod/fs-utils`](https://github.com/scfmod/fs-utils)**
+(cross-platform; the one Windows-only crate is `fs-patch-process`, which we don't build). Extracting your
+OWN installed `.gar` for personal study is standard modder practice — the EULA line is *redistribution*,
+not local inspection. One-time setup + use:
+
+```bash
+brew install rust                                   # cargo/rustc (rustup curl|sh got mangled here)
+git clone --depth 1 https://github.com/scfmod/fs-utils.git ~/fs25_tools
+cd ~/fs25_tools && cargo build --release -p fs-unpack   # ~11s
+# whole-archive only (no subpath); ~5G uncompressed for dataS.gar — extract then prune
+~/fs25_tools/target/release/fs-unpack ".../Resources/dataS.gar" ~/scratch -s
+```
+
+`.i3d.shapes` (mesh data) stays locked → needs `fs-shapes-unlock`; but `.i3d` (scene/skeleton, XML) and
+**`.i3d.anim` (animation keyframes)** come out directly — no unlock needed for animations.
+
+**Where the player animations live (extracted from `dataS.gar`):** `character/playerAnimations/`
+- `animations.i3d.anim` (14.7 M) — **binary keyframes for ALL the player clips** (`chainsaw_walkSource`,
+  the walks, idles, etc. — the same 87-clip set GRANDPA loads into its `animCharSet`).
+- `animationsM.xml` / `animationsF.xml` — the male/female **clip MAP**: `<clip clipName="chainsaw_walkSource"/>`
+  etc., with blend/speedScale params. The human-readable index into the binary.
+- `animations.i3d` (9.9 K) — the scene/skeleton the clips drive.
+- `animationsPedestrians.*` (ambient walkers), `animationsVehicleCharacter.*` (driver IK poses).
+- `npcBase.i3d` = `$dataS/character/npc/npcBase.i3d`; `playerM.xml` = `dataS/character/playerM/playerM.xml`
+  (from `grandpa.xml` in dataS2). A kept copy of just `playerAnimations/` (23 M) is at `~/fs25_player_anims`.
 
 ---
 

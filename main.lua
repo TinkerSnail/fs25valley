@@ -2,6 +2,7 @@
 -- Entry point - sources all modules in dependency order, hooks mission lifecycle.
 
 local modDir = g_currentModDirectory
+g_valleyLifeModDir = modDir   -- exposed for runtime file loads (e.g. the rightArm IK chain xml)
 
 -- 1. Utilities (no dependencies)
 source(modDir .. "src/utils/VectorHelper.lua")
@@ -574,6 +575,162 @@ function VLConsole:walterNight()
     local ok = g_valleyLife.walterWalker:_startNightWoodshop(VLConfig.WALTER_WALK)
     return ok and "[ValleyLife] Walter night woodshop visit triggered."
         or "[ValleyLife] nightWoodshop loop missing/unrunnable (check NPCConfig)."
+end
+
+-- vlWalterRig: RESEARCH SPIKE for the handtool-HOLDER build. The game's handtool system attaches a tool
+-- to `carryingPlayer.graphicsComponent.model.thirdPersonRightHandNode` and drives it via the carrier's
+-- methods (setCurrentHandTool/getIsControlled/...). This dumps what GRANDPA's LIVE object already exposes
+-- vs. what a carrier adapter must provide. Read-only. Ground-truth the surface before writing the adapter.
+function VLConsole:walterRig()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local g = ww.grandpa
+    if g == nil then pcall(function() ww:_acquireNode() end); g = ww.grandpa end
+    if g == nil then return "[ValleyLife] GRANDPA object not available (is he spawned/active?)." end
+
+    local function nodeInfo(label, node)
+        if node == nil then print(string.format("[Rig] %-30s = nil", label)); return end
+        local ok = entityExists(node)
+        print(string.format("[Rig] %-30s = node %s exists=%s name=%s", label, tostring(node),
+            tostring(ok), ok and (getName(node) or "?") or "(dead)"))
+    end
+    local function fieldInfo(label, v)
+        print(string.format("[Rig] %-30s = %s", label, type(v) == "function" and "function ✓" or tostring(v)))
+    end
+
+    local pg = g.playerGraphics or g.graphicsComponent
+    print(string.format("[Rig] grandpa.playerGraphics/graphicsComponent = %s", tostring(pg)))
+    local model = pg and pg.model
+    print(string.format("[Rig] model (pg.model)                = %s", tostring(model)))
+    if model ~= nil then
+        nodeInfo("model.thirdPersonRightHandNode", model.thirdPersonRightHandNode)
+        nodeInfo("model.thirdPersonLeftHandNode",  model.thirdPersonLeftHandNode)
+        nodeInfo("model.thirdPersonHeadNode",      model.thirdPersonHeadNode)
+        nodeInfo("model.thirdPersonSpineNode",     model.thirdPersonSpineNode)
+        nodeInfo("model.skeleton",                 model.skeleton)
+        fieldInfo("model.getSkeletonNode",         model.getSkeletonNode)
+    end
+
+    -- IK chains = the arm-extend "hold" mechanism. rightArm/leftArm/feet/spine are DELETED for the local
+    -- player (isRealPlayer) but KEPT for NPCs — so Walter should have rightArm. Confirm it live.
+    local ik = model and model.ikChains
+    print(string.format("[Rig] model.ikChains = %s", tostring(ik)))
+    if type(ik) == "table" then
+        local keys = {}
+        for k in pairs(ik) do keys[#keys + 1] = tostring(k) end
+        print("[Rig] ikChains keys: " .. (next(ik) and table.concat(keys, ", ") or "(empty)"))
+        print("[Rig] rightArm chain present = " .. tostring(ik.rightArm ~= nil) ..
+              "  leftArm = " .. tostring(ik.leftArm ~= nil))
+    end
+
+    print("[Rig] ---- carrier surface the handtool expects on carryingPlayer ----")
+    fieldInfo("grandpa.graphicsComponent",         g.graphicsComponent)
+    fieldInfo("grandpa.carriedHandTools",          g.carriedHandTools)
+    fieldInfo("grandpa.currentHandTool",           g.currentHandTool)
+    fieldInfo("grandpa.setCurrentHandTool",        g.setCurrentHandTool)
+    fieldInfo("grandpa.getIsControlled",           g.getIsControlled)
+    fieldInfo("grandpa.getForceHandToolFirstPerson", g.getForceHandToolFirstPerson)
+    fieldInfo("grandpa.targeter",                  g.targeter)
+    fieldInfo("grandpa.camera",                    g.camera)
+    return "[ValleyLife] dumped GRANDPA rig/carrier surface — see [Rig] log lines."
+end
+
+-- vlWalterArmIK: BUILD PROBE — load + drive the base-game rightArm IK chain on Walter so his arm extends
+-- to hold a tool out (the real MP mechanism; the engine strips this chain from NPCs). Usage: vlWalterArmIK <on|off>.
+function VLConsole:walterArmIK(arg)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local on = not (arg ~= nil and (tostring(arg) == "0" or string.lower(tostring(arg)) == "off"))
+    local ok = ww:setArmIK(on)
+    return string.format("[ValleyLife] rightArm IK %s%s — watch his arm + the [ArmIK] log.",
+        on and "ON" or "OFF", ok and "" or " (setArmIK failed — see log)")
+end
+
+-- vlArmTarget / vlArmTargetRot: live-tune the rightArm IK target (vlWalterArmIK must be on). Position 5cm/tap,
+-- rotation 15deg/tap. Dial his arm to hold the flashlight out front, then bake _armIKTargetPos/Rot.
+function VLConsole:armTarget(dir)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil or ww.nudgeArmTarget == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local p = ww:nudgeArmTarget(dir, false)
+    if p == nil then return "[ValleyLife] usage: vlArmTarget <x+|x-|y+|y-|z+|z->" end
+    return string.format("[ValleyLife] arm IK target pos (%.3f, %.3f, %.3f)", p.x, p.y, p.z)
+end
+function VLConsole:armTargetRot(dir)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil or ww.nudgeArmTarget == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local r = ww:nudgeArmTarget(dir, true)
+    if r == nil then return "[ValleyLife] usage: vlArmTargetRot <x+|x-|y+|y-|z+|z-|0>" end
+    return string.format("[ValleyLife] arm IK target rot deg(%.0f, %.0f, %.0f)", math.deg(r.x), math.deg(r.y), math.deg(r.z))
+end
+
+-- vlWalterHoldFlashlight: BUILD PROBE — give Walter a REAL flashlight `HandTool` through the game's own
+-- loader (`HandToolLoadingData`) and attach it with the real `attachToolToHand`, instead of our hand-rolled
+-- i3d link. Carrier = a thin adapter exposing GRANDPA's `playerGraphics` (its `.model` already has the
+-- thirdPerson hand nodes — confirmed by vlWalterRig). v1: spawn -> setCarryingPlayer -> attach to LEFT hand
+-- -> light on. Heavy logging + pcall so the [HoldFlash] log shows exactly where it stands. Additive: does
+-- not touch the existing auto-flashlight.
+function VLConsole:walterHoldFlashlight()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local g = ww.grandpa
+    if g == nil then pcall(function() ww:_acquireNode() end); g = ww.grandpa end
+    local pg = g and g.playerGraphics
+    if pg == nil or pg.model == nil then return "[ValleyLife] GRANDPA model not ready (is he spawned/active?)." end
+    if HandToolLoadingData == nil then return "[ValleyLife] HandToolLoadingData global missing." end
+
+    -- Thin carryingPlayer adapter: just enough surface for attachToolToHand + the flashlight's updateTransform.
+    local carrier = {
+        graphicsComponent = pg,                 -- pg.model = HumanModel (thirdPerson*Node + getModelYaw)
+        isOwner           = false,
+        camera            = { isFirstPerson = false },
+    }
+    function carrier:getIsControlled() return false end
+    function carrier:getForceHandToolFirstPerson() return false end
+    function carrier:setCurrentHandTool() end
+    ww._htCarrier = carrier
+
+    -- HandToolLoadingData:setFilename does fileExists() on the path, so $data must be RESOLVED first
+    -- (the bare "$data/..." symbol isn't expanded by fileExists — that was the v1 failure). Resolve it
+    -- like HandToolHolder does (Utils.getFilename), and guard so a miss doesn't crash data:load.
+    local raw = "$data/handTools/brandless/flashlight/flashlight.xml"
+    local resolved = (Utils and Utils.getFilename) and Utils.getFilename(raw, nil) or raw
+    print(string.format("[ValleyLife][HoldFlash] config raw=%s resolved=%s exists=%s",
+        raw, tostring(resolved), tostring(fileExists(resolved))))
+    if not fileExists(resolved) then
+        return "[ValleyLife] flashlight handtool config not found at " .. tostring(resolved) .. " — see [HoldFlash] log."
+    end
+    local data = HandToolLoadingData.new()
+    data:setFilename(resolved)
+    pcall(function() data:setOwnerFarmId(g.ownerFarmId or 1) end)
+    data:setIsRegistered(false)
+    data:load(function(_, handTool, loadingState)
+        if handTool == nil then
+            print("[ValleyLife][HoldFlash] LOAD FAILED state=" .. tostring(loadingState)); return
+        end
+        ww._htFlashlight = handTool
+        print(string.format("[ValleyLife][HoldFlash] loaded handtool=%s handNode=%s root=%s",
+            tostring(handTool), tostring(handTool.handNode), tostring(handTool.rootNode)))
+        handTool.useLeftHand = false   -- authored grip is for the RIGHT hand; left mirrors → backwards/forearm
+        pcall(function() handTool:setCarryingPlayer(carrier) end)
+        handTool.isHeld = true
+        local ok, err = pcall(function() handTool:attachToolToHand() end)
+        print(string.format("[ValleyLife][HoldFlash] attachToolToHand ok=%s err=%s", tostring(ok), tostring(err)))
+        -- attachToolToHand only LINKS the tool; visibility is normally flipped by attachTool/setHolder,
+        -- which we bypassed. Show the whole tool subtree (root-only wasn't enough for the flashlight in
+        -- the hand-rolled version — it needs to be recursive).
+        local function showTree(node)
+            if node == nil or not entityExists(node) then return end
+            setVisibility(node, true)
+            for i = 0, getNumOfChildren(node) - 1 do showTree(getChildAt(node, i)) end
+        end
+        if handTool.rootNode ~= nil then showTree(handTool.rootNode) end
+        local par = handTool.rootNode and getParent(handTool.rootNode)
+        print(string.format("[ValleyLife][HoldFlash] vis-set; rootParent=%s (%s)",
+            tostring(par), par and getName(par) or "?"))
+        pcall(function() handTool:setFlashlightIsActive(true, true) end)   -- light on so it's easy to spot
+    end, ww)
+
+    return "[ValleyLife] spawning a REAL flashlight handtool + attaching to his LEFT hand — watch the [HoldFlash] log and his hand."
 end
 
 -- vlWalterBones: RESEARCH SPIKE — recursively dump GRANDPA's node/skeleton tree (name + id + depth)
@@ -2192,6 +2349,11 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterMorning", "Trigger Walter's morning departure (door -> home): vlWalterMorning", "walterMorning", VLConsole)
     addConsoleCommand("vlWalterNight", "Trigger Walter's occasional night woodshop visit (door -> lit shed -> inside): vlWalterNight", "walterNight", VLConsole)
     addConsoleCommand("vlWalterBones", "Dump GRANDPA's node/skeleton tree to find the hand bone (hand-prop research): vlWalterBones", "walterBones", VLConsole)
+    addConsoleCommand("vlWalterRig", "Dump GRANDPA's model + carrier surface for the handtool-holder build: vlWalterRig", "walterRig", VLConsole)
+    addConsoleCommand("vlWalterHoldFlashlight", "PROBE: give Walter a REAL flashlight handtool via the game's loader + attach to his left hand: vlWalterHoldFlashlight", "walterHoldFlashlight", VLConsole)
+    addConsoleCommand("vlWalterArmIK", "PROBE: load+drive the rightArm IK chain so his arm extends to hold a tool out: vlWalterArmIK <on|off>", "walterArmIK", VLConsole)
+    addConsoleCommand("vlArmTarget", "Live-tune the arm IK target POSITION 5cm/tap: vlArmTarget <x+|x-|y+|y-|z+|z->", "armTarget", VLConsole)
+    addConsoleCommand("vlArmTargetRot", "Live-tune the arm IK target ROTATION 15deg/tap: vlArmTargetRot <x+|x-|y+|y-|z+|z-|0>", "armTargetRot", VLConsole)
     addConsoleCommand("vlWalterFlashlight", "Force Walter's flashlight on/off or auto: vlWalterFlashlight <1|0|auto>", "walterFlashlight", VLConsole)
     addConsoleCommand("vlWalterFlashlightPose", "Tune flashlight POSITION in hand (rotation stays auto): vlWalterFlashlightPose <x y z>", "walterFlashlightPose", VLConsole)
     addConsoleCommand("vlPlayerFlashlight", "While holding a flashlight, dump its parent bone + local transform (to copy onto Walter): vlPlayerFlashlight", "playerFlashlight", VLConsole)
