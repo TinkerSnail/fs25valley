@@ -10,3 +10,7 @@
 
 # Build artifacts
 *.zip
+
+# Decompiled GIANTS base-game scripts + extracted config (API research dumps).
+# Local reference only — these are GIANTS-copyrighted; do NOT push to the public repo (EULA).
+journals/dumps/api/
