@@ -93,9 +93,14 @@ function WalterWalker.new()
     self._armIKActive         = false -- driving the chain each frame (vlWalterArmIK) → arm extends to hold a tool out
     self._armIKFailed         = false
     self._armIKTarget         = nil   -- transformGroup the hand reaches toward (his "hold it out" point)
+    self._armIKRefOff         = nil   -- low-pass-smoothed spine offset relative to graphicsRootNode (kills walk-bob jitter, keeps pose)
     self._armIKCbHandle       = nil   -- addPostAnimationCallback handle: solve the IK after the clip (the winning stage)
     self._armIKTargetPos      = { x = 0.000, y = -1.500, z = 1.050 }  -- BAKED flashlight-carry pose (right, up, forward) meters — low/far target = full arm extension; tune live (vlArmTarget)
     self._armIKTargetRot      = { x = math.rad(15), y = math.rad(-105), z = math.rad(15) } -- BAKED aim: x=yaw, y=wrist roll, z=tilt (vlArmTargetRot)
+    self._htFlashlight        = nil   -- the REAL flashlight HandTool, loaded once + attached to his right hand
+    self._htCarrier           = nil   -- thin carryingPlayer adapter the handtool system attaches against
+    self._htLoading           = false -- async handtool load in flight
+    self._htFailed            = false -- handtool load failed once; don't retry every dusk
     self._gripActive          = false -- re-apply posed digits each frame (the anim re-poses the skeleton)
     self._digits              = nil   -- per-digit { bones, angle{x,y,z} } for independent finger/thumb posing
     self._loop        = nil
@@ -681,18 +686,60 @@ function WalterWalker:_ensureFlashlight(cfg)
     return true
 end
 
-function WalterWalker:_setFlashlight(on)
-    if on and not self:_ensureFlashlight(VLConfig.WALTER_WALK) then return false end
-    if self._flashlightNode == nil then return false end
-    pcall(function()
-        -- Show/hide the whole model subtree (root-only wasn't enough), then the spotlight.
-        self:_setTreeVisibility(self._flashlightGraphics or self._flashlightNode, on)
-        if self._flashlightLightNode and entityExists(self._flashlightLightNode) then
-            setVisibility(self._flashlightLightNode, on)
+-- Load the REAL flashlight HandTool ONCE (async) and attach it to his RIGHT hand via the game's own
+-- holder path (the validated approach). Cached + reused across on/off. Returns true once the tool exists.
+function WalterWalker:_ensureRealFlashlight()
+    if self._htFlashlight ~= nil then return true end
+    if self._htLoading or self._htFailed then return false end
+    local g  = self.grandpa
+    local pg = g and g.playerGraphics
+    if pg == nil or pg.model == nil or HandToolLoadingData == nil then return false end
+    local raw      = "$data/handTools/brandless/flashlight/flashlight.xml"
+    local resolved = (Utils and Utils.getFilename) and Utils.getFilename(raw, nil) or raw
+    if not fileExists(resolved) then self._htFailed = true; return false end
+    -- thin carryingPlayer adapter: enough surface for attachToolToHand + the flashlight's updateTransform
+    local carrier = { graphicsComponent = pg, isOwner = false, camera = { isFirstPerson = false } }
+    function carrier:getIsControlled() return false end
+    function carrier:getForceHandToolFirstPerson() return false end
+    function carrier:setCurrentHandTool() end
+    self._htCarrier = carrier
+    self._htLoading = true
+    local data = HandToolLoadingData.new()
+    data:setFilename(resolved)
+    pcall(function() data:setOwnerFarmId(g.ownerFarmId or 1) end)
+    data:setIsRegistered(false)
+    data:load(function(_, handTool, loadingState)
+        self._htLoading = false
+        if handTool == nil then
+            self._htFailed = true
+            print("[ValleyLife][Walter] real flashlight handtool load FAILED: " .. tostring(loadingState)); return
         end
-    end)
+        self._htFlashlight   = handTool
+        handTool.useLeftHand = false                                  -- authored grip = right hand
+        pcall(function() handTool:setCarryingPlayer(self._htCarrier) end)
+        handTool.isHeld = true
+        pcall(function() handTool:attachToolToHand() end)
+        self:_applyRealFlashlight(self._flashlightOn == true)          -- apply state (may have toggled during load)
+        print("[ValleyLife][Walter] real flashlight handtool ready (right hand)")
+    end, self)
+    return false
+end
+
+-- Show/hide the loaded handtool subtree + toggle its light.
+function WalterWalker:_applyRealFlashlight(on)
+    local ht = self._htFlashlight
+    if ht == nil or ht.rootNode == nil or not entityExists(ht.rootNode) then return end
+    pcall(function() self:_setTreeVisibility(ht.rootNode, on) end)
+    pcall(function() ht:setFlashlightIsActive(on, true) end)
+end
+
+-- Flashlight ON/OFF (driven by the dusk schedule via _updateFlashlight). Uses the REAL handtool in his
+-- right hand + extends his right arm (rightArm IK) to hold it out — the validated multiplayer-style hold.
+function WalterWalker:_setFlashlight(on)
     self._flashlightOn = on
-    self:_applyFlashlightWalkClip(on)  -- carry pose (chainsaw_walk) while lit; normal walk when off
+    if on then self:_ensureRealFlashlight() end   -- async first time; _applyRealFlashlight runs on load
+    self:_applyRealFlashlight(on)                 -- show/hide + light (no-op until loaded)
+    self:setArmIK(on)                             -- extend/retract the arm to hold the flashlight out
     return true
 end
 
@@ -825,9 +872,19 @@ function WalterWalker:_applyArmTarget()
     local pg    = self.grandpa and self.grandpa.playerGraphics
     local model = pg and pg.model
     local grn   = pg and pg.graphicsRootNode
-    local ref   = model and (model.thirdPersonSpineNode or model.skeleton)
+    local ref = model and (model.thirdPersonSpineNode or model.skeleton)
     if model == nil or grn == nil or ref == nil or not entityExists(ref) or not entityExists(grn) then return end
-    local sx, sy, sz   = getWorldTranslation(ref)
+    -- Pose is dialed against the SPINE position, but the spine BOBS with the walk clip → jitter. Reconstruct
+    -- it as grn (stable container, glides along the path = no bob, no forward-motion lag) + the spine's full
+    -- offset relative to grn, LOW-PASS smoothed (the bob lives in that offset). Keeps the pose, kills the jump.
+    local gx, gy, gz   = getWorldTranslation(grn)
+    local spx, spy, spz = getWorldTranslation(ref)
+    local offX, offY, offZ = spx - gx, spy - gy, spz - gz
+    local s = self._armIKRefOff
+    if s == nil then s = { x = offX, y = offY, z = offZ }; self._armIKRefOff = s end
+    local a = 0.12
+    s.x = s.x + (offX - s.x) * a; s.y = s.y + (offY - s.y) * a; s.z = s.z + (offZ - s.z) * a
+    local sx, sy, sz   = gx + s.x, gy + s.y, gz + s.z
     local fx, fy, fz   = localDirectionToWorld(grn, 0, 0, 1)    -- forward (his model faces +Z — verified: -Z put the arm behind him)
     local rx, ry2, rz  = localDirectionToWorld(grn, -1, 0, 0)   -- his right (+X put the hand across his body)
     local p = self._armIKTargetPos                              -- (x=right, y=up, z=forward)
