@@ -75,6 +75,7 @@ function WalterWalker.new()
     self._active      = false
     self._hidden      = false  -- true while Walter has "stepped inside" (graphicsRootNode invisible)
     self._stoppedForPlayer = false  -- true while he's halted to face a nearby player (logs once)
+    self._convoFrozen   = false  -- true once we've frozen followers for the current conversation (R49 FIX-5: park once, not per-frame)
     self._greetNear   = false  -- true while the player is within greet range (edge-trigger the bark)
     self._greetCooldown = 0    -- ms remaining before he'll greet again
     self._greetActive   = false -- true while OUR ambient greeting popup is up (tag-guarded close on walk-away)
@@ -190,9 +191,25 @@ function WalterWalker:_acquireNode()
                 -- during a conversation, skipping orig() starves it → he glides. So also run orig()
                 -- when in conversation, and let _updateWalk yield the route to the base game.
                 local inConvo = walker.grandpa and walker.grandpa.isInConversation
-                if (not active) or inConvo then
+                if inConvo then
+                    if active then
+                        -- R49 FIX-9: SKIP orig() while _active and in conversation. The probe series
+                        -- (FIX-1 through FIX-8) eliminated position, params, clip state, and per-frame writes.
+                        -- The 10 Hz Hips oscillation (3-frame alternating cycle at 30fps) is the
+                        -- ConditionalAnimation inside orig() producing a walk blend at his non-home position.
+                        -- Truly-idle Walter doesn't shimmy because he IS at home; the cow pen is not home.
+                        -- Skipping orig(): track-0 idle clip drives the body stably. Cost = face freezes
+                        -- during conversation; that is preferable to the shimmy.
+                        -- _updateWalk handles clip state once on conversation entry (see _convoFrozen).
+                        return
+                    else
+                        -- Truly idle (not _active): orig() runs normally — no shimmy because he's at home.
+                        orig(self_pg, dt)
+                        if walker._gripActive then walker:_applyHandPose() end
+                        return
+                    end
+                elseif not active then
                     orig(self_pg, dt)
-                    -- Re-assert the finger grip AFTER orig() poses the skeleton (latest Lua write).
                     if walker._gripActive then walker:_applyHandPose() end
                     return
                 end
@@ -299,6 +316,43 @@ function WalterWalker:_setAnimParams(walking)
     set("relativeVelocityZ", speed)
     set("movementDirX",      0)
     set("movementDirZ",      walking and 1 or 0)
+    set("rotationVelocity",  0)
+end
+
+-- During a base-game conversation, hand the ConditionalAnimation back to the engine in NPC mode so its
+-- TALK animation runs exactly as it does for truly-idle Walter (which never flops). The R49 shimmy probe
+-- (2026-06-26, cow pen) proved the flop is PURE SKELETON motion — grn/pin/spot frozen + identical every
+-- frame, only the Hips oscillates ~12cm — so it is NOT a position fight (FIX-1/2/3 chased writes that the
+-- probe shows were never moving). The ONE difference from the flop-free idle state is that while _active
+-- we forced isNPC=false (+ walk-velocity params) via _setAnimParams for direct-drive walking; the base
+-- talk blend then runs in player mode and weight-shifts the Hips. Restoring isNPC=true (+ zeroed idle
+-- params) makes orig()'s talk blend behave like idle Walter. spot.node is parked on his stopped position
+-- (FIX-2), so the isNPC=true position snap lands where he already is = no jump.
+function WalterWalker:_setConversationParams()
+    local pg = self.grandpa and self.grandpa.playerGraphics
+    if pg == nil then return end
+    local nameToIdx = pg.animationParameters
+    local paramObjs = pg.animation and pg.animation.parameters
+    if type(nameToIdx) ~= "table" or type(paramObjs) ~= "table" then return end
+    local function set(name, value)
+        local idx = nameToIdx[name]
+        if idx == nil then return end
+        local p = paramObjs[idx]
+        if type(p) == "table" then p.value = value end
+    end
+    set("isNPC",             true)   -- hand position + talk blend back to the engine (NPC mode = no Hips flop)
+    set("isGrounded",        true)
+    set("isCloseToGround",   true)
+    set("isIdling",          true)
+    set("isWalking",         false)
+    set("isRunning",         false)
+    set("absSpeed",          0)
+    set("distanceToGround",  0)
+    set("relativeVelocityX", 0)
+    set("relativeVelocityY", 0)
+    set("relativeVelocityZ", 0)
+    set("movementDirX",      0)
+    set("movementDirZ",      0)
     set("rotationVelocity",  0)
 end
 
@@ -617,8 +671,22 @@ function WalterWalker:_logShimmy()
     local dx, dz = 0, 0
     if self._shimmyLast then dx = gx - self._shimmyLast.x; dz = gz - self._shimmyLast.z end
     self._shimmyLast = { x = gx, z = gz }
-    print(string.format("[Shimmy] grn(%.3f,%.3f ry%.4f) dGrn(%.4f,%.4f) Hips(%.3f,%.3f) pin(%.3f,%.3f) spot(%.3f,%.3f) active=%s",
-        gx, gz, gry, dx, dz, hx, hz, (g and g.x) or 0, (g and g.z) or 0, spx, spz, tostring(self._active)))
+    -- Live ConditionalAnimation params (FIX-4 confirm): is the talk blend running in NPC mode (isNPC=true)
+    -- or player mode (false)? If isNPC reads false here despite _setConversationParams, orig overwrites
+    -- our write each frame → the lever is elsewhere.
+    local pNPC, pIdle, pWalk, pSpd = "?", "?", "?", "?"
+    local pg = g and g.playerGraphics
+    if pg and type(pg.animationParameters) == "table" and pg.animation and type(pg.animation.parameters) == "table" then
+        local function getp(name)
+            local idx = pg.animationParameters[name]; if idx == nil then return "?" end
+            local pp = pg.animation.parameters[idx]
+            return (type(pp) == "table") and tostring(pp.value) or "?"
+        end
+        pNPC, pIdle, pWalk, pSpd = getp("isNPC"), getp("isIdling"), getp("isWalking"), getp("absSpeed")
+    end
+    print(string.format("[Shimmy] grn(%.3f,%.3f ry%.4f) dGrn(%.4f,%.4f) Hips(%.3f,%.3f) pin(%.3f,%.3f) spot(%.3f,%.3f) active=%s isNPC=%s idle=%s walk=%s spd=%s",
+        gx, gz, gry, dx, dz, hx, hz, (g and g.x) or 0, (g and g.z) or 0, spx, spz, tostring(self._active),
+        pNPC, pIdle, pWalk, pSpd))
 end
 
 -- Resolve an i3dMapping index (e.g. "0>0") to a node under root; nil if unavailable.
@@ -1318,26 +1386,39 @@ function WalterWalker:_updateWalk(cfg, dt)
     local waypoints = loop.waypoints
     local speed     = loop.speed or cfg.speed or 0.8
 
-    -- Keep his map point + interaction trigger on him every active frame (R21). NOTE: this position
-    -- pin is LOAD-BEARING — moving it AFTER the conversation yield made him VIBRATE (R49), because the
-    -- base game then yanks grandpa.x/z back to his home spot mid-conversation. Leave it here.
-    self:_syncFollowers()
-
-    -- In conversation: YIELD fully to the base game. The wrapper runs orig() so the conversation
-    -- animates (face/gestures); we just revert our walk clip to idle once and stop driving. (Driving
-    -- the walk while talking starves the conversation of orig() → gliding.) He holds position because
-    -- orig() with isNPC=false doesn't move him. Resume the route when the conversation ends.
-    -- R49 SHIMMY FIX (probe-confirmed): the container (grn) is dead-stable during a conversation; only
-    -- the HIPS oscillates — i.e. our IDLE clip, left ENABLED on track 0 by _stopWalkAnim, fights orig()'s
-    -- TALK animation on the skeleton (the R17 clip war, but during a convo instead of a walk). So clear
-    -- our clip AND disable track 0 entirely, handing the skeleton solely to orig() for the talk. Track 0
-    -- re-enables on walk resume (_startWalkAnim). (Truly-idle Walter never fights because orig is idle
-    -- too; only a conversation makes orig play a different animation.)
+    -- R49 SHIMMY FIX-5 (probe-driven, cow pen): replicate truly-idle Walter, who NEVER flops while talking.
+    -- The probes eliminated, in order: position (grn/pin/spot FROZEN), track-0 clip state (FIX-1: enabled
+    -- AND disabled both flop), and ConditionalAnimation params (FIX-4: isNPC=true/idle identical to idle,
+    -- still flops). The ONLY remaining difference from the flop-free idle-convo is that we ran
+    -- _syncFollowers() EVERY frame during the talk (per-frame setWorldTranslation on spot.node + the trigger
+    -- node — same value, but re-written each frame while the base talk anim evaluates). So during a
+    -- conversation do EVERYTHING ONCE on entry, then NOTHING per frame: clear the walk clip, disable
+    -- track 0 (orig owns the skeleton for the talk), restore NPC-mode params, and park the followers a
+    -- SINGLE time (the spot park is load-bearing — it stops the g_npcManager home-yank vibrate — but it
+    -- doesn't need re-writing every frame). Resets on conversation end; the route resumes below.
     if self.grandpa.isInConversation then
-        self:_stopWalkAnim()
-        if self.animCharSet ~= nil then pcall(function() disableAnimTrack(self.animCharSet, 0) end) end
+        if not self._convoFrozen then
+            self._convoFrozen = true
+            -- R49 FIX-9: orig() is SKIPPED in the wrapper while _active+inConvo. That means track-0 is
+            -- NOT cleared/disabled by the wrapper. _stopWalkAnim here restores the idle clip on track 0 so
+            -- it drives the body stably (no ConditionalAnimation, no shimmy). _setAnimParams keeps params
+            -- consistent with direct-drive (isNPC=false). _syncFollowers parks spot.node / trigger once.
+            self:_stopWalkAnim()     -- reverts to idle clip; no-op if already paused
+            self:_setAnimParams(false) -- isNPC=false, idle params
+            self:_syncFollowers()    -- ONE-TIME park of spot.node / trigger / hotspot onto his stopped position
+        end
         return
     end
+    if self._convoFrozen then
+        -- Conversation ended: reset so _startWalkAnim re-assigns the walk clip cleanly.
+        self._convoFrozen = false
+        self._isWalking = false
+    end
+
+    -- Keep his map point + interaction trigger on him every active frame (R21). NOTE: the spot park inside
+    -- here is LOAD-BEARING — without it the base game yanks grandpa.x/z back to his home spot. During a
+    -- conversation it runs only ONCE (above) so the per-frame writes don't perturb the talk animation.
+    self:_syncFollowers()
 
     -- Stop & face the player when he's near (not talking), and hold there. His trigger is now
     -- stationary, so walking up to him fires the normal base-game talk prompt + conversation.
