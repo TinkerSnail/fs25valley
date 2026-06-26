@@ -168,6 +168,7 @@ VLConfig.WALTER_WALK = {
     greetRange    = 5.0,    -- meters: he speaks an ambient time-of-day line on approach (just before he stops to face you); base "press to talk" conversation is untouched
     greetCooldownMs = 20000,-- ms before he'll greet again, so it never spams
     greetTtl      = nil,    -- seconds the ambient greeting stays up; nil = persist until you dismiss it (Enter/click) or walk out of greetRange. Set a number (e.g. 8) to auto-vanish after that long instead.
+    cowPen        = { x = -671.0, z = 140.0, range = 18.0 },  -- when WALTER is within `range` of here (the cow yard / pen), his greeting draws from the `cows` line pool instead of the time-of-day one
     visitOffset   = 2.0,    -- meters: ESC-map "Visit" drops the player this far in front of Walter (his facing) instead of inside his model
     home         = { x = -758.2, y = 47.0, z = 94.3 },  -- GRANDPA_FARMHOUSE spot; where the morning reveal places him
     -- Woodshop door (cosmetic): the placeable tinyShed01 nearest `near`, animated object `saveId`.
@@ -195,6 +196,21 @@ VLConfig.WALTER_WALK = {
                 { name = "stairMid",     x = -760.90, y = 47.0,  z = 96.23 },                  -- [2] foot of the stairs
                 { name = "doorApproach", x = -760.32, y = 47.0,  z = 97.06 },                  -- [3] base of the stairs
                 { name = "home",         x = -758.2,  y = 47.0,  z = 94.3, endOnArrival = true }, -- [4] home: stop & idle (base game resumes)
+            },
+        },
+        -- CHECKING THE COWS (daily, 16-18): Walter strolls out to the cow yard to look in on the inherited
+        -- Angus herd, pauses to check on them, then heads home. Waypoints captured in-game (vlPos,
+        -- 2026-06-26); y omitted so he grounds to terrain. The return MIRRORS the outbound so he retraces
+        -- the path instead of cutting a diagonal back across the yard. Retune startHour/endHour to taste.
+        {
+            name = "checkingCows", startHour = 16, endHour = 18,
+            waypoints = {
+                { name = "home",       x = -758.20, z = 94.30 },                        -- [1] start/end (GRANDPA_FARMHOUSE)
+                { name = "barnPath1",  x = -730.90, z = 96.09 },                        -- [2]
+                { name = "barnPath2",  x = -731.86, z = 126.95 },                       -- [3]
+                { name = "cowYard",    x = -671.68, z = 144.28, pauseMinutes = 20, pauseRy = math.rad(180) }, -- [4] look the herd over
+                { name = "barnPath2B", x = -731.86, z = 126.95 },                       -- [5] retrace
+                { name = "barnPath1B", x = -730.90, z = 96.09 },                        -- [6] retrace → auto-return home
             },
         },
         -- MORNING (6-9): out-and-back across the yard, "checking the pumps". Captured 2026-06-21

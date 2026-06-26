@@ -283,6 +283,7 @@ function VLNPCSystem:update(dt)
     end
     self.dialog:update(dt)
     self.walterWalker:update(dt)
+    if VLWalterCowsIntro ~= nil then VLWalterCowsIntro.update(dt) end  -- cow/husbandry handoff (proximity to the pen)
 end
 
 function VLNPCSystem:getNPC(id)

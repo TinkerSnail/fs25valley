@@ -36,6 +36,7 @@ source(modDir .. "src/content/Walter.lua")  -- Walter casual/time-of-day lines (
 
 -- Post-tour beat: hooks GuidedTour.finish/cancel to introduce Marta + the market.
 source(modDir .. "src/content/WalterIntro.lua")
+source(modDir .. "src/content/WalterCowsIntro.lua")  -- one-time cow/husbandry handoff near the barn
 
 -- Mission lifecycle
 
@@ -1227,6 +1228,121 @@ function VLConsole:playWalterIntro()
     if VLWalterIntro == nil then return "[ValleyLife] WalterIntro unavailable." end
     VLWalterIntro.play(true)
     return "[ValleyLife] Played Walter market intro (forced)."
+end
+
+-- vlShimmy: toggle the R49 body probe — logs grn/Hips/pin/spot each frame while Walter is talking.
+function VLConsole:shimmyProbe(arg)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local on = not (arg ~= nil and (tostring(arg) == "0" or string.lower(tostring(arg)) == "off"))
+    ww._shimmyProbe = on
+    ww._shimmyHips = nil
+    ww._shimmyLast = nil
+    return "[ValleyLife] Shimmy probe " .. (on
+        and "ON — talk to Walter while he's paused on a route, then read the [Shimmy] lines in log.txt."
+        or "OFF.")
+end
+
+-- vlDumpVehicle: dump the filename, uniqueId, class, and world position of the vehicle the player
+-- is currently sitting in. Run while seated in Grandpa's truck to capture the data we need to
+-- reference it at runtime for the Walter-drives-truck feature.
+function VLConsole:dumpVehicle()
+    local player = g_localPlayer
+    if player == nil then return "[ValleyLife] no local player" end
+
+    -- Try every known path to the controlled vehicle.
+    local v = nil
+    pcall(function() v = player:getCurrentVehicle() end)
+    if v == nil then v = player.currentVehicle or player.vehicle end
+    if v == nil then pcall(function() v = g_currentMission and g_currentMission.controlledVehicle end) end
+
+    -- If still nil, scan player fields for anything that looks like a vehicle.
+    if v == nil then
+        print("[VL][Truck] currentVehicle=nil — scanning player fields for vehicle refs:")
+        local found = {}
+        pcall(function()
+            for k, val in pairs(player) do
+                local lk = string.lower(tostring(k))
+                if lk:find("vehicle") or lk:find("enterable") or lk:find("driving") then
+                    found[#found+1] = string.format("  .%s = %s (%s)", k, tostring(val), type(val))
+                end
+            end
+        end)
+        if #found > 0 then for _, f in ipairs(found) do print(f) end
+        else print("  (no vehicle-like fields on g_localPlayer)") end
+        -- Also check g_currentMission
+        pcall(function()
+            for k, val in pairs(g_currentMission) do
+                local lk = string.lower(tostring(k))
+                if lk:find("vehicle") or lk:find("controlled") then
+                    print(string.format("  mission.%s = %s (%s)", k, tostring(val), type(val)))
+                end
+            end
+        end)
+        return "[VL][Truck] no vehicle found — check log for available fields"
+    end
+
+    local filename = tostring(v.configFileName or v.xmlFilename or v.filename or "?")
+    local uid      = tostring(v.uniqueId or "?")
+    local cls      = tostring(v.className or "?")
+    local x, y, z, ry = 0, 0, 0, 0
+    pcall(function()
+        local root = v.components and v.components[1] and v.components[1].node
+        if root and entityExists(root) then
+            x, y, z = getWorldTranslation(root)
+            local _, ry2 = getRotation(root); ry = ry2 or 0
+        end
+    end)
+    print(string.format("[VL][Truck] filename: %s", filename))
+    print(string.format("[VL][Truck] uniqueId: %s", uid))
+    print(string.format("[VL][Truck] class:    %s", cls))
+    print(string.format("[VL][Truck] pos:      x=%.3f y=%.3f z=%.3f ry=%.4f", x, y, z, ry))
+    -- Configurations: paint, rims, license plate, etc.
+    pcall(function()
+        local cfgs = v.configurations
+        if type(cfgs) == "table" then
+            local out = {}
+            for name, idx in pairs(cfgs) do
+                out[#out+1] = string.format("%s=%s", tostring(name), tostring(idx))
+            end
+            table.sort(out)
+            print("[VL][Truck] configurations: " .. (next(cfgs) and table.concat(out, ", ") or "(empty)"))
+        else
+            print("[VL][Truck] configurations: (field not a table: " .. type(cfgs) .. ")")
+        end
+        -- Try the getter too
+        if type(v.getActiveConfiguration) == "function" then
+            print("[VL][Truck] getActiveConfiguration exists")
+        end
+        -- License plate text
+        local lp = v.spec_licensePlates
+        if type(lp) == "table" then
+            for k, val in pairs(lp) do
+                local t = type(val)
+                if t == "string" or t == "number" or t == "boolean" then
+                    print(string.format("[VL][Truck] licensePlate.%s = %s", tostring(k), tostring(val)))
+                end
+            end
+        end
+    end)
+    local specs = {}
+    pcall(function()
+        for k in pairs(v) do if type(k) == "string" and k:find("^spec_") then specs[#specs+1] = k end end
+    end)
+    if #specs > 0 then print("[VL][Truck] specs: " .. table.concat(specs, ", ")) end
+    return string.format("[VL][Truck] done — filename=%s uid=%s pos=(%.1f,%.1f,%.1f)", filename, uid, x, y, z)
+end
+
+-- vlWalterCows: force-play Walter's one-time cow/husbandry handoff (bypasses the once-only flag).
+function VLConsole:playWalterCows(arg)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    if VLWalterCowsIntro == nil then return "[ValleyLife] WalterCowsIntro unavailable." end
+    if arg ~= nil and (tostring(arg) == "0" or string.lower(tostring(arg)) == "reset") then
+        g_valleyLife:setFlag("walterCowsHandoff", false)  -- clear the once-only flag → re-arm the proximity trigger
+        return "[ValleyLife] Cow handoff RE-ARMED — walk up to the pen to trigger it at the new range."
+    end
+    VLWalterCowsIntro.play(true)
+    return "[ValleyLife] Played Walter cow/husbandry handoff (forced)."
 end
 
 -- vlStyle: enumerate the base-game character style configs (hair, beard, face,
@@ -2450,6 +2566,9 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlLightTest", "TEST woodshop lights on/off: vlLightTest <1on/0off>", "lightTest", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
+    addConsoleCommand("vlWalterCows", "Force-play Walter's one-time cow/husbandry handoff", "playWalterCows", VLConsole)
+    addConsoleCommand("vlShimmy", "Probe Walter's body each frame while talking (R49 shimmy diag): vlShimmy <1|0>", "shimmyProbe", VLConsole)
+    addConsoleCommand("vlDumpVehicle", "While seated in a vehicle, dump its filename/uniqueId/class/position: vlDumpVehicle", "dumpVehicle", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
