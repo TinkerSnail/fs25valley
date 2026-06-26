@@ -635,6 +635,84 @@ function VLConsole:walterRig()
     return "[ValleyLife] dumped GRANDPA rig/carrier surface — see [Rig] log lines."
 end
 
+-- vlNpcDump: survey the base-game NPC roster (g_npcManager) for HOOKABILITY — the same surface we already
+-- drive on GRANDPA (Walter). No arg = one summary line per roster NPC; <NAME> = full detail for one.
+-- Roster names are from data/maps/maps_npcs.xml: GRANDPA, FORESTER, FARMER, HELPER, ANIMAL_DEALER, FISHERMAN.
+-- ANIMAL_DEALER = Katie (livestock NPC). Confirms whether she's spawned/active and carries the drivable
+-- playerM rig + a conversation we can extend ADDITIVELY — exactly like Walter. Friendly aliases accepted.
+VLConsole.NPC_ROSTER = { "GRANDPA", "FORESTER", "FARMER", "HELPER", "ANIMAL_DEALER", "FISHERMAN" }
+VLConsole.NPC_ALIAS  = { WALTER = "GRANDPA", KATIE = "ANIMAL_DEALER", BEN = "HELPER", NOAH = "FORESTER" }
+
+function VLConsole:npcDump(name)
+    if g_npcManager == nil then return "[ValleyLife] g_npcManager unavailable (not in a loaded career?)." end
+
+    local function rigOf(npc)
+        local pg = npc and (npc.playerGraphics or npc.graphicsComponent)
+        return pg, pg and pg.model
+    end
+
+    local function summary(nm)
+        local npc = g_npcManager:getNPCByName(nm)
+        if npc == nil then print(string.format("[NPC] %-14s = (not in g_npcManager)", nm)); return end
+        local nodeOK     = npc.node ~= nil and entityExists(npc.node)
+        local _, model   = rigOf(npc)
+        local hasRig     = model ~= nil and model.thirdPersonRightHandNode ~= nil
+        local ik         = model and model.ikChains
+        local hasArm     = type(ik) == "table" and ik.rightArm ~= nil
+        print(string.format(
+            "[NPC] %-14s active=%-5s node=%-5s rig=%-5s rightArmIK=%-5s hotspot=%-5s trigger=%-5s inConvo=%-5s pos=(%.0f,%.0f,%.0f)",
+            nm, tostring(npc.isActive), tostring(nodeOK), tostring(hasRig), tostring(hasArm),
+            tostring(npc.mapHotspot ~= nil), tostring(npc.interactionTriggerNode ~= nil),
+            tostring(npc.isInConversation), npc.x or 0, npc.y or 0, npc.z or 0))
+    end
+
+    if name == nil or name == "" then
+        print("[ValleyLife] ---- base-game NPC roster: hookability survey (compare each against GRANDPA) ----")
+        for _, nm in ipairs(VLConsole.NPC_ROSTER) do summary(nm) end
+        return "[ValleyLife] roster surveyed — see [NPC] lines. Detail one: vlNpcDump <NAME> (e.g. vlNpcDump katie)."
+    end
+
+    local nm  = string.upper(tostring(name))
+    nm        = VLConsole.NPC_ALIAS[nm] or nm
+    local npc = g_npcManager:getNPCByName(nm)
+    if npc == nil then
+        return string.format("[ValleyLife] '%s' not found. Roster: %s", nm, table.concat(VLConsole.NPC_ROSTER, ", "))
+    end
+
+    print(string.format("[ValleyLife] ---- %s detail ----", nm))
+    print(string.format("  isActive=%s  node=%s exists=%s  pos=(%.2f,%.2f,%.2f)",
+        tostring(npc.isActive), tostring(npc.node), tostring(npc.node ~= nil and entityExists(npc.node)),
+        npc.x or 0, npc.y or 0, npc.z or 0))
+
+    local pg, model = rigOf(npc)
+    print(string.format("  playerGraphics/graphicsComponent=%s  model=%s", tostring(pg), tostring(model)))
+    if model ~= nil then
+        local function nodeInfo(label, node)
+            print(string.format("    %-28s = %s", label, node == nil and "nil"
+                or string.format("node %s exists=%s", tostring(node), tostring(entityExists(node)))))
+        end
+        nodeInfo("thirdPersonRightHandNode", model.thirdPersonRightHandNode)
+        nodeInfo("thirdPersonLeftHandNode",  model.thirdPersonLeftHandNode)
+        nodeInfo("skeleton",                 model.skeleton)
+        local ik = model.ikChains
+        print(string.format("    ikChains=%s  rightArm=%s leftArm=%s", tostring(ik),
+            tostring(type(ik) == "table" and ik.rightArm ~= nil),
+            tostring(type(ik) == "table" and ik.leftArm ~= nil)))
+    end
+    print(string.format("  mapHotspot=%s  interactionTriggerNode=%s  spot=%s",
+        tostring(npc.mapHotspot), tostring(npc.interactionTriggerNode), tostring(npc.spot)))
+
+    -- Discover the conversation/dialog surface WITHOUT guessing exact names — scan keys.
+    print("  -- npc keys matching convers/dialog/talk/speak/greet (the additive-dialog hook surface) --")
+    for k, v in pairs(npc) do
+        local lk = string.lower(tostring(k))
+        if lk:find("convers") or lk:find("dialog") or lk:find("talk") or lk:find("speak") or lk:find("greet") then
+            print(string.format("    .%s = %s (%s)", k, tostring(v), type(v)))
+        end
+    end
+    return string.format("[ValleyLife] dumped %s — same hookable surface as GRANDPA ⇒ extend additively like Walter.", nm)
+end
+
 -- vlWalterArmIK: BUILD PROBE — load + drive the base-game rightArm IK chain on Walter so his arm extends
 -- to hold a tool out (the real MP mechanism; the engine strips this chain from NPCs). Usage: vlWalterArmIK <on|off>.
 function VLConsole:walterArmIK(arg)
@@ -2350,6 +2428,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterNight", "Trigger Walter's occasional night woodshop visit (door -> lit shed -> inside): vlWalterNight", "walterNight", VLConsole)
     addConsoleCommand("vlWalterBones", "Dump GRANDPA's node/skeleton tree to find the hand bone (hand-prop research): vlWalterBones", "walterBones", VLConsole)
     addConsoleCommand("vlWalterRig", "Dump GRANDPA's model + carrier surface for the handtool-holder build: vlWalterRig", "walterRig", VLConsole)
+    addConsoleCommand("vlNpcDump", "Survey base-game NPC roster for hookability (no arg) or detail one: vlNpcDump [katie|walter|ben|noah|ANIMAL_DEALER|...]", "npcDump", VLConsole)
     addConsoleCommand("vlWalterHoldFlashlight", "PROBE: give Walter a REAL flashlight handtool via the game's loader + attach to his left hand: vlWalterHoldFlashlight", "walterHoldFlashlight", VLConsole)
     addConsoleCommand("vlWalterArmIK", "PROBE: load+drive the rightArm IK chain so his arm extends to hold a tool out: vlWalterArmIK <on|off>", "walterArmIK", VLConsole)
     addConsoleCommand("vlArmTarget", "Live-tune the arm IK target POSITION 5cm/tap: vlArmTarget <x+|x-|y+|y-|z+|z->", "armTarget", VLConsole)
