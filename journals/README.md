@@ -39,7 +39,16 @@ For project overview, install, and controls, see the root [README.md](../README.
 - [game-files-and-xml.md](game-files-and-xml.md) - **how to research base-game
   behavior**: resource directory paths, key XML files (`maps_npcs.xml`,
   `guidedTour_intro.xml`, `pedestrianSystem.xml`), search patterns, and what is
-  vs. isn't readable (`.gar` is sealed).
+  vs. isn't readable (`.gar` extraction — NPC dialogue text IS readable).
+- [animal-husbandry-intro.md](animal-husbandry-intro.md) - **base-game husbandry onboarding, full flow**:
+  the two parallel systems (Walter→Katie NPC referral+tutorial, and the static help-line menu), the
+  consistent per-species branch shape, the cow branch verbatim, and the mechanics (buying/pens/feeding/
+  TMR/manure) the tutorial points at. Reference before extending it.
+- [map-riverbend-springs.md](map-riverbend-springs.md) - **the whole-map picture**: Riverbend
+  Springs = `mapUS`; the named NPCs own the farmland (GRANDPA owns the starting farm), the
+  inherited farm cluster (woodshop + **3 Angus cows** + beehives), the economy (sell points,
+  production chains, shops incl. Katie's animal trader), ambient life, collectibles, and what it
+  all unlocks for our features.
 - [development-process.md](development-process.md) - **`.claude` failsafes**: auto-repack
   hook, session-context injection, the **R-table gate** (how to operate it, multi-edit
   gotcha), build verifier, and which `log.txt` to read.

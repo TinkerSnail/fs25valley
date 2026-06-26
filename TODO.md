@@ -12,8 +12,9 @@ deepest schedule + dialog by design; other villagers stay lighter.
 ## Walter (priority character)
 
 ### Dialog / content
-- [ ] Write his **real time-of-day lines** (replace placeholders in `src/content/Walter.lua`:
-      morning / midday / evening / night, plus `firstMeet` / `alreadyTalked`).
+- [x] Write his **real time-of-day lines** (2026-06-25) — morning / midday / evening / night +
+      `alreadyTalked` rewritten in his settled warm-with-dry-edge voice; `firstMeet` /
+      `nightWoodshop` kept (already on-voice). Taskmaster/scolding tone removed.
 - [ ] **Relationship-aware greetings** — tone warms as the bond grows (the tier pools exist; add them).
 - [ ] **Activity/location-specific lines** — once the schedule is locked (e.g. at the gas pump vs the
       mailbox vs inside the woodshop). Deferred on purpose while routes are still moving.
@@ -30,7 +31,24 @@ deepest schedule + dialog by design; other villagers stay lighter.
       route, then back inside. Reuses the `nightWoodshop` machinery (reveal-at-door + deterministic
       per-night roll + hideOnEnd) pointed at the existing `checkingPumps` waypoints — cheap to add.
 
-## Other villagers (Elara, Kenji, Marta)
+## Cast — PRIORITIZE the base-game NPCs Walter introduces (user direction 2026-06-25)
+Build the characters the player canonically MEETS first: the base-game town NPCs Walter name-drops in
+the tutorial. Grounded by mention-frequency in Walter's dialogue (Ben 74×, Katie 51×, Noah/David 20×;
+great-uncle **Paul** 152× = off-map family lore). They're the same hookable NPC type as Walter, each
+with a full base conversation + help/smalltalk tree to extend additively. See memory
+`reference-basegame-npc-roster` + journal `map-riverbend-springs.md`.
+- [ ] **Ben (HELPER)** FIRST — Walter's explicit tutorial hand-off ("ask Ben… my most trusted helper").
+      Confirm live + hookable (`vlNpcDump`), then layer our dialogue/role (the grain/teaching side).
+- [ ] **Katie (ANIMAL_DEALER)** — research done; she already delivers the voiced cow tutorial. Hook her,
+      point Walter/others to her, extend additively.
+- [ ] **Noah (FORESTER) / David (FARMER)** — the forestry + crops branches of the economy web.
+- [ ] **Great-uncle Paul** — weave the canon comic family figure (sugar-beet stand, B&B dreams) into
+      lore; reconcile with our pinned debt-uncle (different generation — see `project-walter-story`).
+- [ ] **OPEN:** how do these base NPCs relate to our fabricated **Elara / Kenji / Marta**? Join them,
+      or do the base NPCs become the core cast and the fabricated ones step back? (Decide before deep
+      content — affects whose heart events we write.)
+
+## Other (fabricated) villagers — Elara, Kenji, Marta
 - [ ] Lighter-but-real **schedules / routes** (Marta has stop-and-face + a loop; flesh out the rest).
 - [ ] **Casual dialogue + at least one heart event each** (vertical-slice target: 3–4 deep characters).
 - [ ] Time-of-day greeting pools for them too (the casual-dialogue axis is general now).

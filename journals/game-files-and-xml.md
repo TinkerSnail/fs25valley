@@ -40,6 +40,25 @@ cd ~/fs25_tools && cargo build --release -p fs-unpack   # ~11s
 `.i3d.shapes` (mesh data) stays locked → needs `fs-shapes-unlock`; but `.i3d` (scene/skeleton, XML) and
 **`.i3d.anim` (animation keyframes)** come out directly — no unlock needed for animations.
 
+### Localization strings (in-game LABELS) — `~/fs25_l10n/l10n_en.xml`
+**The text the player actually SEES** (sell-point names, map titles, hotspot labels, UI) lives in
+`dataS.gar` under `l10n/`. A copy of the English file is persisted at **`~/fs25_l10n/l10n_en.xml`**
+(~12 MB, extracted 2026-06-25). Keys are `<e k="KEY" v="VALUE"/>`. **An l10n KEY is a pointer, not the
+displayed text** — resolve the `v=` value, never infer meaning from the key name (the `trainOtherTown`
+key renders as "Goldcrest Valley"; see [[feedback_use_internet_for_observable_behavior]]). Examples:
+`station_us_*` = the map's sell points by real name; `mapUS_title` = "Riverbend Springs". Grep this file
+to resolve any label before describing what a player sees. Re-extract via `fs-unpack dataS.gar` if missing.
+
+### Base-game NPC dialogue (the characters' actual lines) — `~/fs25_npc_dialogue/`
+All six base NPCs' English dialogue + conversation flow is persisted at **`~/fs25_npc_dialogue/npc/`**
+(27 MB text — `conversation.xml` + `*_en.xml` only; voice `.ogg/.bin` dropped). Folders: `grandpa`
+(Walter), `animalDealer` (Katie), `helper` (Ben), `forester` (Noah), `farmer` (David), `fisherman`.
+Each NPC: `dialogueStart/`, `smalltalk/`, `help/`, `mission/`, `specialConversations/`, plus Walter's
+`guidedTours/` (the tutorial lines) — see [[reference-npc-conversation-format]] for the textFlow format.
+**This is the durable source for who-says-what / who-mentions-whom** (e.g. great-uncle Paul lives in
+`grandpa/smalltalk/aboutGrandpa/…` + the sugar-beet missions — see memory `project-walter-story`). Grep
+here instead of re-extracting the ephemeral scratchpad. Re-extract via `fs-unpack dataS2.gar` if missing.
+
 **Where the player animations live (extracted from `dataS.gar`):** `character/playerAnimations/`
 - `animations.i3d.anim` (14.7 M) — **binary keyframes for ALL the player clips** (`chainsaw_walkSource`,
   the walks, idles, etc. — the same 87-clip set GRANDPA loads into its `animCharSet`).
@@ -115,5 +134,5 @@ in the interpreter but their source isn't readable as files.**
 | Ambient pedestrian styles/schedules | Yes | `pedestrianSystem.xml` |
 | GRANDPA's home/reset position | **No** — in `.gar` | Observe in-game |
 | GRANDPA's post-tour schedule | **No** — in `.gar` | Infer from XML absence |
-| NPC conversation text | **No** — `.bin` voice files in `.gar` | Log filenames give hints |
+| NPC conversation text | **YES (corrected 2026-06-25)** — extract `dataS2.gar`; readable per-language `<key>_en.xml` (`<emotional>` text) sits beside the `.bin`/`.ogg` voice | `$dataS2/npc/<npc>/.../conversation.xml` + sibling `_en.xml`; memory `reference-npc-conversation-format` |
 | GuidedTour Lua class surface | Partial — use `vlGuidedTour` console command | See [walter-guided-tour.md](walter-guided-tour.md) |
