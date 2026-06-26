@@ -76,6 +76,10 @@ function WalterWalker.new()
     self._hidden      = false  -- true while Walter has "stepped inside" (graphicsRootNode invisible)
     self._stoppedForPlayer = false  -- true while he's halted to face a nearby player (logs once)
     self._convoFrozen   = false  -- true once we've frozen followers for the current conversation (R49 FIX-5: park once, not per-frame)
+    self._hipsNode         = nil   -- cached Hips bone for post-anim Hips lock during conversation
+    self._hipsLockCbHandle = nil   -- addPostAnimationCallback handle for Hips stabilizer
+    self._hipsCaptureDone  = false -- true after frame-0 Hips capture; triggers orig() from frame 1+
+    self._frozenHipsWorld  = nil   -- {x,y,z} Hips world pos captured at convo entry; restored post-anim
     self._greetNear   = false  -- true while the player is within greet range (edge-trigger the bark)
     self._greetCooldown = 0    -- ms remaining before he'll greet again
     self._greetActive   = false -- true while OUR ambient greeting popup is up (tag-guarded close on walk-away)
@@ -193,14 +197,15 @@ function WalterWalker:_acquireNode()
                 local inConvo = walker.grandpa and walker.grandpa.isInConversation
                 if inConvo then
                     if active then
-                        -- R49 FIX-9: SKIP orig() while _active and in conversation. The probe series
-                        -- (FIX-1 through FIX-8) eliminated position, params, clip state, and per-frame writes.
-                        -- The 10 Hz Hips oscillation (3-frame alternating cycle at 30fps) is the
-                        -- ConditionalAnimation inside orig() producing a walk blend at his non-home position.
-                        -- Truly-idle Walter doesn't shimmy because he IS at home; the cow pen is not home.
-                        -- Skipping orig(): track-0 idle clip drives the body stably. Cost = face freezes
-                        -- during conversation; that is preferable to the shimmy.
-                        -- _updateWalk handles clip state once on conversation entry (see _convoFrozen).
+                        -- Option A (Hips-lock): restore face/gesture animation while suppressing the shimmy.
+                        -- Frame 0 of conversation (_hipsCaptureDone=false): skip orig() so the idle clip on
+                        -- track 0 positions Hips cleanly → post-anim callback captures the stable world pos.
+                        -- Frame 1+ (_hipsCaptureDone=true): call orig() so face/gestures animate; the post-anim
+                        -- callback (_hipsLockPostAnim) immediately overwrites Hips back to the captured position,
+                        -- neutralising the ConditionalAnimation walk blend at his non-home position.
+                        if not walker._hipsCaptureDone then return end
+                        orig(self_pg, dt)
+                        if walker._gripActive then walker:_applyHandPose() end
                         return
                     else
                         -- Truly idle (not _active): orig() runs normally — no shimmy because he's at home.
@@ -687,6 +692,31 @@ function WalterWalker:_logShimmy()
     print(string.format("[Shimmy] grn(%.3f,%.3f ry%.4f) dGrn(%.4f,%.4f) Hips(%.3f,%.3f) pin(%.3f,%.3f) spot(%.3f,%.3f) active=%s isNPC=%s idle=%s walk=%s spd=%s",
         gx, gz, gry, dx, dz, hx, hz, (g and g.x) or 0, (g and g.z) or 0, spx, spz, tostring(self._active),
         pNPC, pIdle, pWalk, pSpd))
+end
+
+function WalterWalker:_resolveHipsNode()
+    if self._hipsNode ~= nil and entityExists(self._hipsNode) then return self._hipsNode end
+    self._hipsNode = self.graphicsNode and self:_findNodeByName(self.graphicsNode, "Hips") or nil
+    return self._hipsNode
+end
+
+-- POST-ANIMATION callback: stabilize Hips bone during an active-route conversation (Option A).
+-- Two-phase: frame 0 (_hipsCaptureDone=false) — orig() was skipped so idle clip positioned Hips
+-- cleanly; capture that world pos. Frame 1+ (_hipsCaptureDone=true) — orig() just ran and
+-- ConditionalAnimation shimmied Hips; overwrite it back to the captured stable position.
+-- Face/gesture bones are untouched; only the pelvis root is held steady.
+function WalterWalker:_hipsLockPostAnim(dt)
+    local hips = self:_resolveHipsNode()
+    if hips == nil then return end
+    if not self._hipsCaptureDone then
+        local x, y, z = 0, 0, 0
+        pcall(function() x, y, z = getWorldTranslation(hips) end)
+        self._frozenHipsWorld  = { x = x, y = y, z = z }
+        self._hipsCaptureDone  = true
+        return
+    end
+    local p = self._frozenHipsWorld
+    if p then pcall(function() setWorldTranslation(hips, p.x, p.y, p.z) end) end
 end
 
 -- Resolve an i3dMapping index (e.g. "0>0") to a node under root; nil if unavailable.
@@ -1399,20 +1429,29 @@ function WalterWalker:_updateWalk(cfg, dt)
     if self.grandpa.isInConversation then
         if not self._convoFrozen then
             self._convoFrozen = true
-            -- R49 FIX-9: orig() is SKIPPED in the wrapper while _active+inConvo. That means track-0 is
-            -- NOT cleared/disabled by the wrapper. _stopWalkAnim here restores the idle clip on track 0 so
-            -- it drives the body stably (no ConditionalAnimation, no shimmy). _setAnimParams keeps params
-            -- consistent with direct-drive (isNPC=false). _syncFollowers parks spot.node / trigger once.
-            self:_stopWalkAnim()     -- reverts to idle clip; no-op if already paused
-            self:_setAnimParams(false) -- isNPC=false, idle params
-            self:_syncFollowers()    -- ONE-TIME park of spot.node / trigger / hotspot onto his stopped position
+            self:_stopWalkAnim()          -- reverts to idle clip on track 0; no-op if already paused
+            self:_setConversationParams() -- isNPC=true + idle params so orig() runs face in NPC mode
+            self:_syncFollowers()         -- ONE-TIME park of spot.node / trigger / hotspot
+            -- Register Hips-lock callback: frame 0 captures stable Hips pos (orig skipped that frame);
+            -- frame 1+ writes it back after orig()/ConditionalAnimation shimmy. Face/gestures run freely.
+            if self._hipsLockCbHandle == nil and addPostAnimationCallback ~= nil then
+                self._hipsCaptureDone  = false
+                self._frozenHipsWorld  = nil
+                self._hipsLockCbHandle = addPostAnimationCallback(WalterWalker._hipsLockPostAnim, self, nil)
+            end
         end
         return
     end
     if self._convoFrozen then
-        -- Conversation ended: reset so _startWalkAnim re-assigns the walk clip cleanly.
-        self._convoFrozen = false
-        self._isWalking = false
+        -- Conversation ended: unregister Hips lock; reset for clean walk resume.
+        if self._hipsLockCbHandle ~= nil then
+            pcall(function() removePostAnimationCallback(self._hipsLockCbHandle) end)
+            self._hipsLockCbHandle = nil
+        end
+        self._hipsCaptureDone = false
+        self._frozenHipsWorld = nil
+        self._convoFrozen     = false
+        self._isWalking       = false
     end
 
     -- Keep his map point + interaction trigger on him every active frame (R21). NOTE: the spot park inside
@@ -1586,6 +1625,10 @@ function WalterWalker:delete()
         self._flashlightNode      = nil
         self._flashlightLightNode = nil
         self._handBone            = nil
+    end
+    if self._hipsLockCbHandle ~= nil then
+        pcall(function() removePostAnimationCallback(self._hipsLockCbHandle) end)
+        self._hipsLockCbHandle = nil
     end
     self:_stopWalkAnim()
     self.grandpa      = nil
