@@ -167,6 +167,7 @@ VLConfig.WALTER_WALK = {
     approachRange = 4.0,    -- meters: he stops walking & turns to face the player within this range, so his stationary trigger fires the normal base conversation; resumes when they leave
     greetRange    = 5.0,    -- meters: he speaks an ambient time-of-day line on approach (just before he stops to face you); base "press to talk" conversation is untouched
     greetCooldownMs = 20000,-- ms before he'll greet again, so it never spams
+    greetTtl      = nil,    -- seconds the ambient greeting stays up; nil = persist until you dismiss it (Enter/click) or walk out of greetRange. Set a number (e.g. 8) to auto-vanish after that long instead.
     visitOffset   = 2.0,    -- meters: ESC-map "Visit" drops the player this far in front of Walter (his facing) instead of inside his model
     home         = { x = -758.2, y = 47.0, z = 94.3 },  -- GRANDPA_FARMHOUSE spot; where the morning reveal places him
     -- Woodshop door (cosmetic): the placeable tinyShed01 nearest `near`, animated object `saveId`.

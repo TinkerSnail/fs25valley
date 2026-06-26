@@ -493,6 +493,7 @@ function VLNPCDialog:showSpeechBox(speaker, text, onClose, opts)
         lines      = lines,
         onClose    = onClose,
         ttl        = opts and opts.ttl or nil,  -- seconds; auto-dismiss (ambient barks). nil = manual.
+        tag        = opts and opts.tag or nil,  -- caller id (e.g. "ambientGreet") so a caller can close ONLY its own box.
         eventIds   = {},
         boxLeft     = boxLeft,
         boxBottom   = SPEECH_BOX_BOTTOM,

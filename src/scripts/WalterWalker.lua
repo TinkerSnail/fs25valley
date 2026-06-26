@@ -77,6 +77,7 @@ function WalterWalker.new()
     self._stoppedForPlayer = false  -- true while he's halted to face a nearby player (logs once)
     self._greetNear   = false  -- true while the player is within greet range (edge-trigger the bark)
     self._greetCooldown = 0    -- ms remaining before he'll greet again
+    self._greetActive   = false -- true while OUR ambient greeting popup is up (tag-guarded close on walk-away)
     self._lastWakeDay = nil    -- monotonicDay of his last 5am wake-up (so it fires once per day)
     self._nightShopDay    = nil   -- monotonicDay of his last night-woodshop roll (fires/decides once per night)
     self._nightShopActive = false -- true while he's out for the occasional night visit (gates the "couldn't sleep" quip)
@@ -958,8 +959,20 @@ function WalterWalker:_armIKPostAnim(dt)
     IKUtil.updateIKChains(model.ikChains, false)
 end
 
+-- Close ONLY our own ambient greeting popup. Tag-guarded (opts.tag="ambientGreet") so we never close a
+-- heart-event or other dialog that happens to be on screen.
+function WalterWalker:_closeGreet()
+    if not self._greetActive then return end
+    local dlg = g_valleyLife and g_valleyLife.dialog
+    if dlg and dlg.speech and dlg.speech.tag == "ambientGreet" then
+        dlg:closeSpeech()
+    end
+    self._greetActive = false
+end
+
 -- Ambient greeting: when the player approaches (entering greetRange), Walter speaks a time-of-day
--- line as an auto-dismissing popup. ADDITIVE — his base-game "press to talk" conversation is left
+-- line as a popup that STAYS until you dismiss it (Enter/click) or walk out of greetRange — or auto-
+-- dismisses after greetTtl seconds if that knob is set. ADDITIVE — his base-game "press to talk" conversation is left
 -- fully intact. Edge-triggered + cooldown so it never spams; suppressed during a conversation, while
 -- he's inside (hidden), or when a mod speech / heart event is already on screen.
 function WalterWalker:_maybeGreet(dt)
@@ -968,7 +981,7 @@ function WalterWalker:_maybeGreet(dt)
     end
     local grandpa = self.grandpa
     if grandpa == nil or self.graphicsNode == nil or not entityExists(self.graphicsNode) then return end
-    if self._hidden or grandpa.isInConversation then self._greetNear = false; return end
+    if self._hidden or grandpa.isInConversation then self:_closeGreet(); self._greetNear = false; return end
 
     local px, _, pz = playerWorldPos()
     if px == nil then self._greetNear = false; return end
@@ -991,11 +1004,14 @@ function WalterWalker:_maybeGreet(dt)
                 line = vl.casualDialogue:pickTimeOfDayLine("grandpa")
             end
             if line then
-                dlg:showSpeechBox("Walter", line, nil, { ttl = 4 })
+                local gttl = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.greetTtl  -- nil = persist until dismissed / walk-away
+                dlg:showSpeechBox("Walter", line, nil, { tag = "ambientGreet", ttl = gttl })
+                self._greetActive = true
                 self._greetCooldown = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.greetCooldownMs) or 20000
             end
         end
     end
+    if self._greetNear and not near then self:_closeGreet() end  -- walked out of range → dismiss our greeting
     self._greetNear = near
 end
 
