@@ -35,35 +35,73 @@
 --                          for you all along.
 --
 -- Below: schedule-independent TIME-OF-DAY casual lines (morning/midday/evening/night).
--- Still PLACEHOLDERS — the voice is warm with a dry edge, NOT gruff; a few current
--- lines tip into taskmaster/scolding and should be softened. Rewrite against the bio
--- above. vlWalterSay cycles the current bucket (journals/console-commands.md).
+-- These are his REAL voice now (rewritten 2026-06-25 against the bio above) — warm with a
+-- dry edge that lands WITH the player, never at their expense; earned-rest / weathering /
+-- love-made-by-hand threaded through. The old placeholders' taskmaster/scolding tone was
+-- removed. Still free to refine, but the voice is the target. vlWalterSay cycles the current
+-- bucket (journals/console-commands.md).
+--
+-- VOICE RULE (2026-06-25): don't have him REBUT an objection the player never raised. Lines like
+-- "...not because the land's a tyrant" / "the work's no kind of master" / "I don't say it to flatter
+-- you" answer an argument no one's having — it reads as protesting too much / over-explaining his
+-- own philosophy. Just let him say the warm thing plainly; trust it to land. (Applies to all villagers.)
+--
+-- VOICE RULE (zen / dual-level, 2026-06-25): his best tips work on TWO levels — a real FARM observation
+-- that the player CAN read as life wisdom, if they choose. Keep it IMPLICIT: give the image/tip, never
+-- narrate the lesson ("took me a long time to learn…", "I've made my peace with…"). Let the line sit;
+-- it's for the player to enjoy on an existential level, not for Walter to spell out. ALSO: don't
+-- pre-spend the emotional story — casual greetings shouldn't confess the weathered-grief depth that the
+-- HEART EVENTS are meant to earn. Light surface, deep undercurrent the player discovers.
 
 VLCasualDialogue.register("grandpa", {
     firstMeet = "Look at you — running my farm. Your grandmother would never have believed it. ...Good to have you here, kid.",
 
     morning = {
-        "Up with the sun. Good. The land doesn't wait.",
-        "Mornin'. Plenty of daylight to waste, if you're not careful.",
-        "Coffee's about the only thing older than me that still works. Get yourself some.",
+        "Mornin', kid. No better hour on a farm than this one — everything still out ahead of you.",
+        "Up already? Good. The morning's the best part of the day out here — I'd hate for you to sleep through it.",
+        "Coffee's on. Your grandmother always said a day starts the moment you quit dreading it. She was right about most things.",
+        "Look at that light coming up over the fields. Forty years I've watched it. Still gets me.",
+        "Smells like turned earth and woodsmoke out here. Smells like home. You've kept it that way.",
+        "Ground's still got the dew on it. Best time to walk the place — before the day starts asking things of you.",
+        "Funny — every morning the place looks like it's forgotten yesterday entirely.",
+        "First light's the honest hour. Nothing's gone wrong yet.",
+        "Cool morning like this, the work near does itself. ...Don't tell it I said so.",
     },
 
     midday = {
-        "Right in the thick of the day. What do you need?",
-        "Don't let the heat make you lazy — I'm watching.",
-        "Half the day gone already. Time moves quick out here.",
+        "Right in the heart of the day. Don't let me keep you — though I never mind if you do.",
+        "Hot one. Find yourself some shade when you need it — the work'll keep.",
+        "Half the day behind you already. Time slips by like water out here — you look up and a whole season's gone.",
+        "You've got your grandmother's way of never stopping. I'd tell you to rest, but I never listened either.",
+        "Whatever you're chasing today, it'll keep. Come find me if you want company on it.",
+        "Heat of the day. Animals all know to find some shade and stand still a while. Smart, the animals.",
+        "Work goes down easier in pieces than all at once.",
+        "Midday's for the steady chores, not the big decisions — save those for when the light's kinder.",
+        "A field doing well doesn't ask much of you — just steady attention.",
     },
 
     evening = {
-        "Day's winding down. You did alright.",
-        "Sun's getting low. Reckon we both earned a sit.",
-        "Get your chores closed up before dark, now.",
+        "Day's winding down, and you've got dirt to show for it. That's the whole point, kid. Rest is earned — go earn yours.",
+        "Sun's low. Reckon we both put in an honest day. Sit a while; the porch is the best seat I own.",
+        "You did good today. It's true, and somebody ought to say so.",
+        "This is my favorite hour. Work behind you, supper ahead, the light going gold. Hard to want for much more than that.",
+        "Close up your evening however you like. No rush from me — the farm sleeps when you do.",
+        "Whatever didn't get done today, the field's not going anywhere. Let it keep till morning.",
+        "End of a day like this, I just sit and let it be done. Recommend it.",
+        "Funny — you only notice a good day around now, when it's nearly spent and nothing's gone wrong.",
+        "Look at that fence line in this light. Crooked as sin — and it's held twenty years all the same.",
     },
 
     night = {
-        "Bit late to be out, isn't it?",
-        "Ought to be resting. The farm'll still be here come morning.",
-        "Quiet hour, this. I like it. Don't tell anyone.",
+        "Out late, are you? ...No, don't mind me. Some of the best thinking gets done at this hour.",
+        "Ought to be resting — but who am I to talk. The farm'll keep till morning, I promise you that much.",
+        "Quiet hour, this. I like it — everything's easier to hear once the day goes still. Get some sleep, kid.",
+        "Still some light left in you, I see. That's alright. Just don't burn it all in one night.",
+        "Your grandmother loved this hour — everything still, the whole place ours. I still feel her in it. ...Listen to me. Off to bed.",
+        "Stars are out. We don't ever get to see 'em busy.",
+        "Place runs itself fine at night. Good to be reminded it can.",
+        "Cooler now — feel that? Whole place kind of exhales after sundown.",
+        "Nothing on this farm that won't keep till morning. Go on to bed.",
     },
 
     -- Spoken only while he's out for the OCCASIONAL night woodshop visit (couldn't sleep).
@@ -76,7 +114,8 @@ VLCasualDialogue.register("grandpa", {
     },
 
     alreadyTalked = {
-        "We've said our piece today. Go on — work won't do itself.",
-        "Told you what I know. Get back to it.",
+        "We've had our visit for today. Go on — I'll keep till tomorrow. I always do.",
+        "Said my piece, kid. You know where to find me when you want more of it.",
+        "I'm an old man, not a radio — only got so many words in me a day. Off you go.",
     },
 })
