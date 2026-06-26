@@ -27,7 +27,8 @@ the walk-loop basics in [npc-movement.md](npc-movement.md); commands in
 | 9–12 | `mailbox` | woodShop → entryDrive → mailApproach → **mailbox** (20-min pause) → home. |
 | 12–14 | `produceStand` | Shares the mailbox approach, branches to the **produce stand** (20-min pause). |
 | 14–16 | `woodshopVisit` | Walks to `tinyShed01`, **opens the door**, steps inside, **lights on**, hangs out 45 min, **lights off**, **closes the door**, home. His craftsman hour. |
-| 16–19 | (idle) | Deliberate **home stretch** — he relaxes around the farm. |
+| 16–18 | `checkingCows` | Strolls out to the **cow yard** to look the inherited Angus herd over (20-min pause facing them), then home. Waypoints captured in-game (home → barnPath1 → barnPath2 → cowYard, return mirrored). See "Animal husbandry beat" below. |
+| 18–19 | (idle) | Deliberate **home stretch** — he relaxes around the farm. |
 | 19:00 | `eveningReturn` | Walks to the door and **steps inside** (vanishes) for the night. |
 | ~22 (some nights) | `nightWoodshop` (manual, occasional) | **Can't sleep** — emerges from the door, walks to the woodshop, **lights on** (glowing in the dark), works ~30 min, **lights off**, returns and **steps back inside** (re-hidden). Deterministic per-night chance (`nightWoodshopChance`), so it's occasional but stable across save/reload. Reveals at the door + re-hides at the door — a night twin of `morningDeparture` + `woodshopVisit` + `eveningReturn`. An ambient quip addresses the late hour when you approach the lit shed. `vlWalterNight` forces it. |
 
@@ -140,11 +141,47 @@ metatable quirk + a multi-step hunt — see engine-api.md.)
   the additive-dialog principle added to [dialog-boxes.md](dialog-boxes.md). Diagnostic dump-probes
   stripped after journaling (kept `vlDoorTest`/`vlLightTest`).
 
+## Animal husbandry beat (2026-06-26)
+
+The lightweight cow/Katie handoff — three pieces reusing existing systems, no new heavy machinery:
+
+1. **Daily `checkingCows` route** (`VLConfig.WALTER_WALK.loops`, 16–18): home → barnPath1 → barnPath2 →
+   **cowYard** (20-min pause, `pauseRy` facing the herd) → return **mirrors** the outbound. Waypoints
+   captured in-game with `vlPos`. He looks the inherited 3-Angus herd over each day.
+2. **One-time proximity handoff** (`src/content/WalterCowsIntro.lua`, ticked from `VLNPCSystem:update`):
+   the first time the player comes within `RANGE` (~10m) of the cow barn (`cowBarnSmall`, resolved by
+   config + nearest), Walter (in voice, movement locked) names the inherited Angus and points to Katie —
+   *"these are yours… go see Katie."* Once per save (`walterCowsHandoff` flag). `vlWalterCows` force-plays;
+   `vlWalterCows reset` clears the flag to re-test.
+3. **Repeatable cow-context greetings**: a `cows` named pool in `Walter.lua`, surfaced by
+   `_maybeGreet` when `_nearCowPen()` (Walter within `cowPen.range` of the pen) — so greeting him out at
+   the herd draws cow lines instead of the time-of-day pool. Same pattern as the `nightWoodshop` quips.
+
+> History note: an earlier "Walter ESCORTS the player to the cows" version (a `cowHandoff` manualOnly
+> route + state machine + `noStopForPlayer`) was built then RETIRED for this lighter shape. Base-game
+> Walter only teleports + the tour never covers animals (it's crops only), so escorting was over-built.
+
+## ⚠️ R49 — the "pee-dance / flop" while talking (conversation position-writes)
+
+Talking to Walter **while he's paused on an active route** made his body shimmy/flop (Hips weight-shift
+~10–12cm) — ONLY while the conversation is up, ONLY when `_active`. **Probe-confirmed cause** (`vlShimmy`):
+the container (`graphicsRootNode`) is dead-stable and `pin`==`spot`, but `_syncFollowers` re-writes
+`grandpa.x/y/z` **every frame during the conversation**, and feeding the base game his position each frame
+while it runs the talk animation makes its **ConditionalAnimation flicker** (the same family as the R0–R17
+walk twitch). Truly-idle Walter never flops because `_updateWalk`/`_syncFollowers` don't run when
+`_active=false`. **Fix (FIX-3, pending final confirm):** in `_syncFollowers`, SKIP the `grandpa.x/y/z` pin
+while `isInConversation`, but KEEP parking `grandpa.spot.node` on him (so the base game positions him at
+his spot instead of yanking him home — dropping the pin *without* the parked spot caused a worse VIBRATE).
+**Method lesson:** two blind guesses made it worse; the `vlShimmy` probe (kept, like `vlDoorTest`) gave the
+ground truth each time. Full saga: memory `walter-walker-history` R49.
+
 ## New `VLConfig.WALTER_WALK` knobs
 
 `speed`, `homeRy`, `home`, `yOffset`, `stairLift`, `dayStartHour` (5), `approachRange` (4),
-`greetRange` (5), `greetCooldownMs` (20000), `visitOffset` (2), `nightWoodshopHour` (22),
-`nightWoodshopChance` (0.4), `woodshopDoor` (`{near, config, saveId}`), and `loops` (the schedule).
+`greetRange` (5), `greetCooldownMs` (20000), `greetTtl` (nil = greeting persists till dismissed/walk-away),
+`cowPen` (`{x, z, range}` — when Walter's near here his greeting uses the `cows` pool), `visitOffset` (2),
+`nightWoodshopHour` (22), `nightWoodshopChance` (0.4), `woodshopDoor` (`{near, config, saveId}`), and
+`loops` (the schedule, now incl. `checkingCows`).
 
 ## Design intent
 

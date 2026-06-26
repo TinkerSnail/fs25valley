@@ -113,6 +113,17 @@ VLCasualDialogue.register("grandpa", {
         "Your grandmother used to come find me out here, nights like this one. ...Some habits outlast the reason for 'em. Go on back to bed, kid.",
     },
 
+    -- Spoken when you greet him out at the COW PEN (his checkingCows route / near the herd). Ambient &
+    -- repeatable — the inherited Angus, the quiet of it, and a standing nudge toward Katie. Distinct from
+    -- the one-time WalterCowsIntro handoff. Delivered via WalterWalker:_maybeGreet when _nearCowPen().
+    cows = {
+        "Angus, these. Beef stock — they'll never fill a milk pail, but they're easy keepers.",
+        "Come out most days to look 'em over. You learn a herd by watching it a while.",
+        "Quiet creatures, cattle. I do some of my best thinking out here with 'em, truth be told.",
+        "Three head now. Time was this whole yard was full of cattle — busy days. ...This'll do.",
+        "If you mean to keep cattle proper, go and see Katie. She's forgotten more about animals than I ever knew.",
+    },
+
     alreadyTalked = {
         "We've had our visit for today. Go on — I'll keep till tomorrow. I always do.",
         "Said my piece, kid. You know where to find me when you want more of it.",

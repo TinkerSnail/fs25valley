@@ -358,7 +358,20 @@ function WalterWalker:_syncFollowers()
     local x, y, z = self._wx, self._wy, self._wz
 
     -- NPC position fields (base game derives range/trigger logic from these; body is separate).
-    grandpa.x, grandpa.y, grandpa.z = x, y, z
+    -- R49 FLOP FIX: do NOT re-write these every frame DURING a conversation. The probe proved the body
+    -- container is dead-stable and pin==spot, yet the Hips still flop ~12cm — caused by feeding the base
+    -- game his position each frame while it runs the talk animation (its ConditionalAnimation flickers).
+    -- Skipping the pin while talking stops that; the spot (below) holds him in place so we don't yank.
+    if not grandpa.isInConversation then
+        grandpa.x, grandpa.y, grandpa.z = x, y, z
+    end
+
+    -- Park the base game's positional SPOT on him — ALWAYS, including during the conversation. With the
+    -- spot at his position, the base game positions him there (no movement to animate) instead of pulling
+    -- him back to his home spot (which was the FIX-1 vibrate when we dropped the pin without this).
+    if grandpa.spot ~= nil and grandpa.spot.node ~= nil and entityExists(grandpa.spot.node) then
+        pcall(function() setWorldTranslation(grandpa.spot.node, x, y, z) end)
+    end
 
     -- Map icon RENDER follows via the getWorldPosition override installed in _acquireNode (R30).
     -- The map's "Visit"/teleport reads the hotspot's worldX/worldZ FIELDS instead (R31), so keep
@@ -581,6 +594,31 @@ function WalterWalker:_dumpFlashlightTree(node, depth)
     for i = 0, getNumOfChildren(node) - 1 do
         self:_dumpFlashlightTree(getChildAt(node, i), depth + 1)
     end
+end
+
+-- R49 SHIMMY PROBE (toggle with vlShimmy 1). While talking, log his body each frame so we can SEE what
+-- moves: the CONTAINER (graphicsRootNode world pos + local ry — if THIS oscillates, WE/the base game are
+-- fighting over his position/facing = our bug) vs the HIPS bone (the clip's own weight-shift — if only
+-- Hips moves while grn is stable, the shimmy is the base TALK CLIP, not a position fight). Plus our pin
+-- (grandpa.x/z) vs the base game's spot (where it wants him). Read [Shimmy] lines in log.txt; strip after.
+function WalterWalker:_logShimmy()
+    local grn, g = self.graphicsNode, self.grandpa
+    if grn == nil or not entityExists(grn) then return end
+    if self._shimmyHips == nil then pcall(function() self._shimmyHips = self:_findNodeByName(grn, "Hips") end) end
+    local gx, gy, gz, gry, hx, hz, spx, spz = 0, 0, 0, 0, 0, 0, 0, 0
+    pcall(function() gx, gy, gz = getWorldTranslation(grn) end)
+    pcall(function() local _, ry = getRotation(grn); gry = ry end)
+    if self._shimmyHips and entityExists(self._shimmyHips) then
+        pcall(function() hx, _, hz = getWorldTranslation(self._shimmyHips) end)
+    end
+    if g and g.spot and g.spot.node and entityExists(g.spot.node) then
+        pcall(function() spx, _, spz = getWorldTranslation(g.spot.node) end)
+    end
+    local dx, dz = 0, 0
+    if self._shimmyLast then dx = gx - self._shimmyLast.x; dz = gz - self._shimmyLast.z end
+    self._shimmyLast = { x = gx, z = gz }
+    print(string.format("[Shimmy] grn(%.3f,%.3f ry%.4f) dGrn(%.4f,%.4f) Hips(%.3f,%.3f) pin(%.3f,%.3f) spot(%.3f,%.3f) active=%s",
+        gx, gz, gry, dx, dz, hx, hz, (g and g.x) or 0, (g and g.z) or 0, spx, spz, tostring(self._active)))
 end
 
 -- Resolve an i3dMapping index (e.g. "0>0") to a node under root; nil if unavailable.
@@ -970,6 +1008,16 @@ function WalterWalker:_closeGreet()
     self._greetActive = false
 end
 
+-- True when WALTER himself is standing at the cow pen (e.g. paused there on his checkingCows route), so
+-- his greeting switches to cow-context lines when you come up to him. Pen center + range from config.
+function WalterWalker:_nearCowPen()
+    if self._wx == nil then return false end
+    local pen = VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.cowPen
+    if pen == nil then return false end
+    local dx, dz = self._wx - pen.x, self._wz - pen.z
+    return (dx * dx + dz * dz) <= ((pen.range or 18.0) ^ 2)
+end
+
 -- Ambient greeting: when the player approaches (entering greetRange), Walter speaks a time-of-day
 -- line as a popup that STAYS until you dismiss it (Enter/click) or walk out of greetRange — or auto-
 -- dismisses after greetTtl seconds if that knob is set. ADDITIVE — his base-game "press to talk" conversation is left
@@ -997,7 +1045,10 @@ function WalterWalker:_maybeGreet(dt)
             -- While out for the occasional night woodshop visit, address it directly ("couldn't
             -- sleep") instead of the generic night line; fall back to the time-of-day line.
             local line = nil
-            if self._nightShopActive then
+            if self:_nearCowPen() then
+                line = vl.casualDialogue:pickNamedPool("grandpa", "cows")  -- contextual: he's out at the herd
+            end
+            if line == nil and self._nightShopActive then
                 line = vl.casualDialogue:pickNamedPool("grandpa", "nightWoodshop")
             end
             if line == nil then
@@ -1167,6 +1218,9 @@ function WalterWalker:update(dt)
     if not self:_acquireNode() then return end
     self:_tryResolveAnim()
 
+    -- R49 shimmy diagnostic: log his body each frame while talking (vlShimmy 1). Read-only.
+    if self._shimmyProbe and self.grandpa and self.grandpa.isInConversation then self:_logShimmy() end
+
     local cfg = VLConfig.WALTER_WALK
     if type(cfg) ~= "table" or type(cfg.loops) ~= "table" then return end
     if self._yOffset    == nil then self._yOffset   = cfg.yOffset   or 0    end
@@ -1264,15 +1318,24 @@ function WalterWalker:_updateWalk(cfg, dt)
     local waypoints = loop.waypoints
     local speed     = loop.speed or cfg.speed or 0.8
 
-    -- Keep his map point + interaction trigger on him every active frame (R21).
+    -- Keep his map point + interaction trigger on him every active frame (R21). NOTE: this position
+    -- pin is LOAD-BEARING — moving it AFTER the conversation yield made him VIBRATE (R49), because the
+    -- base game then yanks grandpa.x/z back to his home spot mid-conversation. Leave it here.
     self:_syncFollowers()
 
     -- In conversation: YIELD fully to the base game. The wrapper runs orig() so the conversation
     -- animates (face/gestures); we just revert our walk clip to idle once and stop driving. (Driving
     -- the walk while talking starves the conversation of orig() → gliding.) He holds position because
     -- orig() with isNPC=false doesn't move him. Resume the route when the conversation ends.
+    -- R49 SHIMMY FIX (probe-confirmed): the container (grn) is dead-stable during a conversation; only
+    -- the HIPS oscillates — i.e. our IDLE clip, left ENABLED on track 0 by _stopWalkAnim, fights orig()'s
+    -- TALK animation on the skeleton (the R17 clip war, but during a convo instead of a walk). So clear
+    -- our clip AND disable track 0 entirely, handing the skeleton solely to orig() for the talk. Track 0
+    -- re-enables on walk resume (_startWalkAnim). (Truly-idle Walter never fights because orig is idle
+    -- too; only a conversation makes orig play a different animation.)
     if self.grandpa.isInConversation then
         self:_stopWalkAnim()
+        if self.animCharSet ~= nil then pcall(function() disableAnimTrack(self.animCharSet, 0) end) end
         return
     end
 
@@ -1281,7 +1344,9 @@ function WalterWalker:_updateWalk(cfg, dt)
     local approach   = cfg.approachRange or 6.0
     local px, _, pz  = playerWorldPos()
     local playerNear = false
-    if px ~= nil then
+    -- noStopForPlayer routes (e.g. cowHandoff, where Walter is LEADING the player somewhere) keep walking
+    -- even as the player follows closely — otherwise he'd halt every step and never arrive.
+    if px ~= nil and not loop.noStopForPlayer then
         local dx, dz = px - self._wx, pz - self._wz
         playerNear = (dx * dx + dz * dz) <= (approach * approach)
     end

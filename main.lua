@@ -36,6 +36,7 @@ source(modDir .. "src/content/Walter.lua")  -- Walter casual/time-of-day lines (
 
 -- Post-tour beat: hooks GuidedTour.finish/cancel to introduce Marta + the market.
 source(modDir .. "src/content/WalterIntro.lua")
+source(modDir .. "src/content/WalterCowsIntro.lua")  -- one-time cow/husbandry handoff near the barn
 
 -- Mission lifecycle
 
@@ -1227,6 +1228,31 @@ function VLConsole:playWalterIntro()
     if VLWalterIntro == nil then return "[ValleyLife] WalterIntro unavailable." end
     VLWalterIntro.play(true)
     return "[ValleyLife] Played Walter market intro (forced)."
+end
+
+-- vlShimmy: toggle the R49 body probe — logs grn/Hips/pin/spot each frame while Walter is talking.
+function VLConsole:shimmyProbe(arg)
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    local on = not (arg ~= nil and (tostring(arg) == "0" or string.lower(tostring(arg)) == "off"))
+    ww._shimmyProbe = on
+    ww._shimmyHips = nil
+    ww._shimmyLast = nil
+    return "[ValleyLife] Shimmy probe " .. (on
+        and "ON — talk to Walter while he's paused on a route, then read the [Shimmy] lines in log.txt."
+        or "OFF.")
+end
+
+-- vlWalterCows: force-play Walter's one-time cow/husbandry handoff (bypasses the once-only flag).
+function VLConsole:playWalterCows(arg)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    if VLWalterCowsIntro == nil then return "[ValleyLife] WalterCowsIntro unavailable." end
+    if arg ~= nil and (tostring(arg) == "0" or string.lower(tostring(arg)) == "reset") then
+        g_valleyLife:setFlag("walterCowsHandoff", false)  -- clear the once-only flag → re-arm the proximity trigger
+        return "[ValleyLife] Cow handoff RE-ARMED — walk up to the pen to trigger it at the new range."
+    end
+    VLWalterCowsIntro.play(true)
+    return "[ValleyLife] Played Walter cow/husbandry handoff (forced)."
 end
 
 -- vlStyle: enumerate the base-game character style configs (hair, beard, face,
@@ -2450,6 +2476,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlLightTest", "TEST woodshop lights on/off: vlLightTest <1on/0off>", "lightTest", VLConsole)
     addConsoleCommand("vlSkipPause", "Skip current mid-route pause and send NPC to next waypoint: vlSkipPause <npcId>", "skipPause", VLConsole)
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
+    addConsoleCommand("vlWalterCows", "Force-play Walter's one-time cow/husbandry handoff", "playWalterCows", VLConsole)
+    addConsoleCommand("vlShimmy", "Probe Walter's body each frame while talking (R49 shimmy diag): vlShimmy <1|0>", "shimmyProbe", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
