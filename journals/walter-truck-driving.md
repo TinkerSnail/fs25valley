@@ -82,6 +82,21 @@ kinematic path. It does **full road pathfinding** — `AIDrivable:createAgent` b
 map's AI road network. Files: `ai/jobs/AIJobGoTo.lua`, `ai/tasks/AITaskDriveTo.lua`, `ai/AISystem.lua`,
 `vehicles/specializations/{AIDrivable,AIJobVehicle,AIVehicle}.lua`.
 
+### What "the AI road network" is — we ride the base game's own routes
+
+The pathfinder navigates a **navigation map** into which the base game registers the map's **AI road
+splines**: `AISystem.onCreateAIRoadSpline` / `AISystem:addRoadSpline(spline, maxWidth, maxTurningRadius,
+maxHeight)` → `addRoadsToVehicleNavigationMap(navigationMap, subSpline, …)`. Those splines are authored into
+the Riverbend Springs map i3d (flagged with the `isAISpline` user attribute) — **the same road network the
+base-game hired workers and town traffic use** (the left-hand-traffic note in `aiSystem.xml` says "traffic
+and ai splines need to be set up … in map itself"). So `AIJobGoTo` does NOT hand-author a path; it snaps the
+truck onto the shipped AI road graph and pathfinds across it to the target. We provide only a destination;
+the roads, turning radius, braking and obstacle avoidance are all base-game. It is on-demand pathfinding
+(reroutes around blockages), not a fixed scripted spline.
+
+**See the network in-game:** `gsAISplinesShow` (base-game console command, registered in `AISystem`) toggles
+AI-spline visibility — use it to confirm the farm↔downtown connection and pick a reachable target coord.
+
 ### Starting a Go-To job from Lua (SERVER/host only)
 
 ```lua
