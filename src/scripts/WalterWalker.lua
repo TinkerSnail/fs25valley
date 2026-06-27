@@ -113,6 +113,10 @@ function WalterWalker.new()
     self._lastTick    = -1
     self._yOffset     = nil   -- lazy-init from VLConfig.WALTER_WALK.yOffset; live-tunable via vlWalterYOffset
     self._stairLift   = nil   -- lazy-init from VLConfig.WALTER_WALK.stairLift; live-tunable via vlWalterStairLift
+    self._inTruck       = false  -- true while Walter is seated as the truck's vehicleCharacter driver
+    self._truckSeatNode = nil   -- (legacy probe field; unused by the setVehicleCharacter path)
+    self._truck         = nil   -- the truck vehicle while _inTruck (for the per-frame IK pump)
+    self._vehicleChar   = nil   -- truck.spec_enterable.vehicleCharacter — pumped each frame to solve seated IK
     self._origPlayerGraphicsUpdate = nil
     self._patchedClass             = nil
     return self
@@ -194,6 +198,9 @@ function WalterWalker:_acquireNode()
                 -- BUT a CONVERSATION needs orig() to animate (face/gestures); if a route is active
                 -- during a conversation, skipping orig() starves it → he glides. So also run orig()
                 -- when in conversation, and let _updateWalk yield the route to the base game.
+                -- In-truck: skip orig() entirely. Position/rotation set once at link time.
+                if walker._inTruck then return end
+
                 local inConvo = walker.grandpa and walker.grandpa.isInConversation
                 if inConvo then
                     if active then
@@ -1316,6 +1323,17 @@ function WalterWalker:update(dt)
     if not self:_acquireNode() then return end
     self:_tryResolveAnim()
 
+    -- Seated in the truck: the vehicleCharacter (its own HumanModel) is the visible driver, posed by
+    -- SPINE_ROTATION + IK. Enterable only pumps vc:update() while a player controls the vehicle, so we
+    -- pump it ourselves to keep the hands-on-wheel IK solved. Suppress all route/greeting/flashlight logic.
+    if self._inTruck then
+        local vc = self._vehicleChar
+        if vc ~= nil and vc.playerModel ~= nil and vc.playerModel.isLoaded then
+            pcall(function() vc:update(dt) end)
+        end
+        return
+    end
+
     -- R49 shimmy diagnostic: log his body each frame while talking (vlShimmy 1). Read-only.
     if self._shimmyProbe and self.grandpa and self.grandpa.isInConversation then self:_logShimmy() end
 
@@ -1410,6 +1428,7 @@ function WalterWalker:_surfaceY(waypoints, walk, target)
 end
 
 function WalterWalker:_updateWalk(cfg, dt)
+    if self._inTruck then return end  -- truck driving: suppress all route/position logic
     local walk = self.walk
     local loop = self._loop
     if loop == nil then self._active = false; return end
@@ -1598,6 +1617,7 @@ function WalterWalker:applyPosition()
     -- Drive spot.node only. The wrapper feeds spot.node before the engine snaps; this hook
     -- keeps spot.node parked at our target between frames. NEVER touch graphicsNode rotation
     -- directly — that fights the engine's snap and is the source of all prior twitching.
+    if self._inTruck then return end
     if not self._active then return end
     if self.graphicsNode == nil or not entityExists(self.graphicsNode) then return end
     setRotation(self.graphicsNode, 0, self._ry, 0)

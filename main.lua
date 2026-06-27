@@ -1333,6 +1333,481 @@ function VLConsole:dumpVehicle()
     return string.format("[VL][Truck] done — filename=%s uid=%s pos=(%.1f,%.1f,%.1f)", filename, uid, x, y, z)
 end
 
+-- vlDumpTruck: probe spec_enterable, spec_aiDrivable, and spec_ikChains on Grandpa's truck.
+-- Find the truck by uniqueId, then dump driver seat node, AI driver state, and IK chain info.
+function VLConsole:dumpTruck()
+    local TRUCK_UID = "vehiclea0e0823360da9410fb4db3ebcbbfc489"
+    local truck = nil
+    pcall(function()
+        local vs = g_currentMission and g_currentMission.vehicleSystem
+        if vs and vs.vehicles then
+            for _, v in ipairs(vs.vehicles) do
+                if tostring(v.uniqueId) == TRUCK_UID then truck = v break end
+            end
+        end
+    end)
+    if truck == nil then
+        return "[VL][Truck] truck not found — is it loaded? (uniqueId=" .. TRUCK_UID .. ")"
+    end
+    print("[VL][Truck] found: " .. tostring(truck.configFileName or "?"))
+
+    -- Helper: dump a table's keys (all types, truncated)
+    local function dumpTable(prefix, tbl, maxDepth)
+        if type(tbl) ~= "table" then
+            print(prefix .. " = " .. type(tbl) .. ": " .. tostring(tbl)) return
+        end
+        local count = 0
+        for k, v in pairs(tbl) do
+            count = count + 1
+            if count > 60 then print(prefix .. "  ...(truncated)") break end
+            local t = type(v)
+            if t == "userdata" then
+                local ok, name = pcall(getName, v)
+                local ox, oy, oz = 0, 0, 0
+                pcall(function() ox, oy, oz = getWorldTranslation(v) end)
+                if ok then
+                    print(string.format("%s  .%s = NODE '%s' @ (%.2f,%.2f,%.2f)", prefix, tostring(k), name, ox, oy, oz))
+                else
+                    print(string.format("%s  .%s = userdata", prefix, tostring(k)))
+                end
+            elseif t == "function" then
+                print(string.format("%s  .%s = function", prefix, tostring(k)))
+            elseif t == "table" then
+                print(string.format("%s  .%s = table", prefix, tostring(k)))
+                if maxDepth and maxDepth > 0 then dumpTable(prefix .. "  [" .. tostring(k) .. "]", v, maxDepth - 1) end
+            else
+                print(string.format("%s  .%s = %s", prefix, tostring(k), tostring(v)))
+            end
+        end
+        if count == 0 then print(prefix .. "  (empty)") end
+    end
+
+    -- spec_enterable
+    pcall(function()
+        local se = truck.spec_enterable
+        print("[VL][Truck] spec_enterable (" .. type(se) .. "):")
+        dumpTable("[VL][Truck][enterable]", se, 0)
+    end)
+
+    -- Top-level truck fields with "character", "driver", "seat", "enter" in key name
+    pcall(function()
+        print("[VL][Truck] truck fields matching character/driver/seat/enter:")
+        for k, v in pairs(truck) do
+            local lk = string.lower(tostring(k))
+            if lk:find("character") or lk:find("driver") or lk:find("seat") or lk:find("enter") then
+                local t = type(v)
+                if t == "userdata" then
+                    local ok, name = pcall(getName, v)
+                    print(string.format("  .%s = NODE '%s'", k, ok and name or "?"))
+                else
+                    print(string.format("  .%s = %s: %s", k, t, tostring(v):sub(1,60)))
+                end
+            end
+        end
+    end)
+
+    -- spec_aiDrivable
+    pcall(function()
+        local sad = truck.spec_aiDrivable
+        print("[VL][Truck] spec_aiDrivable (" .. type(sad) .. "):")
+        dumpTable("[VL][Truck][aiDriv]", sad, 0)
+    end)
+
+    -- spec_ikChains
+    pcall(function()
+        local sik = truck.spec_ikChains
+        print("[VL][Truck] spec_ikChains (" .. type(sik) .. "):")
+        dumpTable("[VL][Truck][ikChains]", sik, 1)
+    end)
+
+    -- Probe vehicleCharacter and the character node position
+    pcall(function()
+        local se = truck.spec_enterable
+        if se == nil then return end
+
+        -- defaultCharacterNode: where does the driver character sit?
+        local cn = se.defaultCharacterNode
+        if cn and entityExists(cn) then
+            local wx, wy, wz = getWorldTranslation(cn)
+            local name = getName(cn) or "?"
+            print(string.format("[VL][Truck] defaultCharacterNode '%s' @ world (%.3f,%.3f,%.3f)", name, wx, wy, wz))
+        end
+
+        -- enterReferenceNode
+        local en = se.enterReferenceNode
+        if en and entityExists(en) then
+            local wx, wy, wz = getWorldTranslation(en)
+            print(string.format("[VL][Truck] enterReferenceNode '%s' @ world (%.3f,%.3f,%.3f)", getName(en) or "?", wx, wy, wz))
+        end
+
+        -- vehicleCharacter: dump its fields
+        local vc = se.vehicleCharacter
+        if type(vc) == "table" then
+            print("[VL][Truck] vehicleCharacter fields:")
+            for k, v in pairs(vc) do
+                local t = type(v)
+                if t == "userdata" then
+                    local ok, name = pcall(getName, v)
+                    local wx, wy, wz = 0, 0, 0
+                    pcall(function() wx, wy, wz = getWorldTranslation(v) end)
+                    print(string.format("  .%s = NODE '%s' @ (%.3f,%.3f,%.3f)", k, ok and name or "?", wx, wy, wz))
+                elseif t == "function" then
+                    -- skip
+                elseif t == "table" then
+                    print(string.format("  .%s = table", k))
+                else
+                    print(string.format("  .%s = %s", k, tostring(v)))
+                end
+            end
+        end
+
+        -- defaultCharacterTargets: IK targets for hands on wheel etc.
+        local dct = se.defaultCharacterTargets
+        if type(dct) == "table" then
+            print("[VL][Truck] defaultCharacterTargets:")
+            for i, t in ipairs(dct) do
+                if type(t) == "table" then
+                    for k, v in pairs(t) do
+                        local vt = type(v)
+                        if vt == "userdata" then
+                            local ok, name = pcall(getName, v)
+                            local wx, wy, wz = 0, 0, 0
+                            pcall(function() wx, wy, wz = getWorldTranslation(v) end)
+                            print(string.format("  [%d].%s = NODE '%s' @ (%.3f,%.3f,%.3f)", i, k, ok and name or "?", wx, wy, wz))
+                        elseif vt ~= "function" then
+                            print(string.format("  [%d].%s = %s", i, k, tostring(v)))
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- poseData from aiDrivable
+    pcall(function()
+        local pd = truck.spec_aiDrivable and truck.spec_aiDrivable.poseData
+        if type(pd) == "table" then
+            print("[VL][Truck] aiDrivable.poseData:")
+            for k, v in pairs(pd) do
+                if type(v) ~= "function" then
+                    print(string.format("  .%s = %s (%s)", k, tostring(v):sub(1,60), type(v)))
+                end
+            end
+        end
+    end)
+
+    -- Active animation on the playerSkin (defaultCharacterNode) — most useful while seated
+    pcall(function()
+        local se = truck.spec_enterable
+        local cn = se and se.defaultCharacterNode
+        if cn == nil or not entityExists(cn) then
+            print("[VL][Truck] playerSkin node not found for anim probe") return
+        end
+        print("[VL][Truck] playerSkin anim probe (run while seated for useful output):")
+        -- Try to find the skeleton child and read its clip
+        local nChildren = getNumOfChildren(cn)
+        print(string.format("  playerSkin has %d children", nChildren))
+        for i = 0, nChildren - 1 do
+            local child = getChildAt(cn, i)
+            local cname = getName(child) or "?"
+            print(string.format("  child[%d] = '%s'", i, cname))
+        end
+        -- Try getAnimCharacterClipName on the node itself
+        for track = 0, 3 do
+            local ok, clipName = pcall(getAnimCharacterClipName, cn, track)
+            if ok and clipName and clipName ~= "" then
+                print(string.format("  track[%d] clip = '%s'", track, clipName))
+            end
+        end
+    end)
+
+    -- Probe the local player's character while seated — find the driving animation clip
+    pcall(function()
+        local player = g_localPlayer
+        if player == nil then print("[VL][Truck] no local player for char probe") return end
+        print("[VL][Truck] player char probe (best while seated):")
+
+        -- Try graphicsComponent path
+        local gc = player.graphicsComponent
+        if gc == nil then print("  no graphicsComponent") return end
+
+        local model = gc.model
+        if model == nil then print("  no gc.model") return end
+        print("  gc.model type=" .. type(model))
+
+        local skel = model.skeleton
+        if skel then
+            print("  model.skeleton = " .. tostring(skel))
+            -- Try to read animation clips on tracks 0-5
+            for track = 0, 5 do
+                local ok, clip = pcall(getAnimCharacterClipName, skel, track)
+                if ok and clip and clip ~= "" then
+                    print(string.format("  skel track[%d] = '%s'", track, clip))
+                end
+            end
+        else
+            print("  no model.skeleton")
+        end
+
+        -- Also try the graphicsRootNode
+        local rootNode = gc.rootNode or (model and model.rootNode)
+        if rootNode and entityExists(rootNode) then
+            local wx, wy, wz = getWorldTranslation(rootNode)
+            print(string.format("  rootNode '%s' @ world (%.3f,%.3f,%.3f)", getName(rootNode) or "?", wx, wy, wz))
+            for track = 0, 5 do
+                local ok, clip = pcall(getAnimCharacterClipName, rootNode, track)
+                if ok and clip and clip ~= "" then
+                    print(string.format("  rootNode track[%d] = '%s'", track, clip))
+                end
+            end
+        end
+
+        -- Probe gc.animation for current clip name
+        local anim = gc.animation
+        if type(anim) == "table" then
+            print("  gc.animation fields:")
+            for k, v in pairs(anim) do
+                local t = type(v)
+                if t ~= "function" then
+                    print(string.format("    .%s = %s (%s)", k, tostring(v):sub(1,80), t))
+                end
+            end
+        end
+
+        -- Try graphicsRootNode directly + its children for clip names
+        local grn = gc.graphicsRootNode
+        if grn and entityExists(grn) then
+            local wx, wy, wz = getWorldTranslation(grn)
+            print(string.format("  graphicsRootNode '%s' @ world (%.3f,%.3f,%.3f)", getName(grn) or "?", wx, wy, wz))
+            for track = 0, 5 do
+                local ok, clip = pcall(getAnimCharacterClipName, grn, track)
+                if ok and clip and clip ~= "" then
+                    print(string.format("  grn track[%d] = '%s'", track, clip))
+                end
+            end
+            local nc = getNumOfChildren(grn)
+            for i = 0, math.min(nc-1, 10) do
+                local child = getChildAt(grn, i)
+                local cname = getName(child) or "?"
+                for track = 0, 2 do
+                    local ok, clip = pcall(getAnimCharacterClipName, child, track)
+                    if ok and clip and clip ~= "" then
+                        print(string.format("  grn.child[%s] track[%d] = '%s'", cname, track, clip))
+                    end
+                end
+            end
+        end
+    end)
+
+    return "[VL][Truck] dumpTruck done — check log"
+end
+
+-- vlDumpDriver: while seated in ANY vehicle, dump the player's animCharSet + active clips.
+-- Used to find exactly which clip produces the correct seated pose so Walter can mirror it.
+function VLConsole:dumpDriver()
+    local player = g_localPlayer
+    if player == nil then return "[VL] no local player" end
+    local vehicle = player:getCurrentVehicle()
+    if vehicle == nil then return "[VL] not in a vehicle" end
+    local pg = player.graphicsComponent
+    if pg == nil then return "[VL] no player graphicsComponent" end
+
+    print(string.format("[VL][DumpDriver] vehicle=%s", tostring(vehicle.configFileName or vehicle.filename)))
+
+    pcall(function()
+        local model = pg.model
+        local skel  = model and model.skeleton
+        print(string.format("[VL][DumpDriver] player skeleton=%s", tostring(skel)))
+        if skel and skel ~= 0 then
+            local acs = getAnimCharacterSet(skel)
+            print(string.format("[VL][DumpDriver] player animCharSet=%s", tostring(acs)))
+            if acs and acs ~= 0 then
+                -- Check which tracks are enabled and what clips are on them
+                for t = 0, 5 do
+                    local ok, weight = pcall(getAnimTrackBlendWeight, acs, t)
+                    if ok and weight and weight > 0 then
+                        print(string.format("  track[%d] weight=%.2f", t, weight))
+                    end
+                end
+                -- Try known clip names to see which ones exist on this charset
+                local CANDIDATES = {
+                    "idle1Source","idle2Source","idle1FemaleSource","idle1MaleSource",
+                    "drive1Source","driveSource","drivingSource","vehicleDrive1Source",
+                    "sit1Source","seated1Source","sitIdle1Source","vehicleSit1Source",
+                    "NPCWalkMale01Source","walkFwd1Source",
+                }
+                for _, name in ipairs(CANDIDATES) do
+                    local ok2, idx = pcall(getAnimClipIndex, acs, name)
+                    if ok2 and type(idx) == "number" and idx >= 0 then
+                        print(string.format("  clip '%s' = index %d", name, idx))
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Probe vehicleCharacter methods (find the activation method for Walter)
+    pcall(function()
+        local vc = vehicle.spec_enterable and vehicle.spec_enterable.vehicleCharacter
+        if vc == nil then print("[VL][DumpDriver] no vehicleCharacter") return end
+        print("[VL][DumpDriver] vehicleCharacter methods:")
+        for k, v in pairs(vc) do
+            if type(v) == "function" then
+                print(string.format("  vc.%s()", k))
+            elseif type(v) ~= "table" then
+                print(string.format("  vc.%s = %s", k, tostring(v)))
+            end
+        end
+        -- Check metatable for inherited methods
+        local mt = getmetatable(vc)
+        if mt and mt.__index then
+            local idx = mt.__index
+            if type(idx) == "table" then
+                for k, v in pairs(idx) do
+                    if type(v) == "function" then
+                        print(string.format("  vc[meta].%s()", k))
+                    end
+                end
+            end
+        end
+    end)
+
+    pcall(function()
+        local vc = vehicle.spec_enterable and vehicle.spec_enterable.vehicleCharacter
+        if vc == nil then return end
+        local vcAcs = vc.animationCharsetId
+        print(string.format("[VL][DumpDriver] vc.animationCharsetId=%s idleClipIndex=%s driveClipIndex=%s",
+            tostring(vcAcs), tostring(vc.idleClipIndex), tostring(vc.driveClipIndex)))
+        if vcAcs and vcAcs ~= 0 then
+            -- Active tracks on the vehicleCharacter charset — print weight AND clip index
+            for t = 0, 8 do
+                local ok, weight = pcall(getAnimTrackBlendWeight, vcAcs, t)
+                if ok and weight and weight > 0 then
+                    -- Try to read what clip is on this track
+                    local clipIdx = -1
+                    pcall(function()
+                        -- getAnimTrackClipIndex doesn't exist, but we can try getAnimCharacterClipName on this track
+                        -- Instead, brute-check which clip index lands on this track
+                        for ci = 0, 20 do
+                            local ok2, name = pcall(getAnimCharacterClipName, vcAcs, ci)
+                            if ok2 and name and name ~= "" then
+                                clipIdx = ci
+                                print(string.format("  vc track[%d] weight=%.2f clipName='%s' idx=%d", t, weight, name, ci))
+                                break
+                            end
+                        end
+                    end)
+                    if clipIdx < 0 then
+                        print(string.format("  vc track[%d] weight=%.2f (clip unknown)", t, weight))
+                    end
+                end
+            end
+            -- All clip names on this charset via getAnimClipIndex
+            local VC_CANDIDATES = {
+                "idle1Source","idle2Source","idle1FemaleSource","idle1MaleSource",
+                "drive1Source","driveSource","drivingSource","vehicleDrive1Source",
+                "sit1Source","sitIdle1Source","seated1Source","vehicleSit1Source",
+                "idleUpper1Source","driveUpper1Source","idleUpperSource",
+                "idleLegs1Source","driveLegs1Source","idleLegsSource",
+                "handBrakeSource","steerSource","throttleSource",
+                "rightArmSource","leftArmSource","rightLegSource","leftLegSource",
+                "rightHandSource","leftHandSource","rightFootSource","leftFootSource",
+                "armRightSource","armLeftSource","legRightSource","legLeftSource",
+            }
+            for _, name in ipairs(VC_CANDIDATES) do
+                local ok2, idx = pcall(getAnimClipIndex, vcAcs, name)
+                if ok2 and type(idx) == "number" and idx >= 0 then
+                    print(string.format("  vc clip '%s' = index %d", name, idx))
+                end
+            end
+        end
+    end)
+
+    return "[VL][DumpDriver] done — check log"
+end
+
+-- vlWalterInTruck: seat Walter as the truck's DRIVER using the engine's own vehicleCharacter system.
+-- Run while NOT in the truck yourself, standing a few metres away (the driver is hidden under ~1.5 m).
+--
+-- HOW IT WORKS (decompiled VehicleCharacter.lua + Enterable.lua, 2026-06-26 / R52):
+--   The seated driver pose is NOT a clip. `truck:setVehicleCharacter(style)` builds the vehicle's OWN
+--   HumanModel, links it to the seat node, rotates the hips by SPINE_ROTATION (the sit bend) and solves
+--   IK chains (hands->wheel, feet->pedals). We feed it WALTER's playerStyle (grandpa.playerStyle) so the
+--   driver wears his face/clothes — exactly how AI helpers get seated (setRandomVehicleCharacter). Then we
+--   hide the standing GRANDPA. The IK is re-solved each frame by WalterWalker (it pumps vc:update while
+--   _inTruck, because Enterable only pumps it while a player is controlling the vehicle).
+function VLConsole:walterInTruck()
+    local TRUCK_UID = "vehiclea0e0823360da9410fb4db3ebcbbfc489"
+
+    -- Find the truck
+    local truck = nil
+    pcall(function()
+        local vs = g_currentMission and g_currentMission.vehicleSystem
+        if vs and vs.vehicles then
+            for _, v in ipairs(vs.vehicles) do
+                if tostring(v.uniqueId) == TRUCK_UID then truck = v break end
+            end
+        end
+    end)
+    if truck == nil then return "[VL] truck not found" end
+    if type(truck.setVehicleCharacter) ~= "function" then
+        return "[VL] truck has no Enterable spec (setVehicleCharacter missing)"
+    end
+
+    -- WalterWalker + the GRANDPA NPC (carries the playerStyle we dress the driver in)
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker == nil then return "[VL] WalterWalker not found" end
+    pcall(function() walker:_acquireNode() end)
+    local grandpa = walker.grandpa
+    if grandpa == nil then return "[VL] GRANDPA not resolved yet (try once he's spawned)" end
+
+    -- Walter's appearance: NPC.lua stores self.playerStyle (loaded from npc.playerStyle XML).
+    local style = grandpa.playerStyle
+    if style == nil then
+        return "[VL] grandpa.playerStyle is nil — cannot dress the driver as Walter"
+    end
+    print(string.format("[VL][WalterTruck] using Walter playerStyle xml=%s", tostring(style.xmlFilename)))
+
+    -- Seat the driver as Walter via the engine's own API (deletes old, builds + IK-poses + dresses).
+    -- loadCharacter is ASYNC; vehicleCharacterLoaded() runs updateIKChains() once it finishes.
+    truck:setVehicleCharacter(style)
+
+    local vc = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
+    if vc == nil then return "[VL] no vehicleCharacter on truck (cannot seat)" end
+
+    -- Force the seated driver visible (updateVisibility hides it when the camera is < cameraMinDistance).
+    pcall(function()
+        vc.isVisible = true
+        vc:setCharacterVisibility(true)
+    end)
+
+    -- Suppress WalterWalker's route + hide the standing GRANDPA so there aren't two Walters.
+    walker._inTruck     = true
+    walker._truck       = truck
+    walker._vehicleChar = vc
+    pcall(function() walker:_hide() end)
+
+    return "[VL][WalterTruck] setVehicleCharacter(Walter) called (async load) — check the seated driver, hands on wheel"
+end
+
+-- vlWalterOutTruck: undo vlWalterInTruck. Removes the seated driver and brings the standing GRANDPA back.
+function VLConsole:walterOutTruck()
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker == nil then return "[VL] WalterWalker not found" end
+
+    local truck = walker._truck
+    if truck ~= nil and type(truck.deleteVehicleCharacter) == "function" then
+        pcall(function() truck:deleteVehicleCharacter() end)
+    end
+
+    walker._inTruck     = false
+    walker._truck       = nil
+    walker._vehicleChar = nil
+    pcall(function() walker:_reveal() end)
+
+    return "[VL][WalterTruck] driver removed, standing Walter revealed"
+end
+
 -- vlWalterCows: force-play Walter's one-time cow/husbandry handoff (bypasses the once-only flag).
 function VLConsole:playWalterCows(arg)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -2568,7 +3043,11 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterIntro", "Force-play Walter's post-tour market introduction", "playWalterIntro", VLConsole)
     addConsoleCommand("vlWalterCows", "Force-play Walter's one-time cow/husbandry handoff", "playWalterCows", VLConsole)
     addConsoleCommand("vlShimmy", "Probe Walter's body each frame while talking (R49 shimmy diag): vlShimmy <1|0>", "shimmyProbe", VLConsole)
+    addConsoleCommand("vlDumpDriver", "While seated in a vehicle, dump player animCharSet + active clips to find the seated pose", "dumpDriver", VLConsole)
     addConsoleCommand("vlDumpVehicle", "While seated in a vehicle, dump its filename/uniqueId/class/position: vlDumpVehicle", "dumpVehicle", VLConsole)
+    addConsoleCommand("vlDumpTruck", "Probe Grandpa's truck spec_enterable/aiDrivable/ikChains for the Walter-drives feature", "dumpTruck", VLConsole)
+    addConsoleCommand("vlWalterInTruck", "Seat Walter as the truck driver via setVehicleCharacter (sit + hands on wheel)", "walterInTruck", VLConsole)
+    addConsoleCommand("vlWalterOutTruck", "Remove the seated Walter driver and bring the standing Walter back", "walterOutTruck", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
