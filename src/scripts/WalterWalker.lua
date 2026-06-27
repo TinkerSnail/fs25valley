@@ -162,6 +162,13 @@ function WalterWalker:_acquireNode()
         local walker = self
         local orig   = hs.getWorldPosition
         hs.getWorldPosition = function(selfHs)
+            -- While he's driving the truck, the icon follows the TRUCK (his graphicsNode is hidden and his
+            -- route/position logic is suppressed, so _wx/_wz freeze — that's the "sticks at end of leg 1").
+            if walker._inTruck and walker._truck ~= nil and walker._truck.rootNode ~= nil
+               and entityExists(walker._truck.rootNode) then
+                local tx, _, tz = getWorldTranslation(walker._truck.rootNode)
+                return tx, tz
+            end
             if walker._active then return walker._wx, walker._wz end
             return orig(selfHs)
         end
