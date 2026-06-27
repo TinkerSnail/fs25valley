@@ -49,6 +49,11 @@ For project overview, install, and controls, see the root [README.md](../README.
   inherited farm cluster (woodshop + **3 Angus cows** + beehives), the economy (sell points,
   production chains, shops incl. Katie's animal trader), ambient life, collectibles, and what it
   all unlocks for our features.
+- [walter-truck-driving.md](walter-truck-driving.md) - **Walter sits in & drives his truck**: the seated
+  DRIVER pose (NOT a clip — it's `setVehicleCharacter` + SPINE_ROTATION hips bend + hands-on-wheel IK on the
+  vehicle's own HumanModel, dressed in `grandpa.playerStyle`), and ROAD DRIVING via the base-game AI "Go To"
+  job (`AIJobGoTo` + nav agent; re-assert Walter after `startJob` because it swaps in a random helper). Code
+  recipes + console commands + the decompiled-source map.
 - [development-process.md](development-process.md) - **`.claude` failsafes**: auto-repack
   hook, session-context injection, the **R-table gate** (how to operate it, multi-edit
   gotcha), build verifier, and which `log.txt` to read.

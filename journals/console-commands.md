@@ -130,6 +130,18 @@ dusk hour (summer 19:00 / winter 17:00).
 | `vlNpcDump` | `vlNpcDump [name]` | Survey base-game NPC roster (GRANDPA/ANIMAL_DEALER/HELPER/...) for hookability — active? drivable rig? conversation surface? No arg = one-line survey of all; `<name>` (e.g. `katie`) = detail. |
 | `vlShimmy` | `vlShimmy <1\|0>` | R49 body diagnostic: logs `grn`/`Hips`/`pin`/`spot` each frame while Walter is talking, to see what's tugging him (the "flop"). Read `[Shimmy]` lines in `log.txt`. |
 
+### Walter + the truck (see [walter-truck-driving.md](walter-truck-driving.md))
+
+| Command | Usage | What it does |
+|---|---|---|
+| `vlWalterInTruck` | standing near the truck | Seat Walter as the DRIVER via `setVehicleCharacter` (sit + hands on wheel, dressed as himself); hide standing Walter. |
+| `vlWalterOutTruck` | — | Remove the seated driver, reveal the standing Walter. |
+| `vlWalterDrive` | `vlWalterDrive [x z]` | Start the AI "Go To" job to drive the truck to `x z`, or (no args) **to where you stand** (reachability test); re-asserts Walter as the driver. Server/host only. |
+| `vlWalterStopDrive` | — | Stop the AI drive job and restore the standing Walter. |
+| `vlDumpTruck` | anywhere | Probe the truck's `spec_enterable`/`aiDrivable`/`ikChains` (seat node, IK targets). |
+| `vlDumpVehicle` | while seated | Dump the seated vehicle's filename/uniqueId/class/pos/configs. |
+| `vlDumpDriver` | while seated in any vehicle | Dump the seated charset + vehicleCharacter active tracks (how the seated pose is built). |
+
 ## Appearance diagnostics
 
 | Command | Usage | What it does |

@@ -1808,6 +1808,108 @@ function VLConsole:walterOutTruck()
     return "[VL][WalterTruck] driver removed, standing Walter revealed"
 end
 
+-- Shared: find Walter's truck (International series200) by its uniqueId.
+local function vlFindWalterTruck()
+    local TRUCK_UID = "vehiclea0e0823360da9410fb4db3ebcbbfc489"
+    local truck = nil
+    pcall(function()
+        local vs = g_currentMission and g_currentMission.vehicleSystem
+        if vs and vs.vehicles then
+            for _, v in ipairs(vs.vehicles) do
+                if tostring(v.uniqueId) == TRUCK_UID then truck = v break end
+            end
+        end
+    end)
+    return truck
+end
+
+-- vlWalterDrive [x z]: hire the base-game AI "Go To" job to DRIVE Walter's truck to a target along the
+-- road network, then override the random helper driver with WALTER so HE is at the wheel. No args = drive
+-- to where you're standing (best first reachability test). Server/host only. See project_walter_truck memory.
+function VLConsole:walterDrive(x, z)
+    local truck = vlFindWalterTruck()
+    if truck == nil then return "[VL] truck not found" end
+    if AIJobGoTo == nil then return "[VL] AIJobGoTo class unavailable" end
+    if g_currentMission == nil or g_currentMission.aiSystem == nil then return "[VL] no aiSystem" end
+    if not g_currentMission:getIsServer() then return "[VL] must be server/host to start an AI job" end
+
+    -- Target: explicit "x z" args, else the local player's current position ("drive to me").
+    local tx, tz = tonumber(x), tonumber(z)
+    if tx == nil or tz == nil then
+        local p = g_localPlayer
+        if p == nil or p.rootNode == nil then return "[VL] no local player for default target" end
+        local px, _, pz = getWorldTranslation(p.rootNode)
+        tx, tz = px, pz
+    end
+    local ty = getTerrainHeightAtWorldPos(g_terrainNode, tx, 0, tz)
+
+    local reachable = true
+    pcall(function() reachable = g_currentMission.aiSystem:getIsPositionReachable(tx, ty, tz) end)
+    print(string.format("[VL][WalterDrive] target (%.1f,%.1f,%.1f) reachable=%s", tx, ty, tz, tostring(reachable)))
+
+    local farmId = (truck.getOwnerFarmId and truck:getOwnerFarmId())
+                   or (g_localPlayer and g_localPlayer.farmId) or 1
+
+    -- Build + start the Go-To job.
+    local ok, errMsg = pcall(function()
+        local job = AIJobGoTo.new(true)  -- isServer
+        job:applyCurrentState(truck, g_currentMission, farmId, true)  -- vehicle param + default target
+        local cx, _, cz = getWorldTranslation(truck.rootNode)
+        local angle = MathUtil.getYRotationFromDirection(tx - cx, tz - cz)  -- approach heading
+        job.positionAngleParameter:setSnappingAngle(0)
+        job.positionAngleParameter:setPosition(tx, tz)
+        job.positionAngleParameter:setAngle(angle)
+        job:setValues()
+        local valid, vErr = job:validate(farmId)
+        if not valid then error("validate: " .. tostring(vErr), 0) end
+        g_currentMission.aiSystem:startJob(job, farmId)
+    end)
+    if not ok then return "[VL][WalterDrive] job FAILED: " .. tostring(errMsg) end
+
+    -- The job set a RANDOM helper as driver (aiJobStarted → setRandomVehicleCharacter). Re-assert Walter.
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker ~= nil then
+        pcall(function() walker:_acquireNode() end)
+        local grandpa = walker.grandpa
+        local style = grandpa and grandpa.playerStyle
+        if style ~= nil and type(truck.setVehicleCharacter) == "function" then
+            truck:setVehicleCharacter(style)
+            local vc = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
+            if vc ~= nil then pcall(function() vc.isVisible = true; vc:setCharacterVisibility(true) end) end
+        end
+        walker._inTruck     = true
+        walker._truck       = truck
+        walker._vehicleChar = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
+        pcall(function() walker:_hide() end)
+    end
+
+    return string.format("[VL][WalterDrive] driving to (%.1f,%.1f) — Walter at the wheel (reachable=%s)",
+        tx, tz, tostring(reachable))
+end
+
+-- vlWalterStopDrive: stop the AI Go-To job and bring the standing Walter back.
+function VLConsole:walterStopDrive()
+    local truck = vlFindWalterTruck()
+    if truck == nil then return "[VL] truck not found" end
+
+    local job = truck.spec_aiJobVehicle and truck.spec_aiJobVehicle.job
+    if job ~= nil and g_currentMission and g_currentMission.aiSystem then
+        pcall(function()
+            g_currentMission.aiSystem:stopJob(job, AIMessageSuccessStoppedByUser.new())
+        end)
+    end
+
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker ~= nil then
+        walker._inTruck     = false
+        walker._truck       = nil
+        walker._vehicleChar = nil
+        pcall(function() walker:_reveal() end)
+    end
+
+    return "[VL][WalterDrive] job stopped" .. (job ~= nil and "" or " (no active job found)") .. "; standing Walter restored"
+end
+
 -- vlWalterCows: force-play Walter's one-time cow/husbandry handoff (bypasses the once-only flag).
 function VLConsole:playWalterCows(arg)
     if g_valleyLife == nil then return "[ValleyLife] No active game." end
@@ -3048,6 +3150,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlDumpTruck", "Probe Grandpa's truck spec_enterable/aiDrivable/ikChains for the Walter-drives feature", "dumpTruck", VLConsole)
     addConsoleCommand("vlWalterInTruck", "Seat Walter as the truck driver via setVehicleCharacter (sit + hands on wheel)", "walterInTruck", VLConsole)
     addConsoleCommand("vlWalterOutTruck", "Remove the seated Walter driver and bring the standing Walter back", "walterOutTruck", VLConsole)
+    addConsoleCommand("vlWalterDrive", "Drive Walter's truck (AI Go-To) to [x z], or to where you stand: vlWalterDrive [x z]", "walterDrive", VLConsole)
+    addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive job and restore standing Walter", "walterStopDrive", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
