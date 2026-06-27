@@ -136,8 +136,11 @@ dusk hour (summer 19:00 / winter 17:00).
 |---|---|---|
 | `vlWalterInTruck` | standing near the truck | Seat Walter as the DRIVER via `setVehicleCharacter` (sit + hands on wheel, dressed as himself); hide standing Walter. |
 | `vlWalterOutTruck` | — | Remove the seated driver, reveal the standing Walter. |
-| `vlWalterDrive` | `vlWalterDrive [x z]` | Start the AI "Go To" job to drive the truck to `x z`, or (no args) **to where you stand** (reachability test); re-asserts Walter as the driver. Server/host only. |
-| `vlWalterStopDrive` | — | Stop the AI drive job and restore the standing Walter. |
+| `vlWalterDrive` | `vlWalterDrive [<name>\|<x z>]` | Single-leg AI "Go To" to a named spot (`farmersMarket`), an `x z`, or (no args) **where you stand**; re-asserts Walter as the driver. Server/host only. |
+| `vlWalterAddWp` | `vlWalterAddWp [angleDeg]` | Capture your position as a truck-route waypoint (road off-farm, then destination). The farm yard isn't on the AI splines, so stage a road exit node first. |
+| `vlWalterDriveRoute` | — | Drive the captured waypoints in order (chained Go-To legs), Walter at the wheel. |
+| `vlWalterClearRoute` | — | Discard the captured waypoints. |
+| `vlWalterStopDrive` | — | Stop the AI drive (any leg) and restore the standing Walter. |
 | `vlDumpTruck` | anywhere | Probe the truck's `spec_enterable`/`aiDrivable`/`ikChains` (seat node, IK targets). |
 | `vlDumpVehicle` | while seated | Dump the seated vehicle's filename/uniqueId/class/pos/configs. |
 | `vlDumpDriver` | while seated in any vehicle | Dump the seated charset + vehicleCharacter active tracks (how the seated pose is built). |

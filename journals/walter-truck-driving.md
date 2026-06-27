@@ -128,6 +128,26 @@ if valid then g_currentMission.aiSystem:startJob(job, farmId) end   -- server-si
 `AIMessageError*`). `maxSpeed` default 10. Errors surface as `AIMessageError*` (NotReachable, OutOfFuel,
 BlockedByObject, CouldNotPrepare, NoPermission…).
 
+### Staging waypoints — the farm yard is NOT on the spline network (2026-06-26)
+
+`vlWalterDrive farmersMarket` (a far cross-town target) **failed**: the truck did nothing and the seated
+Walter appeared for ~2 s then vanished. Log showed the job started (`reachable=true`, "driving…") then went
+silent. **Diagnosis:** `aiSystem:getIsPositionReachable` only tells you the target point is on the nav map —
+NOT that a drivable path connects the *parked truck* to it. The farm yard isn't on the AI road-spline
+network, so the GoTo can't prepare a path from the parked spot and the job stops within ~2 s
+(`AITaskDriveTo.PREPARE_TIMEOUT = 2000 ms`). When the job stops, `restoreVehicleCharacter` removes the
+seated driver — that's the "vanish." The short *drive-to-me* worked only because it was a road-connected hop.
+
+**Fix = multi-leg routes.** Drive to a **farm-EXIT waypoint on the road first**, then to the destination,
+chaining one `AIJobGoTo` per leg. Completion fires `AI_JOB_STOPPED` with `AIMessageSuccessFinishedJob`
+(`AIJob.lua:100`); we subscribe and start the next leg on a *Success* message, abort on an *Error* message.
+Each leg re-asserts Walter (every `startJob` re-randomizes the helper). Only the FINAL leg honors a parked
+facing; pass-through legs use the approach heading.
+
+**Diagnostic:** `VLConsole:onAIJobStopped` (subscribed to `MessageType.AI_JOB_STOPPED`) logs the exact stop
+reason — `[VL][WalterDrive] AI job STOPPED — reason: <AIMessage class> — <text>` (CouldNotPrepare /
+NotReachable / OutOfFuel / NoPathFound / FinishedJob …).
+
 ### Open risks to verify in-game
 
 1. Does the map's AI road nav network cover the farm→downtown route? (else `NotReachable`.) The first
@@ -146,8 +166,11 @@ BlockedByObject, CouldNotPrepare, NoPermission…).
 | `vlDumpDriver` | while seated in any vehicle | Dump the player's seated charset + the vehicleCharacter's active tracks (how the seated pose is built). |
 | `vlWalterInTruck` | standing near the truck | Seat Walter as the driver via `setVehicleCharacter` (sit + hands on wheel), hide standing Walter. |
 | `vlWalterOutTruck` | — | Remove the seated driver, reveal the standing Walter. |
-| `vlWalterDrive` | `vlWalterDrive [x z]` | Start the AI Go-To job to drive the truck to `x z`, or (no args) **to where you stand** (reachability test); re-asserts Walter as the driver. |
-| `vlWalterStopDrive` | — | Stop the AI drive job, restore the standing Walter. |
+| `vlWalterDrive` | `vlWalterDrive [<name>\|<x z>]` | Single-leg AI Go-To to a named spot (`farmersMarket`), an `x z`, or (no args) **where you stand**; re-asserts Walter as the driver. |
+| `vlWalterAddWp` | `vlWalterAddWp [angleDeg]` | Capture your position as a **route waypoint** (road off-farm, then the destination). Optional final-park facing. |
+| `vlWalterDriveRoute` | — | Drive the captured waypoints in order (chained legs) — the way to **stage a farm-exit node** before a cross-town target. |
+| `vlWalterClearRoute` | — | Discard the captured waypoints. |
+| `vlWalterStopDrive` | — | Stop the AI drive (any leg), restore the standing Walter. |
 
 ---
 

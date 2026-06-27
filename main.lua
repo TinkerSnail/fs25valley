@@ -86,6 +86,11 @@ local function onMissionUpdate(mission, dt)
             print("[ValleyLife] ERROR in update: " .. tostring(err))
         end
     end
+    -- Pump the physical line-follower + path recorder (defined later on the global VLConsole).
+    if VLConsole ~= nil then
+        if VLConsole.driveTick ~= nil then pcall(VLConsole.driveTick, dt) end
+        if VLConsole.recordTick ~= nil then pcall(VLConsole.recordTick, dt) end
+    end
 end
 
 local function onMissionUnload(mission)
@@ -142,39 +147,47 @@ end
 -- call target:method() directly, which works reliably.
 VLConsole = {}
 
-function VLConsole:printPlayerPos()
-    -- Collect every plausible player node source; FS25 builds vary on whether the
-    -- foot player lives on g_localPlayer, g_currentMission.player, or a graphics
-    -- component, so try them all and use the first that yields a valid node.
-    local candidates = {}
+-- Capture a world pose for vlPos / vlWalterAddWp. Returns x, y, z, ry, source.
+-- IMPORTANT: while you're SEATED in a vehicle, the on-foot player node parks at the ORIGIN (0,0,0) — that
+-- is why vlPos used to log (0,0). So if you're in a vehicle, capture the VEHICLE's pose instead. This makes
+-- capturing a DRIVING route work: drive the truck along the path and tag points from the truck itself.
+function VLConsole.capturePose()
+    -- Prefer the vehicle you're currently in (driving the route IS the route).
+    local veh = g_localPlayer and g_localPlayer.getCurrentVehicle and g_localPlayer:getCurrentVehicle() or nil
+    if veh ~= nil and veh.rootNode ~= nil and veh.rootNode ~= 0 and entityExists(veh.rootNode) then
+        local x, y, z = getWorldTranslation(veh.rootNode)
+        local _, ry, _ = getWorldRotation(veh.rootNode)
+        return x, y, z, ry, "vehicle"
+    end
+    -- On foot: FS25 builds vary on where the player node lives, so try them all.
     local p1 = g_localPlayer
     local p2 = g_currentMission ~= nil and g_currentMission.player or nil
     for _, p in ipairs({ p1, p2 }) do
         if p ~= nil then
-            candidates[#candidates + 1] = p.rootNode
-            candidates[#candidates + 1] = p.graphicsComponent and p.graphicsComponent.graphicsRootNode or nil
-            candidates[#candidates + 1] = p.positionNode
+            for _, n in ipairs({ p.rootNode,
+                                 p.graphicsComponent and p.graphicsComponent.graphicsRootNode or nil,
+                                 p.positionNode }) do
+                if n ~= nil and n ~= 0 and entityExists(n) then
+                    local x, y, z = getWorldTranslation(n)
+                    local _, ry, _ = getWorldRotation(n)
+                    return x, y, z, ry, "player"
+                end
+            end
         end
     end
+    return nil
+end
 
-    local node
-    for _, n in ipairs(candidates) do
-        if n ~= nil and n ~= 0 and entityExists(n) then node = n; break end
-    end
-
-    if node == nil then
-        local msg = string.format(
-            "[ValleyLife] vlPos: no player node (g_localPlayer=%s, mission.player=%s).",
-            tostring(p1), tostring(p2))
+function VLConsole:printPlayerPos()
+    local x, y, z, ry, src = VLConsole.capturePose()
+    if x == nil then
+        local msg = "[ValleyLife] vlPos: no player/vehicle node found."
         print(msg)
         return msg
     end
-
-    local x, y, z = getWorldTranslation(node)
-    local _, ry, _ = getWorldRotation(node)
     local msg = string.format(
-        "[ValleyLife] vlPos -> { x = %.2f, y = %.2f, z = %.2f, ry = %.4f }",
-        x, y, z, ry)
+        "[ValleyLife] vlPos -> { x = %.2f, y = %.2f, z = %.2f, ry = %.4f } (%s)",
+        x, y, z, ry, src)
     print(msg)
     return msg
 end
@@ -1826,7 +1839,7 @@ end
 -- Named drive destinations for vlWalterDrive (captured in-game with vlPos). `angle` = parked facing in
 -- radians (from the logged ry), optional; omit to face the approach direction. Add new spots here.
 local VL_DRIVE_TARGETS = {
-    farmersMarket = { x = 387.40, z = -669.62, angle = 0.0 },  -- vlPos 2026-06-26 (ry -0.0000)
+    farmersMarket = { x = 398.00, z = -679.00, angle = 0.0 },  -- vlPos 2026-06-26 21:12 (refined, on-road)
 }
 local function vlDriveTargetNames()
     local names = {}
@@ -1835,11 +1848,313 @@ local function vlDriveTargetNames()
     return table.concat(names, ", ")
 end
 
--- vlWalterDrive [<name>|<x z>]: hire the base-game AI "Go To" job to DRIVE Walter's truck to a target along
--- the road network, then override the random helper driver with WALTER so HE is at the wheel.
---   vlWalterDrive farmersMarket   → a named destination (see VL_DRIVE_TARGETS)
---   vlWalterDrive 387.4 -669.6    → explicit world x z
---   vlWalterDrive                 → drive to where you're standing (reachability test)
+-- ── Multi-leg drive route engine ────────────────────────────────────────────────────────────────
+-- The farm YARD is not on the AI road-spline network, so a single GoTo to a far target fails to prepare.
+-- A route drives through a sequence of waypoints (e.g. a farm-EXIT node on the road, then the destination),
+-- chaining one AIJobGoTo per leg: when a leg's job finishes (AIMessageSuccessFinishedJob, AIJob.lua:100) we
+-- start the next leg. Only the FINAL leg honors a parked-facing angle; pass-through legs use the approach
+-- heading so the truck doesn't fight to align mid-route.
+VLConsole._route = nil        -- active route: { truck, farmId, wps = {{x,z,angle?}...}, idx, label }
+-- Off-farm EXIT path (captured with vlWalterAddWp). These are DRIVEN DIRECTLY (manual steering,
+-- AIVehicleUtil.driveToPoint) by vlWalterDrive — NOT fed to the road pathfinder, because the farm yard is
+-- off the AI network and the pathfinder rejects off-network points as "unreachable". The truck follows this
+-- exact line out of the yard; once at the last point it hands off to the AI road pathfinder for the
+-- destination. Captured 2026-06-26 (valleyLife_truckRoute.csv); clear with vlWalterClearRoute. angles=rad.
+VLConsole._scratchWps = {  -- recorded 2026-06-26 (vlWalterRecord): dense farm→road exit curve
+    { x = -763.3461, z = 116.5770, angle = -1.527859 },
+    { x = -766.3161, z = 117.0569, angle = -1.389225 },
+    { x = -768.7081, z = 119.0661, angle = -0.858598 },
+    { x = -770.8188, z = 121.4021, angle = -0.760723 },
+    { x = -772.8961, z = 123.5836, angle = -0.760738 },
+    { x = -775.0599, z = 125.8563, angle = -0.760746 },
+    { x = -777.4482, z = 127.8486, angle = -0.900927 },
+    { x = -779.8639, z = 129.6503, angle = -0.941476 },
+    { x = -782.7901, z = 130.5732, angle = -1.299625 },
+    { x = -785.8408, z = 131.0978, angle = -1.361054 },
+    { x = -788.9559, z = 131.6668, angle = -1.395604 },
+    { x = -792.0306, z = 132.2042, angle = -1.391509 },
+    { x = -795.0502, z = 131.6433, angle = -1.308738 },
+    { x = -797.5992, z = 129.8796, angle = -0.998268 },
+}
+
+-- PERSISTENCE (write-only): captured waypoints are appended to a CSV in the FS25 user profile dir as a
+-- durable record. IMPORTANT FS25 SANDBOX QUIRK: `io.open` allows ONLY write mode ('w'); opening in read
+-- mode is forced to write and TRUNCATES the file. So we NEVER read it back in-engine (that destroyed a
+-- saved route once). The CSV is for OUT-OF-GAME recovery: read it with a tool and bake the route into code
+-- (VL_DRIVE_TARGETS / a named route) for true permanence. In-session, waypoints live in memory.
+local function vlRouteFilePath()
+    local ok, base = pcall(getUserProfileAppPath)
+    if not ok or base == nil or base == "" then return nil end
+    return base .. "valleyLife_truckRoute.csv"
+end
+local function vlSaveScratch()
+    local path = vlRouteFilePath()
+    if path == nil then return end
+    pcall(function()
+        local f = io.open(path, "w")  -- write mode only (FS25 blocks read mode)
+        if f == nil then return end
+        for _, w in ipairs(VLConsole._scratchWps or {}) do
+            f:write(string.format("%.4f,%.4f,%.6f\n", w.x, w.z, w.angle or 0))
+        end
+        f:close()
+    end)
+end
+
+local vlDriveNextLeg  -- forward declaration (referenced by the AI_JOB_STOPPED handler)
+
+-- Re-assert Walter as the seated driver (each startJob re-randomizes the helper) + hide standing Walter.
+local function vlReassertWalterDriver(truck)
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker == nil then return end
+    pcall(function() walker:_acquireNode() end)
+    local grandpa = walker.grandpa
+    local style = grandpa and grandpa.playerStyle
+    if style ~= nil and type(truck.setVehicleCharacter) == "function" then
+        truck:setVehicleCharacter(style)
+        local vc = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
+        if vc ~= nil then pcall(function() vc.isVisible = true; vc:setCharacterVisibility(true) end) end
+    end
+    walker._inTruck     = true
+    walker._truck       = truck
+    walker._vehicleChar = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
+    pcall(function() walker:_hide() end)
+end
+
+-- Start ONE Go-To leg to (tx,tz); angle = parked facing (rad) or nil to face the approach. Returns ok, err.
+local function vlStartGoToLeg(truck, farmId, tx, tz, angle)
+    return pcall(function()
+        local job = AIJobGoTo.new(true)  -- isServer
+        job:applyCurrentState(truck, g_currentMission, farmId, true)
+        local cx, _, cz = getWorldTranslation(truck.rootNode)
+        local a = angle or MathUtil.getYRotationFromDirection(tx - cx, tz - cz)
+        job.positionAngleParameter:setSnappingAngle(0)
+        job.positionAngleParameter:setPosition(tx, tz)
+        job.positionAngleParameter:setAngle(a)
+        job:setValues()
+        local valid, vErr = job:validate(farmId)
+        if not valid then error("validate: " .. tostring(vErr), 0) end
+        g_currentMission.aiSystem:startJob(job, farmId)
+    end)
+end
+
+-- Advance to the next leg of VLConsole._route (or finish). Called to begin a route and after each leg.
+vlDriveNextLeg = function()
+    local r = VLConsole._route
+    if r == nil then return end
+    r.idx = r.idx + 1
+    local wp = r.wps[r.idx]
+    if wp == nil then
+        print(string.format("[VL][WalterDrive] route '%s' COMPLETE — parked.", r.label or "?"))
+        VLConsole._route = nil
+        return
+    end
+    local ty = getTerrainHeightAtWorldPos(g_terrainNode, wp.x, 0, wp.z)
+    local reachable = true
+    pcall(function() reachable = g_currentMission.aiSystem:getIsPositionReachable(wp.x, ty, wp.z) end)
+    local isLast = (r.idx == #r.wps)
+    local ok, err = vlStartGoToLeg(r.truck, r.farmId, wp.x, wp.z, isLast and wp.angle or nil)
+    print(string.format("[VL][WalterDrive] leg %d/%d → (%.1f,%.1f) reachable=%s start=%s",
+        r.idx, #r.wps, wp.x, wp.z, tostring(reachable), ok and "ok" or ("FAIL " .. tostring(err))))
+    if ok then vlReassertWalterDriver(r.truck) else VLConsole._route = nil end
+end
+
+-- Subscribe once to AI_JOB_STOPPED (logs the stop reason AND chains the next route leg on success).
+local function vlEnsureAIStopSub()
+    if not VLConsole._aiStopSubscribed and g_messageCenter ~= nil and MessageType ~= nil and MessageType.AI_JOB_STOPPED ~= nil then
+        VLConsole._aiStopSubscribed = true
+        g_messageCenter:subscribe(MessageType.AI_JOB_STOPPED, VLConsole.onAIJobStopped, VLConsole)
+    end
+end
+
+-- Logs WHY an AI job stopped (CouldNotPrepare / NotReachable / OutOfFuel / NoPathFound / FinishedJob …) and,
+-- if a route is active for our truck, advances to the next leg on success or aborts on error.
+function VLConsole:onAIJobStopped(job, aiMessage)
+    -- Resolve the class name and message text in SEPARATE pcalls — a throwing getMessage() must not wipe the
+    -- class name (the earlier single-pcall bug logged "?" for a successful FinishedJob → false abort).
+    local cls = "nil"
+    local txt = nil
+    local isSuccess = false
+    if aiMessage ~= nil then
+        pcall(function() cls = ClassUtil.getClassNameByObject(aiMessage) or "?" end)
+        pcall(function() if type(aiMessage.getMessage) == "function" then txt = aiMessage:getMessage() end end)
+        -- Authoritative success test: the natural completion message class.
+        pcall(function()
+            if AIMessageSuccessFinishedJob ~= nil and aiMessage.isa and aiMessage:isa(AIMessageSuccessFinishedJob) then
+                isSuccess = true
+            end
+        end)
+    end
+    if not isSuccess and string.find(tostring(cls), "Success") then isSuccess = true end
+    local reason = tostring(cls) .. (txt ~= nil and (" — " .. tostring(txt)) or "")
+    print(string.format("[VL][WalterDrive] AI job STOPPED — reason: %s (success=%s)", reason, tostring(isSuccess)))
+
+    local r = VLConsole._route
+    if r == nil then return end
+    -- Only react to OUR truck's job.
+    if job ~= nil and job.vehicleParameter ~= nil then
+        local jv = nil
+        pcall(function() jv = job.vehicleParameter:getVehicle() end)
+        if jv ~= nil and jv ~= r.truck then return end
+    end
+    if isSuccess then
+        vlDriveNextLeg()  -- finished this leg → next leg (or COMPLETE)
+    else
+        print(string.format("[VL][WalterDrive] route '%s' ABORTED at leg %d — %s", r.label or "?", r.idx, reason))
+        VLConsole._route = nil
+    end
+end
+
+-- ── Manual physical exit drive (NOT the AI, NOT a glide) ─────────────────────────────────────────────────
+-- The yard is OFF the AI spline network, so the road pathfinder can't take it (rejects yard targets as
+-- "unreachable"). So we DRIVE the truck physically (motor + wheels + real physics) along the recorded exit
+-- line: each frame we feed the engine's manual driving (setAITarget useManualDriving=true →
+-- AIVehicleUtil.driveToPoint) a target = the next recorded point, advancing one point at a time. At the end
+-- of the line (on the road) we hand the DESTINATION to the road AI. Pumped by onMissionUpdate.
+-- KNOWN ISSUE (the open problem): manual steering only actually turns the wheels when getIsAIActive()=true
+-- (a real job running); standalone it crept straight. Solving that steering engagement is the live work.
+VLConsole._drive = nil  -- { truck, farmId, wps, dest, targetIdx, phase, prepT, logT, bestEnd, stuckT }
+VLConsole._driveTask = { onTargetReached = function() end, onError = function() end }
+local DRIVE_SPEED = 10   -- manual-drive max speed (km/h); tune
+local DRIVE_REACH = 2.5  -- advance to the next recorded point when within this many metres (or once passed)
+
+-- Aim the truck's manual-drive target STRAIGHT at a recorded point.
+local function vlDriveAimAt(truck, tx, tz)
+    local ty = getTerrainHeightAtWorldPos(g_terrainNode, tx, 0, tz)
+    local x, _, z = getWorldTranslation(truck.rootNode)
+    local dirX, dirZ = tx - x, tz - z
+    local len = math.sqrt(dirX * dirX + dirZ * dirZ)
+    if len > 0.01 then dirX, dirZ = dirX / len, dirZ / len else dirX, dirZ = 0, 1 end
+    pcall(function() truck:setAITarget(VLConsole._driveTask, tx, ty, tz, dirX, 0, dirZ, DRIVE_SPEED, true) end)
+end
+
+-- True if the point is behind the truck's heading (so we advance past points we've already passed).
+local function vlDrivePassed(truck, tx, tz)
+    local x, _, z = getWorldTranslation(truck.rootNode)
+    local fx, _, fz = localDirectionToWorld(truck.rootNode, 0, 0, 1)
+    return (fx * (tx - x) + fz * (tz - z)) < 0
+end
+
+-- Clear the AI-control "job flag" we set to engage steering (so the real road AI can start clean later).
+local function vlDriveClearJob(d)
+    if d ~= nil and d.setJob and d.truck ~= nil and d.truck.spec_aiJobVehicle ~= nil then
+        pcall(function() d.truck.spec_aiJobVehicle.job = nil end)
+    end
+end
+
+function VLConsole.driveStart(truck, farmId, wps, dest)
+    if truck == nil or wps == nil or #wps < 2 then return false end
+    -- Put the truck in AI-CONTROL mode so manual steering actually turns the wheels. The wheels only accept
+    -- AI steering input when getIsAIActive() is true, which needs spec_aiJobVehicle.job ~= nil
+    -- (AIJobVehicle.lua:277). We set a real (UNSTARTED) job purely as that flag — NOT the road pathfinder
+    -- driving; we steer manually toward our recorded points. Cleared on finish before the real road AI runs.
+    local setJob = false
+    pcall(function()
+        local spec = truck.spec_aiJobVehicle
+        if spec ~= nil and spec.job == nil and AIJobGoTo ~= nil then
+            local j = AIJobGoTo.new(true)
+            pcall(function() j:applyCurrentState(truck, g_currentMission, farmId, true) end)
+            spec.job = j
+            setJob = true
+        end
+    end)
+    pcall(function() truck:prepareForAIDriving() end)
+    VLConsole._drive = { truck = truck, farmId = farmId, wps = wps, dest = dest,
+                         targetIdx = 1, phase = "prep", prepT = 0, logT = 0, setJob = setJob }
+    print(string.format("[VL][WalterDrive] manual exit drive: %d points (AI-control=%s) — starting motor…", #wps, tostring(setJob)))
+    return true
+end
+
+local function vlDriveFinish()
+    local d = VLConsole._drive
+    if d == nil then return end
+    VLConsole._drive = nil
+    local truck, farmId, dest = d.truck, d.farmId, d.dest
+    pcall(function() truck:unsetAITarget() end)
+    vlDriveClearJob(d)  -- drop the steering-mode job so the real road AI starts clean
+    print("[VL][WalterDrive] reached end of recorded exit line.")
+    if dest == nil then return end
+    print(string.format("[VL][WalterDrive] handing off to road AI → '%s' (%.1f,%.1f).", dest.label or "dest", dest.x, dest.z))
+    VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = dest.label or "dest",
+                         wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
+    vlDriveNextLeg()
+end
+
+function VLConsole.driveTick(dt)
+    local d = VLConsole._drive
+    if d == nil or d.truck == nil or not entityExists(d.truck.rootNode) then return end
+    pcall(function() d.truck:raiseActive() end)
+    local x, _, z = getWorldTranslation(d.truck.rootNode)
+
+    if d.phase == "prep" then
+        d.prepT = d.prepT + dt
+        local ready = false
+        pcall(function() ready = d.truck:getIsAIReadyToDrive() end)
+        if ready or d.prepT > 3000 then
+            d.phase = "drive"
+            print(string.format("[VL][WalterDrive] motor ready (%dms, ready=%s); driving the line.", math.floor(d.prepT), tostring(ready)))
+        end
+        return
+    end
+
+    -- Advance past the current recorded point(s) once we're close OR have driven past them.
+    local tgt = d.wps[d.targetIdx]
+    while tgt ~= nil and (MathUtil.vector2Length(x - tgt.x, z - tgt.z) < DRIVE_REACH or vlDrivePassed(d.truck, tgt.x, tgt.z)) do
+        d.targetIdx = d.targetIdx + 1
+        tgt = d.wps[d.targetIdx]
+    end
+    if tgt == nil then vlDriveFinish(); return end
+
+    -- Stuck detector: no headway toward the end for a while → STOP cleanly (don't grind on the shed).
+    local distToLast = MathUtil.vector2Length(x - d.wps[#d.wps].x, z - d.wps[#d.wps].z)
+    if d.bestEnd == nil or distToLast < d.bestEnd - 0.5 then
+        d.bestEnd = distToLast; d.stuckT = 0
+    else
+        d.stuckT = (d.stuckT or 0) + dt
+    end
+    if (d.stuckT or 0) > 4000 then
+        print(string.format("[VL][WalterDrive] STUCK heading to idx %d/%d (endDist=%.1fm) — stopping. Re-record or tune speed.",
+            d.targetIdx, #d.wps, distToLast))
+        vlDriveClearJob(d)
+        VLConsole._drive = nil
+        pcall(function() d.truck:unsetAITarget() end)
+        return
+    end
+
+    vlDriveAimAt(d.truck, tgt.x, tgt.z)  -- drive straight at the current recorded point
+    d.logT = (d.logT or 0) + dt
+    if d.logT >= 1000 then
+        d.logT = 0
+        print(string.format("[VL][WalterDrive] driving to point %d/%d (%.1f,%.1f), endDist=%.1fm",
+            d.targetIdx, #d.wps, tgt.x, tgt.z, distToLast))
+    end
+end
+
+-- ── Path RECORDER: drive the truck along the exit route once; samples a dense path that hugs the drive ──
+-- Manual driving goes straight point-to-point, so sparse waypoints cut corners (into the shed). Recording
+-- samples the truck's position every few metres so the straight segments follow the curve you actually drove.
+VLConsole._recording = false
+VLConsole._recLast = nil
+local REC_STEP = 3.0  -- metres between recorded samples
+
+function VLConsole.recordTick(dt)
+    if not VLConsole._recording then return end
+    local x, _, z, ry = VLConsole.capturePose()
+    if x == nil then return end
+    local last = VLConsole._recLast
+    if last == nil or MathUtil.vector2Length(x - last.x, z - last.z) >= REC_STEP then
+        VLConsole._scratchWps = VLConsole._scratchWps or {}
+        VLConsole._scratchWps[#VLConsole._scratchWps + 1] = { x = x, z = z, angle = ry or 0 }
+        VLConsole._recLast = { x = x, z = z }
+        vlSaveScratch()
+    end
+end
+
+-- vlWalterDrive [<name>|<x z>]: THE drive command. Walter drives his truck to a destination, automatically
+-- using your captured exit waypoints (vlWalterAddWp) to get off the farm to the road first, then the AI
+-- pathfinds the rest on the road network. He's seated/dressed as Walter for the whole trip.
+--   vlWalterDrive farmersMarket   → exit waypoints, then AI to the named destination (VL_DRIVE_TARGETS)
+--   vlWalterDrive 398 -679        → exit waypoints, then AI to an explicit x z
+--   vlWalterDrive                 → just the exit waypoints (get to the road); if none captured, drive-to-me
 -- Server/host only. See project_walter_truck memory + journals/walter-truck-driving.md.
 function VLConsole:walterDrive(arg1, arg2)
     local truck = vlFindWalterTruck()
@@ -1847,74 +2162,111 @@ function VLConsole:walterDrive(arg1, arg2)
     if AIJobGoTo == nil then return "[VL] AIJobGoTo class unavailable" end
     if g_currentMission == nil or g_currentMission.aiSystem == nil then return "[VL] no aiSystem" end
     if not g_currentMission:getIsServer() then return "[VL] must be server/host to start an AI job" end
+    vlEnsureAIStopSub()
 
-    -- Resolve target: named destination → explicit "x z" → local player's position ("drive to me").
-    local tx, tz, parkAngle
+    -- The captured exit waypoints are driven by the REAL AI (one AIJobGoTo leg per point — it steers).
+    local exit = {}
+    for _, w in ipairs(VLConsole._scratchWps or {}) do exit[#exit + 1] = { x = w.x, z = w.z, angle = w.angle } end
+    local nExit = #exit
+
+    -- Resolve the optional final destination (named or "x z"); none → drive-to-me only if no exit path.
+    local dest = nil
     local named = arg1 ~= nil and VL_DRIVE_TARGETS[tostring(arg1)] or nil
     if named ~= nil then
-        tx, tz, parkAngle = named.x, named.z, named.angle
+        dest = { x = named.x, z = named.z, angle = named.angle, label = tostring(arg1) }
     elseif tonumber(arg1) ~= nil and tonumber(arg2) ~= nil then
-        tx, tz = tonumber(arg1), tonumber(arg2)
+        dest = { x = tonumber(arg1), z = tonumber(arg2), label = "xz" }
     elseif arg1 ~= nil then
         return "[VL] unknown destination '" .. tostring(arg1) .. "'. Known: " .. vlDriveTargetNames()
-               .. " — or pass 'x z', or no args for drive-to-me."
-    else
-        local p = g_localPlayer
-        if p == nil or p.rootNode == nil then return "[VL] no local player for default target" end
-        local px, _, pz = getWorldTranslation(p.rootNode)
-        tx, tz = px, pz
+               .. " — or pass 'x z', or no args."
+    elseif nExit == 0 then
+        local px, _, pz = VLConsole.capturePose()
+        if px == nil then return "[VL] no destination, no waypoints, no position to drive to." end
+        dest = { x = px, z = pz, label = "drive-to-me" }
     end
-    local ty = getTerrainHeightAtWorldPos(g_terrainNode, tx, 0, tz)
-
-    local reachable = true
-    pcall(function() reachable = g_currentMission.aiSystem:getIsPositionReachable(tx, ty, tz) end)
-    print(string.format("[VL][WalterDrive] target (%.1f,%.1f,%.1f) reachable=%s", tx, ty, tz, tostring(reachable)))
 
     local farmId = (truck.getOwnerFarmId and truck:getOwnerFarmId())
                    or (g_localPlayer and g_localPlayer.farmId) or 1
 
-    -- Build + start the Go-To job.
-    local ok, errMsg = pcall(function()
-        local job = AIJobGoTo.new(true)  -- isServer
-        job:applyCurrentState(truck, g_currentMission, farmId, true)  -- vehicle param + default target
-        local cx, _, cz = getWorldTranslation(truck.rootNode)
-        -- Parked facing: the named target's angle if given, else face the approach direction.
-        local angle = parkAngle or MathUtil.getYRotationFromDirection(tx - cx, tz - cz)
-        job.positionAngleParameter:setSnappingAngle(0)
-        job.positionAngleParameter:setPosition(tx, tz)
-        job.positionAngleParameter:setAngle(angle)
-        job:setValues()
-        local valid, vErr = job:validate(farmId)
-        if not valid then error("validate: " .. tostring(vErr), 0) end
-        g_currentMission.aiSystem:startJob(job, farmId)
-    end)
-    if not ok then return "[VL][WalterDrive] job FAILED: " .. tostring(errMsg) end
+    -- Seat Walter for the whole trip (hides standing Walter; WalterWalker keeps his IK solved while _inTruck).
+    vlReassertWalterDriver(truck)
 
-    -- The job set a RANDOM helper as driver (aiJobStarted → setRandomVehicleCharacter). Re-assert Walter.
-    local walker = g_valleyLife and g_valleyLife.walterWalker
-    if walker ~= nil then
-        pcall(function() walker:_acquireNode() end)
-        local grandpa = walker.grandpa
-        local style = grandpa and grandpa.playerStyle
-        if style ~= nil and type(truck.setVehicleCharacter) == "function" then
-            truck:setVehicleCharacter(style)
-            local vc = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
-            if vc ~= nil then pcall(function() vc.isVisible = true; vc:setCharacterVisibility(true) end) end
+    if nExit >= 2 then
+        -- FIRST LEG = manual physical drive along the recorded exit line (NOT the AI — the yard is off the
+        -- spline network; NOT the glide). The AI only takes the destination once we're on the road.
+        VLConsole._route = nil
+        if VLConsole.driveStart(truck, farmId, exit, dest) then
+            return string.format("[VL][WalterDrive] manual-driving the recorded exit line (%d pts)%s.",
+                nExit, dest and (", then road AI to " .. dest.label) or "")
         end
-        walker._inTruck     = true
-        walker._truck       = truck
-        walker._vehicleChar = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
-        pcall(function() walker:_hide() end)
+        return "[VL][WalterDrive] exit-drive start failed — check log."
     end
 
-    return string.format("[VL][WalterDrive] driving to (%.1f,%.1f) — Walter at the wheel (reachable=%s)",
-        tx, tz, tostring(reachable))
+    -- No exit path → straight to the road AI for the destination.
+    VLConsole._drive = nil
+    VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = dest.label,
+                         wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
+    vlDriveNextLeg()
+    return string.format("[VL][WalterDrive] road AI driving to '%s' (%.1f,%.1f).", dest.label, dest.x, dest.z)
 end
 
--- vlWalterStopDrive: stop the AI Go-To job and bring the standing Walter back.
+-- vlWalterAddWp [angleDeg]: append your CURRENT position as a route waypoint (capture like the walk routes
+-- with vlPos). Stand on the road just off the farm for the first one, then at the destination. Optional
+-- angleDeg = parked facing for the FINAL waypoint (default = your current facing). Then: vlWalterDrive <dest>.
+function VLConsole:walterAddWp(angleDeg)
+    local px, _, pz, ry, src = VLConsole.capturePose()
+    if px == nil then return "[VL] no player/vehicle node to capture" end
+    local angle = (tonumber(angleDeg) ~= nil) and math.rad(tonumber(angleDeg)) or ry
+    VLConsole._scratchWps = VLConsole._scratchWps or {}
+    table.insert(VLConsole._scratchWps, { x = px, z = pz, angle = angle })
+    vlSaveScratch()  -- persist immediately so a relaunch keeps it
+    return string.format("[VL][WalterDrive] +waypoint %d at (%.2f, %.2f) facing %.0f° [%s] — total %d (saved). Drive: vlWalterDrive <dest>.",
+        #VLConsole._scratchWps, px, pz, math.deg(angle), src, #VLConsole._scratchWps)
+end
+
+-- vlWalterRecord [on|off]: record a dense exit path by driving the truck. `on` clears the old path and
+-- starts sampling your position every few metres; drive the route off the farm; `off` stops + saves.
+function VLConsole:walterRecord(mode)
+    mode = mode ~= nil and string.lower(tostring(mode)) or "toggle"
+    local turnOn = (mode == "on") or (mode == "toggle" and not VLConsole._recording)
+    if turnOn then
+        VLConsole._scratchWps = {}
+        VLConsole._recLast = nil
+        VLConsole._recording = true
+        return "[VL][WalterDrive] RECORDING — get in the truck and drive the path off the farm; vlWalterRecord off when done."
+    end
+    VLConsole._recording = false
+    vlSaveScratch()
+    return string.format("[VL][WalterDrive] recording stopped — %d waypoints. Drive it: vlWalterDrive <dest>.",
+        #(VLConsole._scratchWps or {}))
+end
+
+-- vlWalterClearRoute: discard the captured scratch waypoints.
+function VLConsole:walterClearRoute()
+    VLConsole._scratchWps = {}
+    vlSaveScratch()  -- persist the empty list
+    return "[VL][WalterDrive] scratch waypoints cleared."
+end
+
+-- vlWalterListWp: print the captured waypoints (persisted across relaunch) so you can verify / I can bake them.
+function VLConsole:walterListWp()
+    local wps = VLConsole._scratchWps or {}
+    if #wps == 0 then return "[VL][WalterDrive] no captured waypoints." end
+    print(string.format("[VL][WalterDrive] %d captured waypoints:", #wps))
+    for i, w in ipairs(wps) do
+        print(string.format("  [%d] x=%.2f z=%.2f angle=%.0f°", i, w.x, w.z, math.deg(w.angle or 0)))
+    end
+    return string.format("[VL][WalterDrive] listed %d waypoints (see log).", #wps)
+end
+
+-- vlWalterStopDrive: stop the AI drive (any leg) and bring the standing Walter back.
 function VLConsole:walterStopDrive()
     local truck = vlFindWalterTruck()
     if truck == nil then return "[VL] truck not found" end
+
+    VLConsole._route = nil  -- clear FIRST so the stop isn't treated as a leg-completion → next leg
+    VLConsole._drive = nil  -- stop the physical line-follower
+    pcall(function() truck:unsetAITarget() end)
 
     local job = truck.spec_aiJobVehicle and truck.spec_aiJobVehicle.job
     if job ~= nil and g_currentMission and g_currentMission.aiSystem then
@@ -3174,8 +3526,12 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlDumpTruck", "Probe Grandpa's truck spec_enterable/aiDrivable/ikChains for the Walter-drives feature", "dumpTruck", VLConsole)
     addConsoleCommand("vlWalterInTruck", "Seat Walter as the truck driver via setVehicleCharacter (sit + hands on wheel)", "walterInTruck", VLConsole)
     addConsoleCommand("vlWalterOutTruck", "Remove the seated Walter driver and bring the standing Walter back", "walterOutTruck", VLConsole)
-    addConsoleCommand("vlWalterDrive", "Drive Walter's truck (AI Go-To) to a named spot (farmersMarket), an x z, or where you stand: vlWalterDrive [<name>|<x z>]", "walterDrive", VLConsole)
-    addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive job and restore standing Walter", "walterStopDrive", VLConsole)
+    addConsoleCommand("vlWalterDrive", "Drive Walter's truck: exit waypoints then AI to a dest. vlWalterDrive [<name>|<x z>]", "walterDrive", VLConsole)
+    addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive (any leg) and restore standing Walter", "walterStopDrive", VLConsole)
+    addConsoleCommand("vlWalterAddWp", "Capture an off-farm exit waypoint at your current position: vlWalterAddWp [angleDeg]", "walterAddWp", VLConsole)
+    addConsoleCommand("vlWalterRecord", "Record a dense exit path by driving the truck: vlWalterRecord on … vlWalterRecord off", "walterRecord", VLConsole)
+    addConsoleCommand("vlWalterClearRoute", "Discard the captured exit waypoints", "walterClearRoute", VLConsole)
+    addConsoleCommand("vlWalterListWp", "List the captured exit waypoints", "walterListWp", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
     addConsoleCommand("vlFace", "Live-swap a villager's face: vlFace <npcId> <index>", "setFace", VLConsole)
