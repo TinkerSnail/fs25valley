@@ -1839,7 +1839,7 @@ end
 -- Named drive destinations for vlWalterDrive (captured in-game with vlPos). `angle` = parked facing in
 -- radians (from the logged ry), optional; omit to face the approach direction. Add new spots here.
 local VL_DRIVE_TARGETS = {
-    farmersMarket = { x = 398.00, z = -679.00, angle = 0.0 },  -- vlPos 2026-06-26 21:12 (refined, on-road)
+    farmersMarket = { x = 398.29, z = -708.97, angle = 0.0 },  -- vlPos 2026-06-27 (on the AI road spline)
 }
 local function vlDriveTargetNames()
     local names = {}
@@ -1875,6 +1875,7 @@ VLConsole._scratchWps = {  -- recorded 2026-06-26 (vlWalterRecord): dense farm�
     { x = -792.0306, z = 132.2042, angle = -1.391509 },
     { x = -795.0502, z = 131.6433, angle = -1.308738 },
     { x = -797.5992, z = 129.8796, angle = -0.998268 },
+    { x = -800.9898, z = 132.1523, angle = -1.236277 },  -- on-spline endpoint (2026-06-27; replaced pt15)
 }
 
 -- PERSISTENCE (write-only): captured waypoints are appended to a CSV in the FS25 user profile dir as a
@@ -1944,8 +1945,17 @@ vlDriveNextLeg = function()
     r.idx = r.idx + 1
     local wp = r.wps[r.idx]
     if wp == nil then
-        print(string.format("[VL][WalterDrive] route '%s' COMPLETE — parked.", r.label or "?"))
+        local truck, farmId = r.truck, r.farmId
         VLConsole._route = nil
+        -- Road legs done. If a PARK approach was queued, manual-drive it into the (off-spline) parking spot.
+        if VLConsole._pendingPark ~= nil and #VLConsole._pendingPark >= 2 then
+            local pk = VLConsole._pendingPark
+            VLConsole._pendingPark = nil
+            print(string.format("[VL][WalterDrive] road legs done — easing into the parking (%d pts).", #pk))
+            VLConsole.driveStart(truck, farmId, pk, nil)  -- manual park drive, no further destination
+        else
+            print(string.format("[VL][WalterDrive] route '%s' COMPLETE — parked.", r.label or "?"))
+        end
         return
     end
     local ty = getTerrainHeightAtWorldPos(g_terrainNode, wp.x, 0, wp.z)
@@ -2000,7 +2010,11 @@ function VLConsole:onAIJobStopped(job, aiMessage)
         vlDriveNextLeg()  -- finished this leg → next leg (or COMPLETE)
     else
         print(string.format("[VL][WalterDrive] route '%s' ABORTED at leg %d — %s", r.label or "?", r.idx, reason))
+        local truck = r.truck
         VLConsole._route = nil
+        -- The aborting job ran restoreVehicleCharacter, which deleted the seated driver. Re-seat Walter so he
+        -- DOESN'T vanish — he stays sitting in the (now stopped) truck instead of disappearing.
+        pcall(function() vlReassertWalterDriver(truck) end)
     end
 end
 
@@ -2191,6 +2205,14 @@ function VLConsole:walterDrive(arg1, arg2)
     -- Seat Walter for the whole trip (hides standing Walter; WalterWalker keeps his IK solved while _inTruck).
     vlReassertWalterDriver(truck)
 
+    -- Queue the PARK approach (leg 3) to run after the road legs reach the on-spline drop-off.
+    VLConsole._pendingPark = nil
+    if VLConsole._parkWps ~= nil and #VLConsole._parkWps >= 2 then
+        local pk = {}
+        for _, w in ipairs(VLConsole._parkWps) do pk[#pk + 1] = { x = w.x, z = w.z, angle = w.angle } end
+        VLConsole._pendingPark = pk
+    end
+
     if nExit >= 2 then
         -- FIRST LEG = manual physical drive along the recorded exit line (NOT the AI — the yard is off the
         -- spline network; NOT the glide). The AI only takes the destination once we're on the road.
@@ -2208,6 +2230,138 @@ function VLConsole:walterDrive(arg1, arg2)
                          wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
     vlDriveNextLeg()
     return string.format("[VL][WalterDrive] road AI driving to '%s' (%.1f,%.1f).", dest.label, dest.x, dest.z)
+end
+
+-- vlTruckRoadTo [<name>|<x z>]: DIAGNOSTIC — road-AI the truck straight from its CURRENT position to a target
+-- with NO manual exit leg. Use it to isolate the "unreachable" failure: stand on a spline a short way down
+-- the road and run it (no args = drive to you). If the truck road-drives to a NEARBY on-spline point but
+-- NOT to the market, the local network works and the farm↔downtown connection is the gap.
+function VLConsole:truckRoadTo(arg1, arg2)
+    local truck = vlFindWalterTruck()
+    if truck == nil then return "[VL] truck not found" end
+    if AIJobGoTo == nil then return "[VL] AIJobGoTo unavailable" end
+    if g_currentMission == nil or g_currentMission.aiSystem == nil then return "[VL] no aiSystem" end
+    if not g_currentMission:getIsServer() then return "[VL] server/host only" end
+    vlEnsureAIStopSub()
+
+    local tx, tz, ang, label
+    local named = arg1 ~= nil and VL_DRIVE_TARGETS[tostring(arg1)] or nil
+    if named ~= nil then
+        tx, tz, ang, label = named.x, named.z, named.angle, tostring(arg1)
+    elseif tonumber(arg1) ~= nil and tonumber(arg2) ~= nil then
+        tx, tz, label = tonumber(arg1), tonumber(arg2), "xz"
+    elseif arg1 ~= nil then
+        return "[VL] unknown dest '" .. tostring(arg1) .. "'. Known: " .. vlDriveTargetNames() .. " (or 'x z', or no args)."
+    else
+        local px, _, pz = VLConsole.capturePose()
+        if px == nil then return "[VL] no position to drive to." end
+        tx, tz, label = px, pz, "to-me"
+    end
+
+    local farmId = (truck.getOwnerFarmId and truck:getOwnerFarmId()) or (g_localPlayer and g_localPlayer.farmId) or 1
+    local cx, _, cz = getWorldTranslation(truck.rootNode)
+    print(string.format("[VL][RoadTo] truck @ (%.1f,%.1f) → '%s' (%.1f,%.1f), straight-line %.1fm",
+        cx, cz, label, tx, tz, MathUtil.vector2Length(cx - tx, cz - tz)))
+    VLConsole._drive = nil
+    vlReassertWalterDriver(truck)
+    VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = label, wps = { { x = tx, z = tz, angle = ang } } }
+    vlDriveNextLeg()
+    return string.format("[VL][RoadTo] road AI from truck's CURRENT spot → '%s' (no manual leg).", label)
+end
+
+-- ── Road staging waypoints — chain road-AI legs through on-spline in-between points ──────────────────────
+-- A single far target can be "unreachable" even when the network connects, if the pathfinder can't plan the
+-- whole way at once. Capture on-spline IN-BETWEEN points (drive/stand ON a visible spline) and chain a road
+-- AIJobGoTo to EACH in turn — every leg only has to reach the next point. Captured in-game; bake once it works.
+VLConsole._roadWps = {}
+
+function VLConsole:truckRoadAddWp(angleDeg)
+    local px, _, pz, ry, src = VLConsole.capturePose()
+    if px == nil then return "[VL] no player/vehicle node to capture" end
+    local angle = (tonumber(angleDeg) ~= nil) and math.rad(tonumber(angleDeg)) or ry
+    VLConsole._roadWps = VLConsole._roadWps or {}
+    table.insert(VLConsole._roadWps, { x = px, z = pz, angle = angle })
+    return string.format("[VL][RoadVia] +road waypoint %d at (%.2f, %.2f) facing %.0f° [%s] — total %d.",
+        #VLConsole._roadWps, px, pz, math.deg(angle), src, #VLConsole._roadWps)
+end
+
+function VLConsole:truckRoadClear()
+    VLConsole._roadWps = {}
+    return "[VL][RoadVia] road waypoints cleared."
+end
+
+function VLConsole:truckRoadList()
+    local w = VLConsole._roadWps or {}
+    if #w == 0 then return "[VL][RoadVia] no road waypoints." end
+    print(string.format("[VL][RoadVia] %d road waypoints:", #w))
+    for i, p in ipairs(w) do print(string.format("  [%d] x=%.2f z=%.2f angle=%.0f°", i, p.x, p.z, math.deg(p.angle or 0))) end
+    return string.format("[VL][RoadVia] listed %d (see log).", #w)
+end
+
+-- vlTruckRoadGo [<name>|<x z>]: chain road-AI legs through the captured road waypoints, then to the final
+-- destination, from the truck's CURRENT position (no manual exit leg). Tests the in-between-point route.
+function VLConsole:truckRoadGo(arg1, arg2)
+    local truck = vlFindWalterTruck()
+    if truck == nil then return "[VL] truck not found" end
+    if AIJobGoTo == nil then return "[VL] AIJobGoTo unavailable" end
+    if g_currentMission == nil or g_currentMission.aiSystem == nil then return "[VL] no aiSystem" end
+    if not g_currentMission:getIsServer() then return "[VL] server/host only" end
+    vlEnsureAIStopSub()
+
+    local wps = {}
+    for _, w in ipairs(VLConsole._roadWps or {}) do wps[#wps + 1] = { x = w.x, z = w.z, angle = w.angle } end
+
+    local label = "via"
+    local named = arg1 ~= nil and VL_DRIVE_TARGETS[tostring(arg1)] or nil
+    if named ~= nil then
+        wps[#wps + 1] = { x = named.x, z = named.z, angle = named.angle }; label = "via→" .. tostring(arg1)
+    elseif tonumber(arg1) ~= nil and tonumber(arg2) ~= nil then
+        wps[#wps + 1] = { x = tonumber(arg1), z = tonumber(arg2) }; label = "via→xz"
+    elseif arg1 ~= nil then
+        return "[VL] unknown dest '" .. tostring(arg1) .. "'. Known: " .. vlDriveTargetNames() .. " (or 'x z', or no args)."
+    end
+    if #wps == 0 then return "[VL] no road waypoints and no destination — add with vlTruckRoadAddWp." end
+
+    local farmId = (truck.getOwnerFarmId and truck:getOwnerFarmId()) or (g_localPlayer and g_localPlayer.farmId) or 1
+    VLConsole._drive = nil
+    vlReassertWalterDriver(truck)
+    VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = label, wps = wps }
+    vlDriveNextLeg()
+    return string.format("[VL][RoadVia] chaining %d road leg(s) from the truck's current spot.", #wps)
+end
+
+-- ── Leg 3: PARK approach — manual-drive from the on-spline drop-off into the off-spline parking spot ──────
+-- The road AI gets the truck to the market's on-spline point; the actual parking bay is off the network, so
+-- (like leg 1) we manual-drive a short recorded path into it. Captured into _parkWps; runs automatically
+-- after the road legs complete (vlWalterDrive queues it). Final point's angle = the parked facing.
+-- BAKED farm→farmersMarket leg-3 park approach (captured 2026-06-27 via vlWalterAddWp; final facing -89°).
+VLConsole._parkWps = {
+    { x = 398.5081, z = -677.8498, angle = -0.016117 },
+    { x = 396.6289, z = -672.5825, angle = -0.463658 },
+    { x = 387.9474, z = -669.9930, angle = -1.559190 },
+}
+
+function VLConsole:truckParkAddWp(angleDeg)
+    local px, _, pz, ry, src = VLConsole.capturePose()
+    if px == nil then return "[VL] no player/vehicle node to capture" end
+    local angle = (tonumber(angleDeg) ~= nil) and math.rad(tonumber(angleDeg)) or ry
+    VLConsole._parkWps = VLConsole._parkWps or {}
+    table.insert(VLConsole._parkWps, { x = px, z = pz, angle = angle })
+    return string.format("[VL][Park] +park point %d at (%.2f, %.2f) facing %.0f° [%s] — total %d.",
+        #VLConsole._parkWps, px, pz, math.deg(angle), src, #VLConsole._parkWps)
+end
+
+function VLConsole:truckParkClear()
+    VLConsole._parkWps = {}
+    return "[VL][Park] park approach cleared."
+end
+
+function VLConsole:truckParkList()
+    local w = VLConsole._parkWps or {}
+    if #w == 0 then return "[VL][Park] no park points." end
+    print(string.format("[VL][Park] %d park points:", #w))
+    for i, p in ipairs(w) do print(string.format("  [%d] x=%.2f z=%.2f angle=%.0f°", i, p.x, p.z, math.deg(p.angle or 0))) end
+    return string.format("[VL][Park] listed %d (see log).", #w)
 end
 
 -- vlWalterAddWp [angleDeg]: append your CURRENT position as a route waypoint (capture like the walk routes
@@ -3528,6 +3682,14 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterOutTruck", "Remove the seated Walter driver and bring the standing Walter back", "walterOutTruck", VLConsole)
     addConsoleCommand("vlWalterDrive", "Drive Walter's truck: exit waypoints then AI to a dest. vlWalterDrive [<name>|<x z>]", "walterDrive", VLConsole)
     addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive (any leg) and restore standing Walter", "walterStopDrive", VLConsole)
+    addConsoleCommand("vlTruckRoadTo", "DIAGNOSTIC: road-AI the truck from its current spot to a dest, no manual leg: vlTruckRoadTo [<name>|<x z>]", "truckRoadTo", VLConsole)
+    addConsoleCommand("vlTruckRoadAddWp", "Capture current position as an on-spline road staging waypoint: vlTruckRoadAddWp [angleDeg]", "truckRoadAddWp", VLConsole)
+    addConsoleCommand("vlTruckRoadGo", "Chain road-AI legs through the captured road waypoints to a dest: vlTruckRoadGo [<name>|<x z>]", "truckRoadGo", VLConsole)
+    addConsoleCommand("vlTruckRoadClear", "Clear the captured road staging waypoints", "truckRoadClear", VLConsole)
+    addConsoleCommand("vlTruckRoadList", "List the captured road staging waypoints", "truckRoadList", VLConsole)
+    addConsoleCommand("vlTruckParkAddWp", "Capture current position as a leg-3 park-approach point (drive into the lot): vlTruckParkAddWp [angleDeg]", "truckParkAddWp", VLConsole)
+    addConsoleCommand("vlTruckParkClear", "Clear the captured park-approach points", "truckParkClear", VLConsole)
+    addConsoleCommand("vlTruckParkList", "List the captured park-approach points", "truckParkList", VLConsole)
     addConsoleCommand("vlWalterAddWp", "Capture an off-farm exit waypoint at your current position: vlWalterAddWp [angleDeg]", "walterAddWp", VLConsole)
     addConsoleCommand("vlWalterRecord", "Record a dense exit path by driving the truck: vlWalterRecord on … vlWalterRecord off", "walterRecord", VLConsole)
     addConsoleCommand("vlWalterClearRoute", "Discard the captured exit waypoints", "walterClearRoute", VLConsole)

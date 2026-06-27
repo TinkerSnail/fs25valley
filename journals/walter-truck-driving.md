@@ -11,6 +11,42 @@ Related: [character-systems.md](character-systems.md) (player-can ⇒ NPC-can), 
 
 ---
 
+## ⭐ THE MODEL for character driving routes (use this for ALL of them)
+
+This is the established, working template for any NPC driving a vehicle from an off-network start to an
+off-network destination (decided 2026-06-27). A route = **three legs**:
+
+1. **Leg 1 — manual EXIT drive.** The start (farm yard, driveway) is OFF the AI road-spline network, so the
+   road pathfinder rejects it ("unreachable"). Drive a **recorded waypoint path** out to the road with manual
+   `driveToPoint` (`setAITarget(..., useManualDriving=true)`), advancing point-to-point. The wheels only steer
+   when `getIsAIActive()` is true, so set `spec_aiJobVehicle.job` to an unstarted `AIJobGoTo` as a flag during
+   the manual leg (clear it before the road AI). Record the path with `vlWalterRecord`/`vlWalterAddWp`. The
+   final point must land **ON a spline**.
+2. **Leg 2 — road AI.** A real `AIJobGoTo` from the on-spline exit point to an **on-spline** destination — the
+   base-game nav follows the road network, steering + avoiding obstacles. **The destination MUST be on a
+   spline** (an off-spline point = instant "unreachable"). If a single far target won't plan, chain staging
+   points (`vlTruckRoadAddWp`/`vlTruckRoadGo`), but usually one on-spline destination is enough.
+3. **Leg 3 — manual PARK drive.** The parking bay is off-network again, so manual-drive a short recorded path
+   from the on-spline drop-off into the spot (`vlTruckParkAddWp`; final point's angle = parked facing). Runs
+   automatically after the road legs (`vlWalterDrive` queues `_pendingPark`).
+
+**Governing facts:** the AI road network is on-spline only (it goes spline-point to spline-point); off-network
+stretches need manual driving; `getIsPositionReachable` is UNRELIABLE; FS25 `io` is WRITE-ONLY so captured
+paths are recorded in-session then **baked into code** (read the CSV/log with a tool). Walter stays seated
+the whole trip via `setVehicleCharacter` (re-asserted each AI leg + on abort). To add a NEW character's route:
+record leg-1 exit + capture an on-spline destination + record leg-3 park, then bake — same three legs.
+
+### The recorded route: Walter's farm → farmers market (the first one, BAKED 2026-06-27)
+
+All waypoints live in `main.lua` (the durable record); anchor coords here for reference. `vlWalterDrive farmersMarket`.
+
+- **Leg 1 — exit** (`VLConsole._scratchWps`, 15 pts): from the truck's park spot (~-763.3, 116.6) curving NW
+  out of the yard around the shed to the **on-spline endpoint (-800.99, 132.15)**.
+- **Leg 2 — road AI** (`VL_DRIVE_TARGETS.farmersMarket`): road-drive to the **on-spline drop-off (398.29, -708.97)**.
+- **Leg 3 — park** (`VLConsole._parkWps`, 3 pts): (398.51,-677.85) → (396.63,-672.58) → **(387.95, -669.99) facing -89°** (parked in the bay).
+
+---
+
 ## The truck (confirmed runtime data)
 
 - **Vehicle:** International Series 200 — `data/vehicles/international/series200/series200.xml`
