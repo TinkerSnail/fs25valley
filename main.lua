@@ -1839,7 +1839,8 @@ end
 -- Named drive destinations for vlWalterDrive (captured in-game with vlPos). `angle` = parked facing in
 -- radians (from the logged ry), optional; omit to face the approach direction. Add new spots here.
 local VL_DRIVE_TARGETS = {
-    farmersMarket = { x = 398.29, z = -708.97, angle = 0.0 },  -- vlPos 2026-06-27 (on the AI road spline)
+    farmersMarket = { x = 398.29, z = -708.97, angle = 0.0 },     -- vlPos 2026-06-27 (on the AI road spline)
+    farmReturn    = { x = -801.17, z = 83.33, angle = 0.2724 },   -- vlPos 2026-06-27 (RETURN-spline drop-off near farm; vlWalterDriveHome road target)
 }
 local function vlDriveTargetNames()
     local names = {}
@@ -2072,9 +2073,18 @@ function VLConsole.driveStart(truck, farmId, wps, dest)
         end
     end)
     pcall(function() truck:prepareForAIDriving() end)
+    -- Start from the waypoint NEAREST the truck, not always point 1 — so re-running when the truck is already
+    -- partway along (or parked at the end) doesn't drive it BACKWARD to point 1 and get stuck.
+    local cx, _, cz = getWorldTranslation(truck.rootNode)
+    local startIdx, bestD = 1, math.huge
+    for i, w in ipairs(wps) do
+        local d2 = MathUtil.vector2Length(cx - w.x, cz - w.z)
+        if d2 < bestD then bestD = d2; startIdx = i end
+    end
     VLConsole._drive = { truck = truck, farmId = farmId, wps = wps, dest = dest,
-                         targetIdx = 1, phase = "prep", prepT = 0, logT = 0, setJob = setJob }
-    print(string.format("[VL][WalterDrive] manual exit drive: %d points (AI-control=%s) — starting motor…", #wps, tostring(setJob)))
+                         targetIdx = startIdx, phase = "prep", prepT = 0, logT = 0, setJob = setJob }
+    print(string.format("[VL][WalterDrive] manual exit drive: %d points from idx %d (AI-control=%s) — starting motor…",
+        #wps, startIdx, tostring(setJob)))
     return true
 end
 
@@ -2110,24 +2120,33 @@ function VLConsole.driveTick(dt)
         return
     end
 
-    -- Advance past the current recorded point(s) once we're close OR have driven past them.
-    local tgt = d.wps[d.targetIdx]
-    while tgt ~= nil and (MathUtil.vector2Length(x - tgt.x, z - tgt.z) < DRIVE_REACH or vlDrivePassed(d.truck, tgt.x, tgt.z)) do
-        d.targetIdx = d.targetIdx + 1
-        tgt = d.wps[d.targetIdx]
+    -- Advance the target by PROGRESS ALONG THE PATH, not by heading: step forward while we're close to the
+    -- current point OR the NEXT point is already closer (we've moved past this one). Heading-based skipping
+    -- (the old vlDrivePassed) wrongly skipped every point when the truck started parked facing the OPPOSITE
+    -- way to the path (e.g. facing into the bay while the crossing pulls out) → it jumped to the last point.
+    while d.targetIdx < #d.wps do
+        local cur, nxt = d.wps[d.targetIdx], d.wps[d.targetIdx + 1]
+        local dCur  = MathUtil.vector2Length(x - cur.x, z - cur.z)
+        local dNext = MathUtil.vector2Length(x - nxt.x, z - nxt.z)
+        if dCur < DRIVE_REACH or dNext < dCur then d.targetIdx = d.targetIdx + 1 else break end
     end
-    if tgt == nil then vlDriveFinish(); return end
+    local tgt = d.wps[d.targetIdx]
+    -- Finished once we're close to the FINAL point.
+    if d.targetIdx >= #d.wps and MathUtil.vector2Length(x - tgt.x, z - tgt.z) < DRIVE_REACH then
+        vlDriveFinish(); return
+    end
 
-    -- Stuck detector: no headway toward the end for a while → STOP cleanly (don't grind on the shed).
-    local distToLast = MathUtil.vector2Length(x - d.wps[#d.wps].x, z - d.wps[#d.wps].z)
-    if d.bestEnd == nil or distToLast < d.bestEnd - 0.5 then
-        d.bestEnd = distToLast; d.stuckT = 0
+    -- Stuck detector by PATH PROGRESS, not crow-flies distance to the end: if the target waypoint index keeps
+    -- advancing, the truck is progressing — even on a WINDING path where straight-line distance to the final
+    -- point temporarily grows (which used to false-trigger "STUCK" near the buildings). Only stuck if we
+    -- can't reach the NEXT waypoint for a while.
+    if d.targetIdx > (d.lastProgIdx or 0) then
+        d.lastProgIdx = d.targetIdx; d.stuckT = 0
     else
         d.stuckT = (d.stuckT or 0) + dt
     end
-    if (d.stuckT or 0) > 4000 then
-        print(string.format("[VL][WalterDrive] STUCK heading to idx %d/%d (endDist=%.1fm) — stopping. Re-record or tune speed.",
-            d.targetIdx, #d.wps, distToLast))
+    if (d.stuckT or 0) > 6000 then
+        print(string.format("[VL][WalterDrive] STUCK at idx %d/%d (no waypoint reached in 6s) — stopping.", d.targetIdx, #d.wps))
         vlDriveClearJob(d)
         VLConsole._drive = nil
         pcall(function() d.truck:unsetAITarget() end)
@@ -2138,6 +2157,7 @@ function VLConsole.driveTick(dt)
     d.logT = (d.logT or 0) + dt
     if d.logT >= 1000 then
         d.logT = 0
+        local distToLast = MathUtil.vector2Length(x - d.wps[#d.wps].x, z - d.wps[#d.wps].z)
         print(string.format("[VL][WalterDrive] driving to point %d/%d (%.1f,%.1f), endDist=%.1fm",
             d.targetIdx, #d.wps, tgt.x, tgt.z, distToLast))
     end
@@ -2156,10 +2176,20 @@ function VLConsole.recordTick(dt)
     if x == nil then return end
     local last = VLConsole._recLast
     if last == nil or MathUtil.vector2Length(x - last.x, z - last.z) >= REC_STEP then
-        VLConsole._scratchWps = VLConsole._scratchWps or {}
-        VLConsole._scratchWps[#VLConsole._scratchWps + 1] = { x = x, z = z, angle = ry or 0 }
+        local t = VLConsole._recTarget
+        local list
+        if t == "home" then
+            VLConsole._homeExitWps = VLConsole._homeExitWps or {}; list = VLConsole._homeExitWps
+        elseif t == "homepark" then
+            VLConsole._homeParkWps = VLConsole._homeParkWps or {}; list = VLConsole._homeParkWps
+        elseif t == "park" then
+            VLConsole._parkWps = VLConsole._parkWps or {}; list = VLConsole._parkWps
+        else
+            VLConsole._scratchWps = VLConsole._scratchWps or {}; list = VLConsole._scratchWps
+        end
+        list[#list + 1] = { x = x, z = z, angle = ry or 0 }
         VLConsole._recLast = { x = x, z = z }
-        vlSaveScratch()
+        if t ~= "home" and t ~= "homepark" and t ~= "park" then vlSaveScratch() end
     end
 end
 
@@ -2230,6 +2260,102 @@ function VLConsole:walterDrive(arg1, arg2)
                          wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
     vlDriveNextLeg()
     return string.format("[VL][WalterDrive] road AI driving to '%s' (%.1f,%.1f).", dest.label, dest.x, dest.z)
+end
+
+-- vlWalterDriveHome: drive the route IN REVERSE — market parking → road → farm yard. Run while the truck is
+-- at the market parking. Reuses the baked FORWARD waypoints reversed: reverse(_parkWps)+market drop-off as
+-- the off-park exit onto the spline, road AI back to the farm on-spline point, then reverse(_scratchWps) to
+-- ease into the yard. Tests that the route works both directions.
+function VLConsole:walterDriveHome()
+    local truck = vlFindWalterTruck()
+    if truck == nil then return "[VL] truck not found" end
+    if AIJobGoTo == nil then return "[VL] AIJobGoTo unavailable" end
+    if g_currentMission == nil or g_currentMission.aiSystem == nil then return "[VL] no aiSystem" end
+    if not g_currentMission:getIsServer() then return "[VL] server/host only" end
+    vlEnsureAIStopSub()
+
+    local fwdExit = VLConsole._scratchWps or {}
+    local fwdPark = VLConsole._parkWps or {}
+    if #fwdExit < 2 then return "[VL] no baked exit path to reverse." end
+    local mkt = VL_DRIVE_TARGETS.farmersMarket
+
+    -- Reverse EXIT: prefer a RECORDED home-exit/road-crossing path (vlWalterRecord on home) — it ends on the
+    -- RETURN-direction spline (one-way splines need the opposite lane). Else auto-reverse the park to the
+    -- forward drop-off (only works if the splines are bidirectional).
+    local exit = {}
+    local home = VLConsole._homeExitWps or {}
+    if #home >= 2 then
+        for _, w in ipairs(home) do exit[#exit + 1] = { x = w.x, z = w.z, angle = w.angle } end
+    else
+        for i = #fwdPark, 1, -1 do exit[#exit + 1] = { x = fwdPark[i].x, z = fwdPark[i].z, angle = fwdPark[i].angle } end
+        exit[#exit + 1] = { x = mkt.x, z = mkt.z, angle = mkt.angle }
+    end
+
+    -- Road dest = a settable RETURN drop-off on the return spline near the farm (VL_DRIVE_TARGETS.farmReturn);
+    -- else the forward exit point (which the AI may get "blocked" approaching from the return direction).
+    local fr = VL_DRIVE_TARGETS.farmReturn
+    local farmPt = fr or fwdExit[#fwdExit]
+    local dest = { x = farmPt.x, z = farmPt.z, angle = farmPt.angle, label = "farmYard" }
+
+    -- Reverse PARK: prefer a RECORDED return-park path (vlWalterRecord on homepark) from the return drop-off
+    -- into the yard; else reverse the forward exit path.
+    local park = {}
+    local hp = VLConsole._homeParkWps or {}
+    if #hp >= 2 then
+        for _, w in ipairs(hp) do park[#park + 1] = { x = w.x, z = w.z, angle = w.angle } end
+    else
+        for i = #fwdExit, 1, -1 do park[#park + 1] = { x = fwdExit[i].x, z = fwdExit[i].z, angle = fwdExit[i].angle } end
+    end
+
+    local farmId = (truck.getOwnerFarmId and truck:getOwnerFarmId()) or (g_localPlayer and g_localPlayer.farmId) or 1
+    vlReassertWalterDriver(truck)
+    VLConsole._route = nil
+    VLConsole._pendingPark = (#park >= 2) and park or nil
+    if #exit >= 2 then
+        if VLConsole.driveStart(truck, farmId, exit, dest) then
+            return "[VL][WalterDrive] HOME (reverse): market parking → road → farm yard."
+        end
+        return "[VL][WalterDrive] home-drive start failed — check log."
+    end
+    VLConsole._drive = nil
+    VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = dest.label, wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
+    vlDriveNextLeg()
+    return "[VL][WalterDrive] HOME (reverse): road → farm yard."
+end
+
+-- vlTruckTeleport [market|farm|<name>|<x z>|me]: instantly drop the truck at a spot (no long drive) for fast
+-- testing. market = the baked market parking; farm = the yard park spot; a VL_DRIVE_TARGETS name; an x z; or
+-- your position (default). Uses removeFromPhysics + setRelativePosition (snaps to terrain) + addToPhysics.
+function VLConsole:truckTeleport(arg1, arg2)
+    local truck = vlFindWalterTruck()
+    if truck == nil then return "[VL] truck not found" end
+    local tx, tz, ry
+    local a = arg1 ~= nil and string.lower(tostring(arg1)) or nil
+    if a == "market" then
+        local p = (VLConsole._parkWps or {})[#(VLConsole._parkWps or {})]
+        if p then tx, tz, ry = p.x, p.z, p.angle end
+    elseif a == "farm" then
+        local p = (VLConsole._scratchWps or {})[1]
+        if p then tx, tz, ry = p.x, p.z, p.angle end
+    elseif a ~= nil and VL_DRIVE_TARGETS[a] then
+        local t = VL_DRIVE_TARGETS[a]; tx, tz, ry = t.x, t.z, t.angle or 0
+    elseif tonumber(arg1) ~= nil and tonumber(arg2) ~= nil then
+        tx, tz, ry = tonumber(arg1), tonumber(arg2), 0
+    else
+        local px, _, pz, pry = VLConsole.capturePose(); tx, tz, ry = px, pz, pry
+    end
+    if tx == nil then return "[VL] no teleport target (market|farm|<name>|<x z>|me)" end
+
+    local cx, cy, cz = getWorldTranslation(truck.rootNode)
+    local cth = getTerrainHeightAtWorldPos(g_terrainNode, cx, 300, cz)
+    local offsetY = math.max((cy or 0) - (cth or 0), 0.4)  -- keep the truck's resting height; min 0.4 so it settles
+    pcall(function()
+        truck:removeFromPhysics()
+        truck:setRelativePosition(tx, offsetY, tz, ry or 0)
+        truck:addToPhysics()
+        truck:raiseActive()
+    end)
+    return string.format("[VL][Teleport] truck → (%.1f, %.1f). Now: vlWalterDriveHome (or vlWalterDrive farmersMarket).", tx, tz)
 end
 
 -- vlTruckRoadTo [<name>|<x z>]: DIAGNOSTIC — road-AI the truck straight from its CURRENT position to a target
@@ -2336,9 +2462,113 @@ end
 -- after the road legs complete (vlWalterDrive queues it). Final point's angle = the parked facing.
 -- BAKED farm→farmersMarket leg-3 park approach (captured 2026-06-27 via vlWalterAddWp; final facing -89°).
 VLConsole._parkWps = {
-    { x = 398.5081, z = -677.8498, angle = -0.016117 },
-    { x = 396.6289, z = -672.5825, angle = -0.463658 },
-    { x = 387.9474, z = -669.9930, angle = -1.559190 },
+    { x = 386.5400, z = -709.2910, angle = 1.554216 },
+    { x = 389.7004, z = -708.8970, angle = 1.406507 },
+    { x = 392.8297, z = -708.0846, angle = 1.327422 },
+    { x = 395.5779, z = -706.6807, angle = 1.049923 },
+    { x = 396.8713, z = -703.9274, angle = 0.438137 },
+    { x = 396.4803, z = -700.8323, angle = -0.155440 },
+    { x = 395.3679, z = -697.8796, angle = -0.294149 },
+    { x = 394.8630, z = -694.7869, angle = -0.187368 },
+    { x = 394.3015, z = -691.8260, angle = -0.187365 },
+    { x = 393.7438, z = -688.7507, angle = -0.172058 },
+    { x = 393.6155, z = -685.6883, angle = -0.048104 },
+    { x = 393.4672, z = -682.6128, angle = -0.048108 },
+    { x = 393.3128, z = -679.3972, angle = -0.048095 },
+    { x = 393.1624, z = -676.2853, angle = -0.048092 },
+    { x = 393.1518, z = -673.2100, angle = 0.018883 },
+    { x = 394.4728, z = -670.2803, angle = 0.486733 },
+    { x = 396.5570, z = -668.0878, angle = 0.727450 },
+    { x = 393.7876, z = -669.2560, angle = 1.525647 },
+    { x = 390.7666, z = -669.4153, angle = 1.525634 },
+}
+
+-- REVERSE exit / road CROSSING (leg 1 of the reverse trip): from the market parking out onto the road and
+-- across to the RETURN-direction spline at (386.56,-712.49). Recorded 2026-06-27 (home) after the new park.
+VLConsole._homeExitWps = {
+    { x = 388.2173, z = -669.5255, angle = 1.529534 },
+    { x = 391.2346, z = -669.7141, angle = 1.469820 },
+    { x = 394.1827, z = -670.7712, angle = 1.200742 },
+    { x = 396.1203, z = -673.1003, angle = 0.642579 },
+    { x = 396.8555, z = -676.0177, angle = 0.273189 },
+    { x = 397.2067, z = -679.2219, angle = 0.085902 },
+    { x = 397.3864, z = -682.3426, angle = 0.065090 },
+    { x = 397.4572, z = -685.6701, angle = 0.011375 },
+    { x = 397.4933, z = -688.8867, angle = 0.011386 },
+    { x = 397.5284, z = -691.9496, angle = 0.011383 },
+    { x = 397.5631, z = -694.9759, angle = 0.011384 },
+    { x = 397.5987, z = -698.0898, angle = 0.011381 },
+    { x = 397.6343, z = -701.2228, angle = 0.011382 },
+    { x = 397.5529, z = -704.2310, angle = -0.042930 },
+    { x = 396.9418, z = -707.3372, angle = -0.188444 },
+    { x = 395.4961, z = -710.0640, angle = -0.532964 },
+    { x = 392.6584, z = -711.3098, angle = -1.151408 },
+    { x = 389.5245, z = -711.8829, angle = -1.368043 },
+    { x = 386.5579, z = -712.4910, angle = -1.368395 },
+}
+
+-- RETURN park (leg 3 of the reverse trip): from the farmReturn drop-off (-801.17,83.33) winding into the
+-- farm yard, ending at the park spot (-762.96,117.33). Recorded 2026-06-27 via vlWalterRecord (homepark).
+VLConsole._homeParkWps = {
+    { x = -801.1721, z = 83.3294, angle = 0.272426 },
+    { x = -800.3591, z = 86.4961, angle = 0.238500 },
+    { x = -799.7362, z = 89.4944, angle = 0.198931 },
+    { x = -799.1914, z = 92.6372, angle = 0.161504 },
+    { x = -798.9583, z = 95.6521, angle = 0.073891 },
+    { x = -798.9376, z = 98.6814, angle = 0.020484 },
+    { x = -799.1690, z = 101.6908, angle = -0.075035 },
+    { x = -799.5638, z = 104.7931, angle = -0.135377 },
+    { x = -800.0227, z = 107.9550, angle = -0.146768 },
+    { x = -800.7153, z = 111.0372, angle = -0.220999 },
+    { x = -801.4133, z = 114.0328, angle = -0.234033 },
+    { x = -802.3121, z = 117.0551, angle = -0.278314 },
+    { x = -803.1470, z = 119.9736, angle = -0.278320 },
+    { x = -803.9791, z = 122.8933, angle = -0.276570 },
+    { x = -803.9150, z = 125.9874, angle = 0.097074 },
+    { x = -802.2433, z = 128.5729, angle = 0.564768 },
+    { x = -799.6946, z = 130.1987, angle = 0.991575 },
+    { x = -796.9897, z = 131.7417, angle = 1.037410 },
+    { x = -793.9686, z = 132.7491, angle = 1.315313 },
+    { x = -790.8336, z = 132.3579, angle = 1.470478 },
+    { x = -787.8639, z = 131.6716, angle = 1.330882 },
+    { x = -784.7318, z = 130.8766, angle = 1.316366 },
+    { x = -782.0157, z = 129.4395, angle = 1.042107 },
+    { x = -779.6831, z = 127.4917, angle = 0.906483 },
+    { x = -777.2036, z = 125.5504, angle = 0.906482 },
+    { x = -774.8797, z = 123.6493, angle = 0.868788 },
+    { x = -773.2906, z = 121.0470, angle = 0.558268 },
+    { x = -772.0778, z = 118.1790, angle = 0.427286 },
+    { x = -770.8150, z = 115.4063, angle = 0.427280 },
+    { x = -769.3196, z = 112.6221, angle = 0.503652 },
+    { x = -767.7626, z = 109.7991, angle = 0.503913 },
+    { x = -766.1912, z = 107.1242, angle = 0.547673 },
+    { x = -763.9041, z = 105.0012, angle = 0.866942 },
+    { x = -761.0062, z = 103.6759, angle = 1.106201 },
+    { x = -758.4805, z = 101.9781, angle = 0.976576 },
+    { x = -755.8325, z = 100.4083, angle = 1.060703 },
+    { x = -753.0366, z = 99.0031, angle = 1.093967 },
+    { x = -750.1912, z = 97.8546, angle = 1.220728 },
+    { x = -747.1736, z = 96.9319, angle = 1.260810 },
+    { x = -743.9957, z = 96.0395, angle = 1.318982 },
+    { x = -740.9853, z = 96.0964, angle = 1.517195 },
+    { x = -738.0981, z = 97.1001, angle = 1.266153 },
+    { x = -735.0280, z = 98.0661, angle = 1.266037 },
+    { x = -732.1511, z = 99.5832, angle = 1.035576 },
+    { x = -730.7488, z = 102.2837, angle = 0.431164 },
+    { x = -730.6240, z = 105.3474, angle = 0.043999 },
+    { x = -731.5930, z = 108.1886, angle = -0.307720 },
+    { x = -732.6796, z = 111.0604, angle = -0.348979 },
+    { x = -733.8716, z = 114.1436, angle = -0.382534 },
+    { x = -735.6500, z = 116.6244, angle = -0.662556 },
+    { x = -738.3207, z = 118.5594, angle = -0.923330 },
+    { x = -741.2502, z = 119.7471, angle = -1.231081 },
+    { x = -744.3778, z = 119.3549, angle = -1.438036 },
+    { x = -747.3951, z = 118.7089, angle = -1.377537 },
+    { x = -750.4176, z = 118.1796, angle = -1.398410 },
+    { x = -753.5905, z = 117.6277, angle = -1.398389 },
+    { x = -756.8203, z = 117.3867, angle = -1.522095 },
+    { x = -759.9003, z = 117.2842, angle = -1.536010 },
+    { x = -762.9613, z = 117.3274, angle = -1.550872 },
 }
 
 function VLConsole:truckParkAddWp(angleDeg)
@@ -2378,21 +2608,42 @@ function VLConsole:walterAddWp(angleDeg)
         #VLConsole._scratchWps, px, pz, math.deg(angle), src, #VLConsole._scratchWps)
 end
 
--- vlWalterRecord [on|off]: record a dense exit path by driving the truck. `on` clears the old path and
--- starts sampling your position every few metres; drive the route off the farm; `off` stops + saves.
-function VLConsole:walterRecord(mode)
+-- vlWalterRecord [on|off] [home]: record a dense drive path by driving the truck. `on` clears that slot and
+-- samples your position every few metres; `off` stops. Default slot = the forward EXIT path (_scratchWps).
+-- Pass `home` to record the REVERSE-exit / road-crossing path instead (_homeExitWps, used by vlWalterDriveHome).
+function VLConsole:walterRecord(mode, target)
     mode = mode ~= nil and string.lower(tostring(mode)) or "toggle"
+    local tgt = target ~= nil and string.lower(tostring(target)) or "exit"
+    if tgt ~= "home" and tgt ~= "homepark" and tgt ~= "park" then tgt = "exit" end
     local turnOn = (mode == "on") or (mode == "toggle" and not VLConsole._recording)
     if turnOn then
-        VLConsole._scratchWps = {}
+        VLConsole._recTarget = tgt
+        if tgt == "home" then VLConsole._homeExitWps = {}
+        elseif tgt == "homepark" then VLConsole._homeParkWps = {}
+        elseif tgt == "park" then VLConsole._parkWps = {}
+        else VLConsole._scratchWps = {} end
         VLConsole._recLast = nil
         VLConsole._recording = true
-        return "[VL][WalterDrive] RECORDING — get in the truck and drive the path off the farm; vlWalterRecord off when done."
+        return string.format("[VL][WalterDrive] RECORDING (%s slot) — drive the path; vlWalterRecord off when done.", tgt)
     end
     VLConsole._recording = false
-    vlSaveScratch()
-    return string.format("[VL][WalterDrive] recording stopped — %d waypoints. Drive it: vlWalterDrive <dest>.",
-        #(VLConsole._scratchWps or {}))
+    local recTgt = VLConsole._recTarget or "exit"
+    VLConsole._recTarget = nil
+    if recTgt == "exit" then vlSaveScratch() end
+    local list = (recTgt == "home") and VLConsole._homeExitWps
+              or (recTgt == "homepark") and VLConsole._homeParkWps
+              or (recTgt == "park") and VLConsole._parkWps
+              or VLConsole._scratchWps
+    list = list or {}
+    -- Dump the captured points to the log for the home/homepark slots (no CSV for those) so they can be
+    -- read out and BAKED into code — they're otherwise in-memory only and lost on relaunch.
+    if recTgt ~= "exit" then
+        print(string.format("[VL][WalterDrive] %s-slot points (bake these):", recTgt))
+        for i, p in ipairs(list) do
+            print(string.format("    { x = %.4f, z = %.4f, angle = %.6f },  -- %s %d", p.x, p.z, p.angle or 0, recTgt, i))
+        end
+    end
+    return string.format("[VL][WalterDrive] recording stopped — %d waypoints (%s slot).", #list, recTgt)
 end
 
 -- vlWalterClearRoute: discard the captured scratch waypoints.
@@ -3682,6 +3933,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterOutTruck", "Remove the seated Walter driver and bring the standing Walter back", "walterOutTruck", VLConsole)
     addConsoleCommand("vlWalterDrive", "Drive Walter's truck: exit waypoints then AI to a dest. vlWalterDrive [<name>|<x z>]", "walterDrive", VLConsole)
     addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive (any leg) and restore standing Walter", "walterStopDrive", VLConsole)
+    addConsoleCommand("vlWalterDriveHome", "Drive the route IN REVERSE: market parking → road → farm yard (run while at the market)", "walterDriveHome", VLConsole)
+    addConsoleCommand("vlTruckTeleport", "Instantly drop the truck at a spot for testing: vlTruckTeleport [market|farm|<name>|<x z>|me]", "truckTeleport", VLConsole)
     addConsoleCommand("vlTruckRoadTo", "DIAGNOSTIC: road-AI the truck from its current spot to a dest, no manual leg: vlTruckRoadTo [<name>|<x z>]", "truckRoadTo", VLConsole)
     addConsoleCommand("vlTruckRoadAddWp", "Capture current position as an on-spline road staging waypoint: vlTruckRoadAddWp [angleDeg]", "truckRoadAddWp", VLConsole)
     addConsoleCommand("vlTruckRoadGo", "Chain road-AI legs through the captured road waypoints to a dest: vlTruckRoadGo [<name>|<x z>]", "truckRoadGo", VLConsole)
@@ -3691,7 +3944,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlTruckParkClear", "Clear the captured park-approach points", "truckParkClear", VLConsole)
     addConsoleCommand("vlTruckParkList", "List the captured park-approach points", "truckParkList", VLConsole)
     addConsoleCommand("vlWalterAddWp", "Capture an off-farm exit waypoint at your current position: vlWalterAddWp [angleDeg]", "walterAddWp", VLConsole)
-    addConsoleCommand("vlWalterRecord", "Record a dense exit path by driving the truck: vlWalterRecord on … vlWalterRecord off", "walterRecord", VLConsole)
+    addConsoleCommand("vlWalterRecord", "Record a dense drive path: vlWalterRecord on [home] … off (add 'home' for the reverse-exit/road-crossing path)", "walterRecord", VLConsole)
     addConsoleCommand("vlWalterClearRoute", "Discard the captured exit waypoints", "walterClearRoute", VLConsole)
     addConsoleCommand("vlWalterListWp", "List the captured exit waypoints", "walterListWp", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
