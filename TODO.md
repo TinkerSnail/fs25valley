@@ -31,6 +31,18 @@ deepest schedule + dialog by design; other villagers stay lighter.
       route, then back inside. Reuses the `nightWoodshop` machinery (reveal-at-door + deterministic
       per-night roll + hideOnEnd) pointed at the existing `checkingPumps` waypoints — cheap to add.
 
+### Truck / driving (see [walter-truck-driving.md](journals/walter-truck-driving.md))
+- [x] **Seated driver pose** — `setVehicleCharacter(grandpa.playerStyle)` (sit + hands-on-wheel IK,
+      dressed as Walter). `vlWalterInTruck` / `vlWalterOutTruck`. (2026-06-26, R52)
+- [x] **AI road driving** — `vlWalterDrive [<name>|<x z>]` via the base-game AI "Go To" job; confirmed
+      driving cross-map on the AI road splines. Named target `farmersMarket` baked. `vlWalterStopDrive`.
+- [ ] **Ride-along: let the player ride in the PASSENGER seat while Walter drives** (user request
+      2026-06-26). The truck has `spec_enterablePassenger`, so hook the base-game passenger-seat system
+      rather than hand-roll — research how the player enters a passenger seat (vs driver `enterVehicle`),
+      and make it available while Walter is the AI driver. A scenic "ride into town with Grandpa" beat.
+- [ ] **Wire the drive into his daily schedule** — timed departure → drive to `farmersMarket` → park →
+      (errand) → drive home → re-hide, mirroring the `morningDeparture` edge-trigger pattern.
+
 ## Cast — PRIORITIZE the base-game NPCs Walter introduces (user direction 2026-06-25)
 Build the characters the player canonically MEETS first: the base-game town NPCs Walter name-drops in
 the tutorial. Grounded by mention-frequency in Walter's dialogue (Ben 74×, Katie 51×, Noah/David 20×;
@@ -56,6 +68,13 @@ with a full base conversation + help/smalltalk tree to extend additively. See me
 ## Heart-event framework (keystone)
 - [ ] Author **more events end-to-end** — the cutscene sequencer is the single most important system.
 - [ ] Confirm branching gated on **relationship + calendar** works across multiple events.
+
+## Player controls
+- [ ] **Toggle crouch** (user request 2026-06-26) — make the crouch/squat input a TOGGLE: press Control
+      once → character squats and STAYS squatted; press Control again → stand back up. (Base game is
+      hold-to-crouch.) Intercept the crouch input action and latch the crouched state. The `isCrouching`
+      animation param already exists (`animationsM.xml`); the player crouch state is in
+      `PlayerOnFootStateMachine` / `Player.lua` (decompiled refs) — research the input binding + state there.
 
 ## Polish / tech debt
 - [ ] **Gate dev console commands** before any public release (the `vl*` set is wide open).

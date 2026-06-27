@@ -1823,19 +1823,42 @@ local function vlFindWalterTruck()
     return truck
 end
 
--- vlWalterDrive [x z]: hire the base-game AI "Go To" job to DRIVE Walter's truck to a target along the
--- road network, then override the random helper driver with WALTER so HE is at the wheel. No args = drive
--- to where you're standing (best first reachability test). Server/host only. See project_walter_truck memory.
-function VLConsole:walterDrive(x, z)
+-- Named drive destinations for vlWalterDrive (captured in-game with vlPos). `angle` = parked facing in
+-- radians (from the logged ry), optional; omit to face the approach direction. Add new spots here.
+local VL_DRIVE_TARGETS = {
+    farmersMarket = { x = 387.40, z = -669.62, angle = 0.0 },  -- vlPos 2026-06-26 (ry -0.0000)
+}
+local function vlDriveTargetNames()
+    local names = {}
+    for k in pairs(VL_DRIVE_TARGETS) do names[#names + 1] = k end
+    table.sort(names)
+    return table.concat(names, ", ")
+end
+
+-- vlWalterDrive [<name>|<x z>]: hire the base-game AI "Go To" job to DRIVE Walter's truck to a target along
+-- the road network, then override the random helper driver with WALTER so HE is at the wheel.
+--   vlWalterDrive farmersMarket   → a named destination (see VL_DRIVE_TARGETS)
+--   vlWalterDrive 387.4 -669.6    → explicit world x z
+--   vlWalterDrive                 → drive to where you're standing (reachability test)
+-- Server/host only. See project_walter_truck memory + journals/walter-truck-driving.md.
+function VLConsole:walterDrive(arg1, arg2)
     local truck = vlFindWalterTruck()
     if truck == nil then return "[VL] truck not found" end
     if AIJobGoTo == nil then return "[VL] AIJobGoTo class unavailable" end
     if g_currentMission == nil or g_currentMission.aiSystem == nil then return "[VL] no aiSystem" end
     if not g_currentMission:getIsServer() then return "[VL] must be server/host to start an AI job" end
 
-    -- Target: explicit "x z" args, else the local player's current position ("drive to me").
-    local tx, tz = tonumber(x), tonumber(z)
-    if tx == nil or tz == nil then
+    -- Resolve target: named destination → explicit "x z" → local player's position ("drive to me").
+    local tx, tz, parkAngle
+    local named = arg1 ~= nil and VL_DRIVE_TARGETS[tostring(arg1)] or nil
+    if named ~= nil then
+        tx, tz, parkAngle = named.x, named.z, named.angle
+    elseif tonumber(arg1) ~= nil and tonumber(arg2) ~= nil then
+        tx, tz = tonumber(arg1), tonumber(arg2)
+    elseif arg1 ~= nil then
+        return "[VL] unknown destination '" .. tostring(arg1) .. "'. Known: " .. vlDriveTargetNames()
+               .. " — or pass 'x z', or no args for drive-to-me."
+    else
         local p = g_localPlayer
         if p == nil or p.rootNode == nil then return "[VL] no local player for default target" end
         local px, _, pz = getWorldTranslation(p.rootNode)
@@ -1855,7 +1878,8 @@ function VLConsole:walterDrive(x, z)
         local job = AIJobGoTo.new(true)  -- isServer
         job:applyCurrentState(truck, g_currentMission, farmId, true)  -- vehicle param + default target
         local cx, _, cz = getWorldTranslation(truck.rootNode)
-        local angle = MathUtil.getYRotationFromDirection(tx - cx, tz - cz)  -- approach heading
+        -- Parked facing: the named target's angle if given, else face the approach direction.
+        local angle = parkAngle or MathUtil.getYRotationFromDirection(tx - cx, tz - cz)
         job.positionAngleParameter:setSnappingAngle(0)
         job.positionAngleParameter:setPosition(tx, tz)
         job.positionAngleParameter:setAngle(angle)
@@ -3150,7 +3174,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlDumpTruck", "Probe Grandpa's truck spec_enterable/aiDrivable/ikChains for the Walter-drives feature", "dumpTruck", VLConsole)
     addConsoleCommand("vlWalterInTruck", "Seat Walter as the truck driver via setVehicleCharacter (sit + hands on wheel)", "walterInTruck", VLConsole)
     addConsoleCommand("vlWalterOutTruck", "Remove the seated Walter driver and bring the standing Walter back", "walterOutTruck", VLConsole)
-    addConsoleCommand("vlWalterDrive", "Drive Walter's truck (AI Go-To) to [x z], or to where you stand: vlWalterDrive [x z]", "walterDrive", VLConsole)
+    addConsoleCommand("vlWalterDrive", "Drive Walter's truck (AI Go-To) to a named spot (farmersMarket), an x z, or where you stand: vlWalterDrive [<name>|<x z>]", "walterDrive", VLConsole)
     addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive job and restore standing Walter", "walterStopDrive", VLConsole)
     addConsoleCommand("vlConvo", "Probe NPC conversation system (find hook for 'Who can help me?')", "probeConversation", VLConsole)
     addConsoleCommand("vlStyle", "Dump character style configs (find skin/age options)", "dumpStyles", VLConsole)
