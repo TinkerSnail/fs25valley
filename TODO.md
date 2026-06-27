@@ -36,6 +36,11 @@ deepest schedule + dialog by design; other villagers stay lighter.
       dressed as Walter). `vlWalterInTruck` / `vlWalterOutTruck`. (2026-06-26, R52)
 - [x] **AI road driving** — `vlWalterDrive [<name>|<x z>]` via the base-game AI "Go To" job; confirmed
       driving cross-map on the AI road splines. Named target `farmersMarket` baked. `vlWalterStopDrive`.
+- [x] **Full farm⇄market round trip** baked both directions (`vlWalterDrive farmersMarket` / `vlWalterDriveHome`).
+- [ ] **Map tag doesn't follow him in the truck** (2026-06-27) — Walter's map hotspot gets stuck at the end
+      of leg 1. Cause: the hotspot shadows WalterWalker's *driven* graphicsNode position, which freezes once
+      `_inTruck` (the truck drives independently as its own vehicle). Fix: while `_inTruck`, point the hotspot's
+      `getWorldPosition` at the TRUCK's rootNode instead (or hide his pin and show the truck's vehicle hotspot).
 - [ ] **Ride-along: let the player ride in the PASSENGER seat while Walter drives** (user request
       2026-06-26). The truck has `spec_enterablePassenger`, so hook the base-game passenger-seat system
       rather than hand-roll — research how the player enters a passenger seat (vs driver `enterVehicle`),
