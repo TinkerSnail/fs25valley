@@ -13,37 +13,81 @@ Related: [character-systems.md](character-systems.md) (player-can ⇒ NPC-can), 
 
 ## ⭐ THE MODEL for character driving routes (use this for ALL of them)
 
-This is the established, working template for any NPC driving a vehicle from an off-network start to an
-off-network destination (decided 2026-06-27). A route = **three legs**:
+The established, WORKING template (✅ farm⇄market round trip, 2026-06-27, commit a9c56b8). Any NPC driving a
+vehicle between two off-network spots = **three legs each way**, because the AI road network is **on-spline
+ONLY** and the yard/parking bays are OFF it:
 
-1. **Leg 1 — manual EXIT drive.** The start (farm yard, driveway) is OFF the AI road-spline network, so the
-   road pathfinder rejects it ("unreachable"). Drive a **recorded waypoint path** out to the road with manual
-   `driveToPoint` (`setAITarget(..., useManualDriving=true)`), advancing point-to-point. The wheels only steer
-   when `getIsAIActive()` is true, so set `spec_aiJobVehicle.job` to an unstarted `AIJobGoTo` as a flag during
-   the manual leg (clear it before the road AI). Record the path with `vlWalterRecord`/`vlWalterAddWp`. The
-   final point must land **ON a spline**.
-2. **Leg 2 — road AI.** A real `AIJobGoTo` from the on-spline exit point to an **on-spline** destination — the
-   base-game nav follows the road network, steering + avoiding obstacles. **The destination MUST be on a
-   spline** (an off-spline point = instant "unreachable"). If a single far target won't plan, chain staging
-   points (`vlTruckRoadAddWp`/`vlTruckRoadGo`), but usually one on-spline destination is enough.
-3. **Leg 3 — manual PARK drive.** The parking bay is off-network again, so manual-drive a short recorded path
-   from the on-spline drop-off into the spot (`vlTruckParkAddWp`; final point's angle = parked facing). Runs
-   automatically after the road legs (`vlWalterDrive` queues `_pendingPark`).
+1. **Leg 1 — manual EXIT drive.** The start (yard/bay) is OFF the spline network, so the road pathfinder
+   rejects it. We DRIVE the truck ourselves along a **recorded** waypoint path out to the road
+   (`AIVehicleUtil.driveToPoint` via `setAITarget(..., useManualDriving=true)`), advancing point-to-point.
+   The final point must land **ON a spline**. (Steering needs a trick — see Manual-drive mechanics below.)
+2. **Leg 2 — road AI.** A real `AIJobGoTo` from the on-spline exit point to an **on-spline destination** —
+   base-game nav follows the road graph, steering + braking + obstacle-avoiding for free. **The destination
+   MUST be on a spline** (off-spline = instant "unreachable"; `getIsPositionReachable` is a LIAR, ignore it).
+3. **Leg 3 — manual PARK drive.** The bay is off-network again, so manual-drive a recorded path from the
+   on-spline drop-off into the spot. Runs automatically after the road legs (`vlWalterDrive` queues `_pendingPark`).
 
-**Governing facts:** the AI road network is on-spline only (it goes spline-point to spline-point); off-network
-stretches need manual driving; `getIsPositionReachable` is UNRELIABLE; FS25 `io` is WRITE-ONLY so captured
-paths are recorded in-session then **baked into code** (read the CSV/log with a tool). Walter stays seated
-the whole trip via `setVehicleCharacter` (re-asserted each AI leg + on abort). To add a NEW character's route:
-record leg-1 exit + capture an on-spline destination + record leg-3 park, then bake — same three legs.
+**The splines are ONE-WAY.** The return trip is NOT the forward route reversed — it needs its OWN on-spline
+points on the **opposite-direction lane**. So the reverse is its own three legs: a **crossing** (bay → across
+the road to the return spline), a road AI to a **return drop-off** near home, and a **return park** into the
+yard. Confirm direction/connectivity with `gsAISplinesShow` (base-game command; shows the AI road graph).
 
-### The recorded route: Walter's farm → farmers market (the first one, BAKED 2026-06-27)
+Walter stays seated the whole trip via `setVehicleCharacter` (Part 1), re-asserted on each AI leg + on abort
+so he never vanishes. Captured paths are **baked into code** (FS25 `io` is write-only — see Recorder workflow).
 
-All waypoints live in `main.lua` (the durable record); anchor coords here for reference. `vlWalterDrive farmersMarket`.
+### How to build a NEW character's route (the recipe)
 
-- **Leg 1 — exit** (`VLConsole._scratchWps`, 15 pts): from the truck's park spot (~-763.3, 116.6) curving NW
-  out of the yard around the shed to the **on-spline endpoint (-800.99, 132.15)**.
-- **Leg 2 — road AI** (`VL_DRIVE_TARGETS.farmersMarket`): road-drive to the **on-spline drop-off (398.29, -708.97)**.
-- **Leg 3 — park** (`VLConsole._parkWps`, 3 pts): (398.51,-677.85) → (396.63,-672.58) → **(387.95, -669.99) facing -89°** (parked in the bay).
+Per direction (use `vlTruckTeleport` to jump the vehicle to each test spot — don't drive the whole way):
+1. **Record leg-1 exit:** sit in the vehicle at its parked spot → `vlWalterRecord on` → drive out to the
+   road, ending **on a spline** (toggle `gsAISplinesShow` to see it) → `vlWalterRecord off`.
+2. **Capture the on-spline destination:** stand/park ON the destination spline → `vlPos` → that's the leg-2
+   target (a `VL_DRIVE_TARGETS` entry).
+3. **Record leg-3 park:** teleport to the destination drop-off → `vlWalterRecord on park` → drive into the
+   bay, stop where it should park (final heading = parked facing) → `vlWalterRecord off`.
+4. For the **return**, repeat with the `home` slot (crossing to the opposite-lane spline), a `farmReturn`-style
+   on-spline drop-off near home, and the `homepark` slot (drop-off → yard).
+5. **Bake:** every `…Record off` prints the points to the log; read them out and hardcode into the route's
+   `VLConsole._…Wps` tables + `VL_DRIVE_TARGETS` in `main.lua`. Test, commit.
+
+### Manual-drive mechanics (the non-obvious engineering)
+
+- **Steering won't engage** for `setAITarget(useManualDriving=true)` unless `getIsAIActive()` is true — the
+  wheels ignore AI steering otherwise and the truck just creeps straight. `AIJobVehicle:getIsAIActive` returns
+  true iff `spec_aiJobVehicle.job ~= nil` (line 277). So during a manual leg we set `spec_aiJobVehicle.job` to
+  an **unstarted** `AIJobGoTo` purely as that flag (NOT the road pathfinder), and clear it before the real
+  road AI runs (`driveStart`/`vlDriveClearJob`).
+- **Advance by PROGRESS, not heading.** Step to the next waypoint when close to the current OR the next is
+  already closer. A "is this point behind me" heading test wrongly skips every point when the vehicle starts
+  parked facing AWAY from the path (e.g. facing into the bay while the path pulls out) → it beelines the last
+  point. (`driveTick`.)
+- **Stuck-detect by PROGRESS, not crow-flies distance.** Declare stuck only if the target waypoint index
+  hasn't advanced for ~6 s. Distance-to-final-point falsely grows on a WINDING path and used to kill good
+  drives near the buildings.
+- **Recording first point matters:** `driveStart` begins at the waypoint NEAREST the vehicle (not always #1),
+  so re-running while already partway/parked-at-the-end doesn't drive backward.
+
+### Recorder workflow + persistence (FS25 io is WRITE-ONLY)
+
+`vlWalterRecord on [home|homepark|park] … off` samples the vehicle's pose every ~3 m into the named slot
+(`_scratchWps`=exit / `_homeExitWps`=crossing / `_homeParkWps`=return-park / `_parkWps`=forward-park).
+**FS25 sandboxes `io.open` to WRITE mode only — opening for READ is forced to write and TRUNCATES the file**
+(this destroyed a route once). So: only the `exit` slot auto-saves to a CSV; the others are in-memory and,
+on `…Record off`, **dumped as `{ x=, z=, angle= }` lines to the log** for baking. In-memory recordings are
+lost on relaunch — so **capture and bake in the same session**. Vehicle-aware capture: `vlPos`/`vlWalterAddWp`
+read the VEHICLE's position when you're seated in it (the on-foot player node parks at the origin → (0,0)).
+
+### The BAKED routes — Walter's farm ⇄ farmers market (2026-06-27)
+
+All waypoints live in `main.lua` (the durable record); anchor coords for reference. `vlWalterDrive farmersMarket` / `vlWalterDriveHome`.
+
+| Leg | Slot | pts | from → to |
+|---|---|---|---|
+| Forward exit | `_scratchWps` | 15 | park spot (-763.3,116.6) → on-spline (-800.99,132.15) |
+| Forward road | `VL_DRIVE_TARGETS.farmersMarket` | — | → on-spline drop-off (398.29,-708.97) |
+| Forward park | `_parkWps` | 19 | drop-off → bay (390.77,-669.42) |
+| Reverse crossing | `_homeExitWps` | 19 | bay → return-lane spline (386.56,-712.49) |
+| Reverse road | `VL_DRIVE_TARGETS.farmReturn` | — | → on-spline drop-off (-801.17,83.33) |
+| Reverse park | `_homeParkWps` | 59 | drop-off → yard (-762.96,117.33) |
 
 ---
 
@@ -109,7 +153,7 @@ which overrides appearance — handle by stripping/ignoring that preset. (series
 
 ---
 
-## Part 2 — DRIVING THE ROUTE via the AI "Go To" job (built, pending in-game test)
+## Part 2 — DRIVING THE ROUTE via the AI "Go To" job (✅ working — see THE MODEL above for the full recipe)
 
 Decision: use the **base-game AI system** (the hired-worker "drive to a point" job), not a hand-rolled
 kinematic path. It does **full road pathfinding** — `AIDrivable:createAgent` builds a
@@ -184,29 +228,30 @@ facing; pass-through legs use the approach heading.
 reason — `[VL][WalterDrive] AI job STOPPED — reason: <AIMessage class> — <text>` (CouldNotPrepare /
 NotReachable / OutOfFuel / NoPathFound / FinishedJob …).
 
-### Open risks to verify in-game
+### Resolved (was "open risks")
 
-1. Does the map's AI road nav network cover the farm→downtown route? (else `NotReachable`.) The first
-   "drive to me" test (`vlWalterDrive` no-args) is the reachability probe.
-2. Fuel / motor start (`prepareForAIDriving` starts the engine).
-3. Whether the AI tries to walk a helper to the door first before driving.
+1. **Does the AI network connect farm↔downtown?** YES, but the splines are ONE-WAY — the forward and return
+   use opposite-lane on-spline points (hence the separate crossing). The yard/bays are off-network (manual legs).
+2. **Fuel / motor start** — `prepareForAIDriving` starts the engine; not an issue in practice.
+3. **No helper-walks-to-door** — we set the vehicleCharacter directly; the AI just drives.
 
 ---
 
-## Console commands (the truck feature)
+## Console commands (current, after cleanup a9c56b8)
 
 | Command | Usage | What it does |
 |---|---|---|
-| `vlDumpVehicle` | while seated | Dump the seated vehicle's filename / uniqueId / class / pos / configs. |
-| `vlDumpTruck` | anywhere | Probe the truck's `spec_enterable` / `aiDrivable` / `ikChains` (seat node, IK targets). |
-| `vlDumpDriver` | while seated in any vehicle | Dump the player's seated charset + the vehicleCharacter's active tracks (how the seated pose is built). |
-| `vlWalterInTruck` | standing near the truck | Seat Walter as the driver via `setVehicleCharacter` (sit + hands on wheel), hide standing Walter. |
-| `vlWalterOutTruck` | — | Remove the seated driver, reveal the standing Walter. |
-| `vlWalterDrive` | `vlWalterDrive [<name>\|<x z>]` | Single-leg AI Go-To to a named spot (`farmersMarket`), an `x z`, or (no args) **where you stand**; re-asserts Walter as the driver. |
-| `vlWalterAddWp` | `vlWalterAddWp [angleDeg]` | Capture your position as a **route waypoint** (road off-farm, then the destination). Optional final-park facing. |
-| `vlWalterDriveRoute` | — | Drive the captured waypoints in order (chained legs) — the way to **stage a farm-exit node** before a cross-town target. |
-| `vlWalterClearRoute` | — | Discard the captured waypoints. |
-| `vlWalterStopDrive` | — | Stop the AI drive (any leg), restore the standing Walter. |
+| `vlWalterDrive` | `[<name>\|<x z>]` | Drive the FORWARD route: manual exit → road AI to dest → manual park. `farmersMarket`, an `x z`, or no-args = to where you stand. |
+| `vlWalterDriveHome` | — | Drive the REVERSE route (crossing → road AI to `farmReturn` → return park into the yard). |
+| `vlWalterStopDrive` | — | Stop the drive (any leg) + restore the standing Walter. |
+| `vlTruckTeleport` | `[market\|farm\|<name>\|<x z>\|me]` | Instantly place the truck for testing (no long drive). |
+| `vlWalterRecord` | `on [home\|homepark\|park] … off` | Record a dense drive path into a slot; on `off` it dumps the points to the log for baking. Default slot = forward exit. |
+| `vlWalterAddWp` / `vlWalterListWp` / `vlWalterClearRoute` | — | Point-by-point exit-path capture/list/clear (alt to the recorder). |
+| `vlTruckParkAddWp` / `vlTruckParkList` / `vlTruckParkClear` | — | Point-by-point forward-park capture (alt to `vlWalterRecord on park`). |
+| `vlWalterInTruck` / `vlWalterOutTruck` | — | Seat / un-seat Walter as the parked-truck driver (the standalone seated-pose POC). |
+| `vlTruckRoadTo` | `[<name>\|<x z>]` | DIAGNOSTIC: road-AI the truck from its current spot to a target (no manual leg) — isolates start-vs-target reachability when building a new route. |
+| `vlDumpTruck` / `vlDumpDriver` / `vlDumpVehicle` | — | Discovery probes (seat node, IK targets, vehicleCharacter tracks). Dormant dev tools. |
+| `gsAISplinesShow` | — | **Base-game** command: toggle the AI road-spline overlay (find on-spline points / check connectivity). |
 
 ---
 

@@ -132,18 +132,20 @@ dusk hour (summer 19:00 / winter 17:00).
 
 ### Walter + the truck (see [walter-truck-driving.md](walter-truck-driving.md))
 
+Full reference + the build recipe are in [walter-truck-driving.md](walter-truck-driving.md). Quick list:
+
 | Command | Usage | What it does |
 |---|---|---|
-| `vlWalterInTruck` | standing near the truck | Seat Walter as the DRIVER via `setVehicleCharacter` (sit + hands on wheel, dressed as himself); hide standing Walter. |
-| `vlWalterOutTruck` | — | Remove the seated driver, reveal the standing Walter. |
-| `vlWalterDrive` | `vlWalterDrive [<name>\|<x z>]` | Single-leg AI "Go To" to a named spot (`farmersMarket`), an `x z`, or (no args) **where you stand**; re-asserts Walter as the driver. Server/host only. |
-| `vlWalterAddWp` | `vlWalterAddWp [angleDeg]` | Capture your position as a truck-route waypoint (road off-farm, then destination). The farm yard isn't on the AI splines, so stage a road exit node first. |
-| `vlWalterDriveRoute` | — | Drive the captured waypoints in order (chained Go-To legs), Walter at the wheel. |
-| `vlWalterClearRoute` | — | Discard the captured waypoints. |
-| `vlWalterStopDrive` | — | Stop the AI drive (any leg) and restore the standing Walter. |
-| `vlDumpTruck` | anywhere | Probe the truck's `spec_enterable`/`aiDrivable`/`ikChains` (seat node, IK targets). |
-| `vlDumpVehicle` | while seated | Dump the seated vehicle's filename/uniqueId/class/pos/configs. |
-| `vlDumpDriver` | while seated in any vehicle | Dump the seated charset + vehicleCharacter active tracks (how the seated pose is built). |
+| `vlWalterDrive` | `[<name>\|<x z>]` | Drive the FORWARD route (manual exit → road AI to dest → manual park). `farmersMarket`, an `x z`, or no-args = to you. |
+| `vlWalterDriveHome` | — | Drive the REVERSE route (crossing → road AI to `farmReturn` → park in the yard). |
+| `vlWalterStopDrive` | — | Stop the drive (any leg) + restore the standing Walter. |
+| `vlTruckTeleport` | `[market\|farm\|<name>\|<x z>\|me]` | Instantly place the truck for testing. |
+| `vlWalterRecord` | `on [home\|homepark\|park] … off` | Record a dense drive path into a slot; dumps points to the log on `off` for baking. |
+| `vlWalterInTruck` / `vlWalterOutTruck` | — | Seat / un-seat Walter in the parked truck (seated-pose POC). |
+| `vlTruckRoadTo` | `[<name>\|<x z>]` | DIAGNOSTIC: road-AI from the truck's current spot (no manual leg). |
+| `vlWalterAddWp` / `vlTruckParkAddWp` (+ List/Clear) | — | Point-by-point capture (alt to the recorder). |
+| `vlDumpTruck` / `vlDumpVehicle` / `vlDumpDriver` | — | Discovery probes (dormant dev tools). |
+| `gsAISplinesShow` | — | **Base-game**: toggle the AI road-spline overlay. |
 
 ## Appearance diagnostics
 
