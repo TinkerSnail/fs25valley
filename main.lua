@@ -86,10 +86,11 @@ local function onMissionUpdate(mission, dt)
             print("[ValleyLife] ERROR in update: " .. tostring(err))
         end
     end
-    -- Pump the physical line-follower + path recorder (defined later on the global VLConsole).
+    -- Pump the physical line-follower + path recorder + the daily truck schedule (all on the global VLConsole).
     if VLConsole ~= nil then
         if VLConsole.driveTick ~= nil then pcall(VLConsole.driveTick, dt) end
         if VLConsole.recordTick ~= nil then pcall(VLConsole.recordTick, dt) end
+        if VLConsole.truckScheduleTick ~= nil then pcall(VLConsole.truckScheduleTick, dt) end
     end
 end
 
@@ -1917,6 +1918,7 @@ local function vlReassertWalterDriver(truck)
         if vc ~= nil then pcall(function() vc.isVisible = true; vc:setCharacterVisibility(true) end) end
     end
     walker._inTruck     = true
+    walker._away        = false  -- back in the truck → clear any "out at the market" state
     walker._truck       = truck
     walker._vehicleChar = truck.spec_enterable and truck.spec_enterable.vehicleCharacter
     pcall(function() walker:_hide() end)
@@ -2081,6 +2083,22 @@ function VLConsole.driveStart(truck, farmId, wps, dest)
     return true
 end
 
+-- Walter GETS OUT of the truck and stands beside it (driver/left side). Called whenever a manual drive ENDS
+-- — clean finish OR stuck/incomplete — so the truck is NEVER left with a seated NPC `vehicleCharacter` on it
+-- (that non-vanilla state hangs the savegame). No-op if he isn't currently seated.
+local function vlDismountAtTruck(truck, away)
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker == nil or not walker._inTruck then return end
+    if truck == nil or truck.rootNode == nil or not entityExists(truck.rootNode) then return end
+    local tx, _, tz = getWorldTranslation(truck.rootNode)
+    local _, ry, _  = getWorldRotation(truck.rootNode)
+    local lx, _, lz = localDirectionToWorld(truck.rootNode, -1, 0, 0)  -- step out the driver (left) side
+    local px, pz    = tx + lx * 2.0, tz + lz * 2.0
+    local py        = getTerrainHeightAtWorldPos(g_terrainNode, px, 300, pz)
+    pcall(function() if type(truck.deleteVehicleCharacter) == "function" then truck:deleteVehicleCharacter() end end)
+    pcall(function() walker:_dismountAt(px, py, pz, ry, away) end)
+end
+
 local function vlDriveFinish()
     local d = VLConsole._drive
     if d == nil then return end
@@ -2089,7 +2107,11 @@ local function vlDriveFinish()
     pcall(function() truck:unsetAITarget() end)
     vlDriveClearJob(d)  -- drop the steering-mode job so the real road AI starts clean
     print("[VL][WalterDrive] reached end of recorded exit line.")
-    if dest == nil then return end
+    if dest == nil then
+        -- FINAL leg done (parked at the destination) → Walter gets out.
+        vlDismountAtTruck(truck, VLConsole._tripAway ~= false)
+        return
+    end
     print(string.format("[VL][WalterDrive] handing off to road AI → '%s' (%.1f,%.1f).", dest.label or "dest", dest.x, dest.z))
     VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = dest.label or "dest",
                          wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
@@ -2140,9 +2162,14 @@ function VLConsole.driveTick(dt)
     end
     if (d.stuckT or 0) > 6000 then
         print(string.format("[VL][WalterDrive] STUCK at idx %d/%d (no waypoint reached in 6s) — stopping.", d.targetIdx, #d.wps))
+        local truck = d.truck
         vlDriveClearJob(d)
         VLConsole._drive = nil
-        pcall(function() d.truck:unsetAITarget() end)
+        VLConsole._route = nil
+        VLConsole._pendingPark = nil
+        pcall(function() truck:unsetAITarget() end)
+        -- Get him OUT even on an incomplete park, so the truck is never left with a seated driver (save-safe).
+        vlDismountAtTruck(truck, VLConsole._tripAway ~= false)
         return
     end
 
@@ -2224,6 +2251,7 @@ function VLConsole:walterDrive(arg1, arg2)
                    or (g_localPlayer and g_localPlayer.farmId) or 1
 
     -- Seat Walter for the whole trip (hides standing Walter; WalterWalker keeps his IK solved while _inTruck).
+    VLConsole._tripAway = true   -- driving OUT to a destination → he gets out "away" (idles there, no farm route)
     vlReassertWalterDriver(truck)
 
     -- Queue the PARK approach (leg 3) to run after the road legs reach the on-spline drop-off.
@@ -2299,6 +2327,7 @@ function VLConsole:walterDriveHome()
     end
 
     local farmId = (truck.getOwnerFarmId and truck:getOwnerFarmId()) or (g_localPlayer and g_localPlayer.farmId) or 1
+    VLConsole._tripAway = false   -- driving HOME → dismount resumes his normal farm routines
     vlReassertWalterDriver(truck)
     VLConsole._route = nil
     VLConsole._pendingPark = (#park >= 2) and park or nil
@@ -2312,6 +2341,65 @@ function VLConsole:walterDriveHome()
     VLConsole._route = { truck = truck, farmId = farmId, idx = 0, label = dest.label, wps = { { x = dest.x, z = dest.z, angle = dest.angle } } }
     vlDriveNextLeg()
     return "[VL][WalterDrive] HOME (reverse): road → farm yard."
+end
+
+-- ── Daily truck schedule (first pass) ────────────────────────────────────────────────────────────────────
+-- What we have so far: each day Walter drives to the market in the morning, idles there (his farm routes are
+-- suppressed while `_away`), and drives home in the evening. Edge-triggered once per day each way. Pumped from
+-- onMissionUpdate. Toggle/tune with `vlWalterSchedule`. (His broader daily roster isn't designed yet.)
+VLConsole._truckSchedule = { enabled = true, departHour = 10, returnHour = 16, dest = "farmersMarket" }
+
+function VLConsole.truckScheduleTick(dt)
+    local sch = VLConsole._truckSchedule
+    if sch == nil or not sch.enabled then return end
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    local walker = g_valleyLife and g_valleyLife.walterWalker
+    if walker == nil then return end
+    -- Never interrupt a drive already in progress (manual leg or road leg).
+    if VLConsole._drive ~= nil or VLConsole._route ~= nil then return end
+    local hour = TimeHelper and TimeHelper.getHour and TimeHelper.getHour() or nil
+    if hour == nil then return end
+    local day  = (TimeHelper.getMonotonicDay and TimeHelper.getMonotonicDay()) or 0
+
+    -- DEPART to the market: once/day in [departHour, returnHour), while he's home, settled, out, not talking.
+    if hour >= (sch.departHour or 10) and hour < (sch.returnHour or 16)
+       and not walker._inTruck and not walker._away and not walker._active and not walker._hidden
+       and not (walker.grandpa and walker.grandpa.isInConversation) then
+        if VLConsole._lastDepartDay ~= day then
+            VLConsole._lastDepartDay = day
+            print(string.format("[VL][Schedule] %02d:00 — Walter heads to %s.", hour, sch.dest or "market"))
+            pcall(function() VLConsole:walterDrive(sch.dest or "farmersMarket") end)
+        end
+        return
+    end
+
+    -- RETURN home: once/day at returnHour, while he's out at the market.
+    if walker._away and hour >= (sch.returnHour or 16) then
+        if VLConsole._lastReturnDay ~= day then
+            VLConsole._lastReturnDay = day
+            print(string.format("[VL][Schedule] %02d:00 — Walter heads home.", hour))
+            pcall(function() VLConsole:walterDriveHome() end)
+        end
+    end
+end
+
+-- vlWalterSchedule [on|off|now|<departHr> <returnHr>]: toggle/tune the daily truck schedule; `now` forces
+-- the departure immediately (skip the wait for departHour). Setting the hours clears the once-per-day marker
+-- so it can re-fire today.
+function VLConsole:walterSchedule(arg1, arg2)
+    local sch = VLConsole._truckSchedule
+    local a = arg1 ~= nil and string.lower(tostring(arg1)) or nil
+    if a == "on" then sch.enabled = true
+    elseif a == "off" then sch.enabled = false
+    elseif a == "now" then
+        VLConsole._lastDepartDay = nil
+        return "[VL][Schedule] forcing departure → " .. tostring(VLConsole:walterDrive(sch.dest or "farmersMarket"))
+    elseif tonumber(arg1) ~= nil and tonumber(arg2) ~= nil then
+        sch.departHour = math.floor(tonumber(arg1)); sch.returnHour = math.floor(tonumber(arg2))
+        VLConsole._lastDepartDay = nil; VLConsole._lastReturnDay = nil
+    end
+    return string.format("[VL][Schedule] %s — depart %02d:00 → %s, return %02d:00. (on|off|now|<departHr> <returnHr>)",
+        sch.enabled and "ON" or "OFF", sch.departHour or 10, sch.dest or "market", sch.returnHour or 16)
 end
 
 -- vlTruckTeleport [market|farm|<name>|<x z>|me]: instantly drop the truck at a spot (no long drive) for fast
@@ -3865,6 +3953,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterDrive", "Drive Walter's truck: exit waypoints then AI to a dest. vlWalterDrive [<name>|<x z>]", "walterDrive", VLConsole)
     addConsoleCommand("vlWalterStopDrive", "Stop Walter's truck AI drive (any leg) and restore standing Walter", "walterStopDrive", VLConsole)
     addConsoleCommand("vlWalterDriveHome", "Drive the route IN REVERSE: market parking → road → farm yard (run while at the market)", "walterDriveHome", VLConsole)
+    addConsoleCommand("vlWalterSchedule", "Daily truck schedule: vlWalterSchedule [on|off|now|<departHr> <returnHr>] (Walter drives to market AM, home PM)", "walterSchedule", VLConsole)
     addConsoleCommand("vlTruckTeleport", "Instantly drop the truck at a spot for testing: vlTruckTeleport [market|farm|<name>|<x z>|me]", "truckTeleport", VLConsole)
     addConsoleCommand("vlTruckRoadTo", "DIAGNOSTIC: road-AI the truck from its current spot to a dest, no manual leg: vlTruckRoadTo [<name>|<x z>]", "truckRoadTo", VLConsole)
     addConsoleCommand("vlTruckParkAddWp", "Capture current position as a leg-3 park-approach point (drive into the lot): vlTruckParkAddWp [angleDeg]", "truckParkAddWp", VLConsole)
@@ -3935,7 +4024,7 @@ do
                     local rx, _, rz = localDirectionToWorld(ww._truck.rootNode, 1, 0, 0)  -- truck's right side
                     if pcall(function() self:teleportTo(tx + rx * 3.0, ty, tz + rz * 3.0) end) then return end
                 end
-                if isWalter and ww._active and type(self.teleportTo) == "function" then
+                if isWalter and (ww._active or ww._away) and type(self.teleportTo) == "function" then
                     -- Land a couple meters in front of him (his facing), not inside his model.
                     local off = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.visitOffset) or 2.0
                     local ry  = ww._ry or 0

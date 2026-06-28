@@ -117,6 +117,8 @@ function WalterWalker.new()
     self._truckSeatNode = nil   -- (legacy probe field; unused by the setVehicleCharacter path)
     self._truck         = nil   -- the truck vehicle while _inTruck (for the per-frame IK pump)
     self._vehicleChar   = nil   -- truck.spec_enterable.vehicleCharacter — pumped each frame to solve seated IK
+    self._away          = false -- true while he's out at a destination (e.g. market) AFTER getting out of the
+                                -- truck: suppress home-route triggers + keep map/Visit on his away position
     self._origPlayerGraphicsUpdate = nil
     self._patchedClass             = nil
     return self
@@ -169,7 +171,7 @@ function WalterWalker:_acquireNode()
                 local tx, _, tz = getWorldTranslation(walker._truck.rootNode)
                 return tx, tz
             end
-            if walker._active then return walker._wx, walker._wz end
+            if walker._active or walker._away then return walker._wx, walker._wz end
             return orig(selfHs)
         end
         self._origGetWP = orig
@@ -1219,6 +1221,46 @@ function WalterWalker:_revealAtHome(cfg)
     print("[ValleyLife][Walter] started his day (revealed at home)")
 end
 
+-- He GETS OUT of the truck at a destination: stop being the seated driver, place his standing body at (x,z)
+-- facing ry, and pin all his followers there (spot/map/Visit/trigger) so idle is stable + everything reads
+-- the right spot. `away=true` (e.g. the market) suppresses his home-route triggers so he stays put instead
+-- of walking back toward the farm; `away=false` (arriving HOME) resumes normal farm routines. The caller
+-- removes the seated vehicleCharacter (`truck:deleteVehicleCharacter()`).
+function WalterWalker:_dismountAt(x, y, z, ry, away)
+    self._inTruck     = false
+    self._truck       = nil
+    self._vehicleChar = nil
+    self._active      = false
+    self._isWalking   = false
+    self._away        = away and true or false
+    self._wx, self._wy, self._wz = x, y, z
+    self._ry = ry or self._ry
+    if self.graphicsNode and entityExists(self.graphicsNode) then
+        pcall(function()
+            setTranslation(self.graphicsNode, x, y - (self._yOffset or 0), z)
+            setRotation(self.graphicsNode, 0, self._ry, 0)
+        end)
+    end
+    self:_reveal()
+    self:_syncFollowers()  -- spot==position → stable idle (no flop); map icon + Visit + trigger all here
+    print(string.format("[ValleyLife][Walter] got out of the truck (%s)", away and "away/market" or "home"))
+end
+
+-- While idle "away" (out at the market), turn to face the player when he's nearby — the stop-and-face from
+-- his walk routes, for the idle state. Facing is driven via grandpa.rotY (the engine applies it in
+-- grandpa:update → setModelRotation); do NOT setRotation the graphicsNode directly here (it fights orig()
+-- and twitches). The base-game conversation turns him to face on its own, so skip while talking.
+function WalterWalker:_faceNearbyPlayer(cfg, dt)
+    if self.grandpa == nil or self.grandpa.isInConversation then return end
+    local approach = (cfg and cfg.approachRange) or 6.0
+    local px, _, pz = playerWorldPos()
+    if px == nil then return end
+    local dx, dz = px - self._wx, pz - self._wz
+    if (dx * dx + dz * dz) > (approach * approach) then return end
+    self._ry = lerpAngle(self._ry, math.atan2(dx, dz), WALK_TURN_RATE * (dt / 1000))
+    self.grandpa.rotY = self._ry
+end
+
 -- Morning departure: at 5am he steps out the door and walks down to home. Reveal him AT the door
 -- (waypoint[1] of the morningDeparture loop), face the next waypoint, then run the loop. Falls back
 -- to a plain home-reveal if the loop is missing. Mirror of eveningReturn (which ends by hiding at
@@ -1364,6 +1406,12 @@ function WalterWalker:update(dt)
         self:_updateWalk(cfg, dt)
         return
     end
+
+    -- Out at a destination after getting out of the truck (e.g. the market): idle there as a normal NPC,
+    -- but do NOT start his FARM home-routes (they'd walk him toward farm waypoints). Greet/flashlight above
+    -- still run; _syncFollowers (in _dismountAt) keeps him pinned here. He resumes routes when not _away
+    -- (cleared when he gets back in the truck, or dismounts HOME).
+    if self._away then self:_faceNearbyPlayer(cfg, dt); return end
 
     -- Start his day at dayStartHour. EDGE-triggered, once per calendar day: the first time
     -- we see hour >= dayStartHour on a new monotonicDay, mark the day woken and — if he
