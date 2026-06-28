@@ -117,6 +117,8 @@ function WalterWalker.new()
     self._truckSeatNode = nil   -- (legacy probe field; unused by the setVehicleCharacter path)
     self._truck         = nil   -- the truck vehicle while _inTruck (for the per-frame IK pump)
     self._vehicleChar   = nil   -- truck.spec_enterable.vehicleCharacter — pumped each frame to solve seated IK
+    self._away          = false -- true while he's out at a destination (e.g. market) AFTER getting out of the
+                                -- truck: suppress home-route triggers + keep map/Visit on his away position
     self._origPlayerGraphicsUpdate = nil
     self._patchedClass             = nil
     return self
@@ -169,7 +171,7 @@ function WalterWalker:_acquireNode()
                 local tx, _, tz = getWorldTranslation(walker._truck.rootNode)
                 return tx, tz
             end
-            if walker._active then return walker._wx, walker._wz end
+            if walker._active or walker._away then return walker._wx, walker._wz end
             return orig(selfHs)
         end
         self._origGetWP = orig
@@ -197,7 +199,10 @@ function WalterWalker:_acquireNode()
             local walker  = self
             local patched = function(self_pg, dt)
                 local grn    = self_pg.graphicsRootNode
-                local active = walker._active and self_pg == walker.grandpa.playerGraphics
+                -- `_away` (idling at the market) joins `_active` on the skip-orig() path: otherwise orig() runs
+                -- AND applyPosition writes his rotation each frame → they fight = the vibrate. On this path orig()
+                -- is skipped and OUR rotation wins uncontested (same as the shimmy-free mid-route stop-and-face).
+                local active = (walker._active or walker._away) and self_pg == walker.grandpa.playerGraphics
                                and grn and entityExists(grn)
 
                 -- R17: while Walter is actively walking, SKIP orig() (the GIANTS graphics update) so
@@ -205,8 +210,10 @@ function WalterWalker:_acquireNode()
                 -- BUT a CONVERSATION needs orig() to animate (face/gestures); if a route is active
                 -- during a conversation, skipping orig() starves it → he glides. So also run orig()
                 -- when in conversation, and let _updateWalk yield the route to the base game.
-                -- In-truck: skip orig() entirely. Position/rotation set once at link time.
-                if walker._inTruck then return end
+                -- In-truck: skip orig() entirely (position/rotation set once at link time). GUARD by Walter's
+                -- own playerGraphics — this patch is CLASS-shared, so without the guard the skip ran for EVERY
+                -- NPC while Walter drove, starving Ben/Dave/Katie's animation update (they jittered/froze).
+                if walker._inTruck and walker.grandpa and self_pg == walker.grandpa.playerGraphics then return end
 
                 local inConvo = walker.grandpa and walker.grandpa.isInConversation
                 if inConvo then
@@ -1219,6 +1226,61 @@ function WalterWalker:_revealAtHome(cfg)
     print("[ValleyLife][Walter] started his day (revealed at home)")
 end
 
+-- He GETS OUT of the truck at a destination: stop being the seated driver, place his standing body at (x,z)
+-- facing ry, and pin all his followers there (spot/map/Visit/trigger) so idle is stable + everything reads
+-- the right spot. `away=true` (e.g. the market) suppresses his home-route triggers so he stays put instead
+-- of walking back toward the farm; `away=false` (arriving HOME) resumes normal farm routines. The caller
+-- removes the seated vehicleCharacter (`truck:deleteVehicleCharacter()`).
+function WalterWalker:_dismountAt(x, y, z, ry, away)
+    self._inTruck     = false
+    self._truck       = nil
+    self._vehicleChar = nil
+    self._active      = false
+    self._isWalking   = false
+    self._away        = away and true or false
+    self._wx, self._wy, self._wz = x, y, z
+    self._ry = ry or self._ry
+    if away then
+        -- This dismount spot IS the driver's door — remember it so he can walk BACK here after the stroll.
+        self._truckDoorX, self._truckDoorZ = x, z
+        self._marketLoops = 0  -- fresh market visit → reset the circuit counter
+    end
+    if self.graphicsNode and entityExists(self.graphicsNode) then
+        pcall(function()
+            setTranslation(self.graphicsNode, x, y - (self._yOffset or 0), z)
+            setRotation(self.graphicsNode, 0, self._ry, 0)
+        end)
+    end
+    self:_reveal()
+    self:_syncFollowers()  -- spot==position → stable idle (no flop); map icon + Visit + trigger all here
+    -- While `_away` he's on the skip-orig() path, so track 0 (not orig's ConditionalAnimation) is what shows.
+    -- Put the idle clip there ONCE (per-frame would restart it) so he has a standing pose, not a frozen stride.
+    if away and self.animCharSet ~= nil and (self._idleClipIdx or -1) >= 0 then
+        pcall(function()
+            clearAnimTrackClip(self.animCharSet, 0)
+            assignAnimTrackClip(self.animCharSet, 0, self._idleClipIdx)
+            setAnimTrackLoopState(self.animCharSet, 0, true)
+            enableAnimTrack(self.animCharSet, 0)
+        end)
+    end
+    print(string.format("[ValleyLife][Walter] got out of the truck (%s)", away and "away/market" or "home"))
+end
+
+-- While idle "away" (out at the market), turn to face the player when he's nearby — the same stop-and-face
+-- as his walk routes, for the idle state. Only LERPS self._ry; `applyPosition()` (g_npcManager.update hook)
+-- applies it via setRotation right after playerGraphics:update — the proven, twitch-free path. (The old
+-- `grandpa.rotY` write here did NOTHING while _away — that was the bug.) Skip while talking (the base-game
+-- conversation turns him to face on its own).
+function WalterWalker:_faceNearbyPlayer(cfg, dt)
+    if self.grandpa == nil or self.grandpa.isInConversation then return end
+    local approach = (cfg and cfg.approachRange) or 6.0
+    local px, _, pz = playerWorldPos()
+    if px == nil then return end
+    local dx, dz = px - self._wx, pz - self._wz
+    if (dx * dx + dz * dz) > (approach * approach) then return end
+    self._ry = lerpAngle(self._ry, math.atan2(dx, dz), WALK_TURN_RATE * (dt / 1000))
+end
+
 -- Morning departure: at 5am he steps out the door and walks down to home. Reveal him AT the door
 -- (waypoint[1] of the morningDeparture loop), face the next waypoint, then run the loop. Falls back
 -- to a plain home-reveal if the loop is missing. Mirror of eveningReturn (which ends by hiding at
@@ -1299,6 +1361,23 @@ function WalterWalker:_endLoop(cfg)
     print("[ValleyLife][Walter] loop complete; idling at home")
 end
 
+-- Done strolling the market: walk from his current spot back to the truck's driver door (captured at dismount),
+-- then — on arrival — get in and drive home. A synthetic 2-wp loop; the truck-door wp carries driveHomeOnArrival
+-- so _updateWalk fires VLConsole:walterDriveHome() when he gets there. Safe to call mid-stroll (test command).
+function WalterWalker:_startReturnToTruck()
+    if self._truckDoorX == nil then return end
+    local loop = {
+        name = "marketReturn",
+        waypoints = {
+            { name = "strollEnd",       x = self._wx,         z = self._wz },
+            { name = "truckDriverSide", x = self._truckDoorX, z = self._truckDoorZ, driveHomeOnArrival = true },
+        },
+    }
+    self._marketLoops = 0
+    print("[ValleyLife][Walter] done strolling the market — walking back to the truck to drive home")
+    self:_beginLoop(loop)  -- targetIdx=2 → walk to the truck door
+end
+
 -- Force-start a loop now (vlWalk), bypassing the timer. `selector` is a loop name,
 -- an index, or nil (= the loop active at the current hour). Returns name/index or nil.
 function WalterWalker:forceWalkLoop(selector)
@@ -1362,6 +1441,32 @@ function WalterWalker:update(dt)
 
     if self._active then
         self:_updateWalk(cfg, dt)
+        return
+    end
+
+    -- Out at a destination after getting out of the truck (e.g. the market): idle there as a normal NPC,
+    -- but do NOT start his FARM home-routes (they'd walk him toward farm waypoints). Greet/flashlight above
+    -- still run; _syncFollowers (in _dismountAt) keeps him pinned here. He resumes routes when not _away
+    -- (cleared when he gets back in the truck, or dismounts HOME).
+    if self._away then
+        -- Continuous MARKET STROLL: (re)start the `market` loop whenever it isn't running. Once begun, _active
+        -- is true so update() drives it via the _updateWalk branch above and we don't land here again until the
+        -- circuit would end (it won't — `continuous`). He begins from his dismount spot toward wp2.
+        if not self._active then
+            local mkt
+            for _, lp in ipairs((cfg.loops) or {}) do
+                if lp.name == "market" then mkt = lp; break end
+            end
+            if mkt ~= nil then self:_beginLoop(mkt); return end
+        end
+        -- No market loop (or it couldn't start) → idle and face the player, held steady (vibrate-free path).
+        self:_faceNearbyPlayer(cfg, dt)
+        -- He's on the skip-orig() path now, so orig() no longer holds him in place — WE pin his position +
+        -- map/trigger each frame, exactly like the active stop-and-face (otherwise he could drift/get yanked).
+        self:_syncFollowers()
+        if self.graphicsNode and entityExists(self.graphicsNode) then
+            pcall(function() setTranslation(self.graphicsNode, self._wx, self._wy - (self._yOffset or 0), self._wz) end)
+        end
         return
     end
 
@@ -1564,13 +1669,31 @@ function WalterWalker:_updateWalk(cfg, dt)
         if target.lightsOn  then self:_setWoodshopLights(true)  end
         if target.lightsOff then self:_setWoodshopLights(false) end
 
-        -- Back at waypoint [1] (home) → circuit done; idle, base game resumes control.
+        -- Back at waypoint [1] (home) → circuit done.
         if walk.targetIdx == 1 then
+            -- Continuous loop (e.g. the market stroll): begin the next circuit instead of idling.
+            if self._loop and self._loop.continuous then
+                self._marketLoops = (self._marketLoops or 0) + 1
+                -- After a few laps, head back to the truck (driver's door) and drive home, instead of looping.
+                if self._marketLoops >= (self._loop.loopsBeforeReturn or 3) and self._truckDoorX ~= nil then
+                    self:_startReturnToTruck()
+                    return
+                end
+                walk.targetIdx = 2
+                return
+            end
             self:_endLoop(cfg)
             return
         end
         self:_stopWalkAnim()
         local pauseMin = target.pauseMinutes
+        -- Walked back to the truck after the market stroll → get in and drive home (market exit → road → farm).
+        -- walterDriveHome seats him (_inTruck=true, _away=false), so update() won't restart the stroll next frame.
+        if target.driveHomeOnArrival then
+            self:_endLoop(cfg)
+            pcall(function() if VLConsole and VLConsole.walterDriveHome then VLConsole:walterDriveHome() end end)
+            return
+        end
         -- endOnArrival: a one-way route's final waypoint (e.g. morningDeparture's home) — stop &
         -- idle here, base game resumes control. Don't loop back to waypoint[1].
         if target.endOnArrival then
@@ -1625,7 +1748,9 @@ function WalterWalker:applyPosition()
     -- keeps spot.node parked at our target between frames. NEVER touch graphicsNode rotation
     -- directly — that fights the engine's snap and is the source of all prior twitching.
     if self._inTruck then return end
-    if not self._active then return end
+    -- Also run while `_away` (idling at the market) so he can TURN to face the player — same rotation path as
+    -- the active mid-route stop-and-face. Without this, _away set _active=false and his facing froze.
+    if not self._active and not self._away then return end
     if self.graphicsNode == nil or not entityExists(self.graphicsNode) then return end
     setRotation(self.graphicsNode, 0, self._ry, 0)
 end

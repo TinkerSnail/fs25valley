@@ -44,8 +44,13 @@ deepest schedule + dialog by design; other villagers stay lighter.
       2026-06-26). The truck has `spec_enterablePassenger`, so hook the base-game passenger-seat system
       rather than hand-roll — research how the player enters a passenger seat (vs driver `enterVehicle`),
       and make it available while Walter is the AI driver. A scenic "ride into town with Grandpa" beat.
-- [ ] **Wire the drive into his daily schedule** — timed departure → drive to `farmersMarket` → park →
-      (errand) → drive home → re-hide, mirroring the `morningDeparture` edge-trigger pattern.
+- [x] **Wire the drive into his weekly schedule** (2026-06-28) — `VLConsole._marketSchedule`: Walter goes to
+      the market **twice a week** (default Tue 06:00 early-morning, Fri 13:00 afternoon). Departure-only — the
+      market `stroll` loop self-terminates (1 circuit → walk back to the truck → drive home → resume farm
+      loops), so no return to manage; a 19:00 backstop covers a stuck stroll. Market trip PREEMPTS the farm
+      loop in its window; the rest of the day is the normal farm loops. `vlWalterSchedule [on|off|now|today <hr>]`,
+      `vlWalterMarketReturn` (force the ending). Narrative = drop-off for Marta / bulletin board / stalls / mail
+      a letter (the captured stroll). Tunable: the two days/hours, `loopsBeforeReturn` (1), pause lengths.
 
 ## Cast — PRIORITIZE the base-game NPCs Walter introduces (user direction 2026-06-25)
 Build the characters the player canonically MEETS first: the base-game town NPCs Walter name-drops in

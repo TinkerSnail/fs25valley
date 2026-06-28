@@ -68,8 +68,9 @@ Per direction (use `vlTruckTeleport` to jump the vehicle to each test spot — d
 
 ### Recorder workflow + persistence (FS25 io is WRITE-ONLY)
 
-`vlWalterRecord on [home|homepark|park] … off` samples the vehicle's pose every ~3 m into the named slot
-(`_scratchWps`=exit / `_homeExitWps`=crossing / `_homeParkWps`=return-park / `_parkWps`=forward-park).
+`vlWalterRecord on [marketexit|homepark|park] … off` samples the vehicle's pose every ~3 m into the named slot
+(`_scratchWps`=forward farm-exit / `_marketExitWps`=market departure-crossing / `_homeParkWps`=return-park / `_parkWps`=forward-park).
+Slots are named by ORIGIN (e.g. `marketexit`) so future routes home from other places don't collide.
 **FS25 sandboxes `io.open` to WRITE mode only — opening for READ is forced to write and TRUNCATES the file**
 (this destroyed a route once). So: only the `exit` slot auto-saves to a CSV; the others are in-memory and,
 on `…Record off`, **dumped as `{ x=, z=, angle= }` lines to the log** for baking. In-memory recordings are
@@ -84,8 +85,8 @@ All waypoints live in `main.lua` (the durable record); anchor coords for referen
 |---|---|---|---|
 | Forward exit | `_scratchWps` | 15 | park spot (-763.3,116.6) → on-spline (-800.99,132.15) |
 | Forward road | `VL_DRIVE_TARGETS.farmersMarket` | — | → on-spline drop-off (398.29,-708.97) |
-| Forward park | `_parkWps` | 19 | drop-off → bay (390.77,-669.42) |
-| Reverse crossing | `_homeExitWps` | 19 | bay → return-lane spline (386.56,-712.49) |
+| Forward park | `_parkWps` | 9 | drop-off → bay (402.81,-690.64) — re-recorded 2026-06-28, monotonic, no doubling-back tail |
+| Reverse crossing (market exit) | `_marketExitWps` | 17 | bay (403.88,-690.48) → return-lane spline (420.57,-712.81) — re-recorded 2026-06-28 |
 | Reverse road | `VL_DRIVE_TARGETS.farmReturn` | — | → on-spline drop-off (-801.17,83.33) |
 | Reverse park | `_homeParkWps` | 59 | drop-off → yard (-762.96,117.33) |
 

@@ -5,6 +5,114 @@ How Valley Life moves NPCs through the world. Implementation in
 
 ---
 
+## Engine spline networks (2026-06-28) — there IS a pedestrian spline system
+
+The base game's `mapUS.i3d` carries **three separate spline families** (all under the map root,
+authored as `<Shape>` nodes):
+
+| Network | Group node / hook | Count | Per-spline userAttributes | What it drives |
+|---|---|---|---|---|
+| **AI / traffic roads** | `trafficSplines` (nodeId 20826) → `TrafficSystem.onCreate` + AISystem | ~1222 `spline###` shapes | `speedLimit`, `maxSpeedScale` | Ambient traffic vehicles AND AI workers/helpers. This is what `gsAISplinesShow` toggles ([[console-commands]]). |
+| **Pedestrian walk paths** | `pedestrianSystem` (nodeId 22247, `visibility="false"`) → `PedestrianSystem.onCreate`, reads `config/pedestrianSystem.xml` | 26 shapes: **18 `…Loop` + 8 `…Connetion`** (sic) | `density` (e.g. 0.2), `groupName` ("standard"), `width` (2) | **Ambient townsfolk walking around town.** |
+| non-character | — | fences, `ShipMover_spline` | — | static geometry / scenery animation, not characters |
+
+**Answer to "are there walk splines, not just AI-driving ones?": YES.** The pedestrian network is
+a *distinct* spline system from the AI/traffic road network. `…Loop` splines are walking circuits;
+`…Connetion` splines join loops together. Eight `pedestrianCrossing` TransformGroups sit where the
+walk paths meet roads.
+
+**Split of responsibility:**
+- The **geometry** (where they walk) = the splines baked into `mapUS.i3d`. Each spline's userAttributes
+  set spawn `density`, the `groupName` (→ time window / weather rules), and path `width`.
+- The **roster** (who walks) = `config/pedestrianSystem.xml`: appearance variations + walk/idle clips +
+  `<group>`s with `timeFrom/timeTo` (e.g. `standard` = 08:00–17:25) and `<prevent rain/snow>` weather gates.
+  Note `standardStatic` group = pedestrians that just stand and idle (the `staticIdleAnimation` list).
+
+**These are NOT the named NPCs** (GRANDPA/Walter, ANIMAL_DEALER/Katie, etc. — [[reference-basegame-npc-roster]]).
+They're anonymous crowd-fill, spawned by `density` along the splines, but built on the **same
+`playerM`/`playerF` rig and the same `NPCWalkMale01Source` / `NPCWalkFemale01Source` clips** our own
+NPCs use (player-can ⇒ NPC-can). The engine handles their path-following automatically — no per-waypoint
+Lua like our `workLoop`.
+
+**For Valley Life:** our NPCs (Walter, Marta) use hand-authored `workLoop` waypoints (below), not these
+splines, because `PedestrianSystem`/`TrafficSystem` are engine-driven off map-i3d spline nodes + their
+`onCreate` callbacks (sealed in `dataS.gar`). To ride the pedestrian system we'd need pedestrian-spline
+`<Shape>`s with the right userAttributes in our own map i3d. Plausible future lever for ambient
+background townsfolk; not a path for a *scripted, named, conversational* NPC.
+
+### Can our named NPCs walk these pedestrian splines? (deep dive, 2026-06-28)
+
+**Hypothesis (user):** make Walter (GRANDPA) + Marta walk the base-game pedestrian splines "the same way
+we got Walter to drive the truck on the AI splines" ([[walter-truck-driving]]).
+
+**Correcting the analogy first.** The truck does NOT literally "ride a spline." It uses the **vehicle AI
+navigation map** — a costmap baked from the road splines via `addRoadsToVehicleNavigationMap` — plus
+`AIJobGoTo` pathfinding and C-level vehicle steering/braking. The splines are just the *source data*; the
+off-network yard legs are hand-driven recorded waypoints. So "the truck way" = (a) a sealed engine
+subsystem for the on-network part + (b) our own waypoint follower for the off-network part.
+
+**Mapping that onto walking gives two paths:**
+
+- **Mechanism A — ride the `PedestrianSystem` engine** (the literal truck-analog: a sealed subsystem like
+  the vehicle AI). **Uncertain / not recommended.** `PedestrianSystem.lua` is sealed in `dataS.gar` (NOT in
+  our decompiled dumps — would have to `fs-luau-decompile` it to even know the API). And it appears to
+  **spawn and own its own anonymous pedestrians** by `density`; nothing shows it can *adopt* an existing
+  named `Human`/NPC, and if it could it would likely strip our control the way `AIJobVehicle:aiJobStarted`
+  re-randomized the truck driver. Walter/Marta need to keep their schedule, stop-and-face, conversation,
+  and clip-swap behavior — an engine crowd system fights all of that.
+
+- **Mechanism B — SAMPLE the spline geometry and feed our existing walker. ✅ RECOMMENDED.** This is the
+  in-spirit analog of the *controlled* half of the truck work (recorded waypoints → our own driver) and
+  needs **no sealed API**. The engine exposes public spline primitives (used by `AISystem`, confirmed in
+  `dumps/api/decompiled/AISystem.lua`):
+
+  ```lua
+  local len = getSplineLength(spline)            -- meters
+  local step = desiredMeters / len               -- normalize a meter-step into spline-time
+  for t = 0, 1, step do
+      local wx, wy, wz = getSplinePosition(spline, t)   -- world XYZ at param t ∈ [0,1]
+      local dx, dy, dz = getSplineDirection(spline, t)  -- tangent = facing at t
+      -- → emit { x = wx, z = wz } as a waypoint (our walker terrain-snaps y)
+  end
+  ```
+
+  Resolve a `pedestrianSpline##Loop` node **by name** with the walker's existing
+  `WalterWalker:_findNodeByName(root, name)` (already used for bones), sample it into a waypoint list, and
+  hand it to the **existing** `WalterWalker:_updateWalk` / `VLNPCEntity:_updateWalkLoop` — which already do
+  turn-then-walk, stop-and-face, pause, and walk-clip swap. We only swap the *source* of waypoints from
+  hand-captured `vlPos` to the authored spline. **Loops are closed circuits** (ideal for a repeating route);
+  `Connetion` splines join loops if we want a longer path. Bonus: authored, sidewalk-correct town routes
+  for free instead of hand-capturing every point.
+
+**What B reuses vs. the truck:** same idea (ride the base game's authored route network) but with the
+**fully public `getSpline*` primitives** instead of a sealed subsystem, and our proven walker instead of
+the vehicle nav agent. Walking is kinematically trivial next to driving (no steering/braking/collision
+physics), so we do NOT need the PedestrianSystem at all.
+
+**Confirmed preconditions (all ✅):**
+1. Valley Life runs on **mapUS / Riverbend Springs** ([[map-riverbend-springs]]), so the
+   `pedestrianSpline##` nodes are present in the live scene and resolvable by name. (`visibility="false"`
+   on the `pedestrianSystem` group hides the debug geometry; it does NOT remove the nodes.)
+2. `getSplineLength` / `getSplinePosition(spline,t∈[0,1])` / `getSplineDirection` / `I3DUtil.getIsSpline`
+   are native and callable from mod Lua (AISystem uses exactly this).
+3. The mod already resolves scene nodes by name (`_findNodeByName`) and terrain-snaps y in the walker.
+
+**Open items to settle in a POC (the only real unknowns):**
+- **Find the map ROOT to start the name-walk.** Bones search from the character's `graphicsNode`; for map
+  splines we need the map i3d root (try `getRootNode()` / the map's loaded root; the `pedestrianSystem`
+  group is nodeId 22247 *at author time* — IDs change per session, so resolve BY NAME, never by id).
+- **Which spline sits where.** A few have explicit translations in `mapUS.i3d` (e.g. `…17Loop` at
+  x≈45.3 z≈-122; `…15Loop` at x≈-82 z≈-95). Pick the loop nearest Walter's woodshop / Marta's office.
+- **Sampling density + smoothing** so the gait reads natural (start ~2–3 m steps; our turn-then-walk
+  handles corners).
+
+**POC plan:** a `vlPedSpline <name>` console command that (1) resolves the named spline, (2) samples it
+with the loop above, (3) drops debug markers / dumps the points, then (4) feeds them to Walter's walker as
+a one-off route. If the markers trace the sidewalk and Walter follows them, the hypothesis is proven and
+we generalize to a config knob (`workLoop = { splineName = "pedestrianSpline17Loop" }`).
+
+---
+
 ## Work loop overview
 
 An NPC with a `workLoop` table in `VLConfig.VILLAGER_SPAWNS` will walk a
