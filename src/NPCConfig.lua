@@ -177,6 +177,28 @@ VLConfig.WALTER_WALK = {
     loops = {
         -- Captured 2026-06-21 with vlPos. Other loops (morningRounds, middayPorch,
         -- afternoonStroll, ...) get added back here as we record their stops.
+
+        -- MARKET STROLL (continuous, while `_away` at the farmers market). Captured 2026-06-28 (vlPos <name>).
+        -- `manualOnly` = the hourly farm selector never picks it; `continuous` = on reaching wp1 he starts the
+        -- next circuit instead of idling. Driven by the WalterWalker `_away` branch (NOT by hour). wp1 (near the
+        -- truck) is the loop's home/return point; he begins from wherever he dismounts. y omitted → grounds to
+        -- terrain. Pauses: longest at Marta, medium at the board + mailbox, brief at each stall.
+        {
+            name = "market", manualOnly = true, continuous = true, loopsBeforeReturn = 1,
+            waypoints = {
+                { name = "marketParkinglot", x = 413.40, z = -694.96 },                       -- [1] start/return (by the truck)
+                { name = "talkingMarta",     x = 413.78, z = -670.86, pauseMinutes = 45 },     -- [2] lingers longest with Marta
+                { name = "marketDoor",       x = 413.10, z = -664.37 },                        -- [3]
+                { name = "marketBackdoor",   x = 413.45, z = -660.35 },                        -- [4]
+                { name = "bullitenBoard",    x = 423.88, z = -660.23, pauseMinutes = 20 },     -- [5] reads the board
+                { name = "backDoor2",        x = 420.57, z = -660.30 },                        -- [6]
+                { name = "marketStall1",     x = 418.39, z = -668.16, pauseMinutes = 8 },      -- [7] brief browse
+                { name = "marketStall2",     x = 420.72, z = -669.73, pauseMinutes = 8 },      -- [8] brief browse
+                { name = "marketStall3",     x = 420.84, z = -683.95, pauseMinutes = 8 },      -- [9] brief browse
+                { name = "marketParking2",   x = 420.84, z = -690.63 },                        -- [10]
+                { name = "marketMailbox",    x = 409.97, z = -689.72, pauseMinutes = 15 },     -- [11] checks the mailbox → back to wp1
+            },
+        },
         {
             name = "eveningReturn", startHour = 19, endHour = 20,
             waypoints = {
