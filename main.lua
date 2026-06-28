@@ -3928,6 +3928,13 @@ do
             P.teleportToNPC = function(self, npc, ...)
                 local ww = g_valleyLife and g_valleyLife.walterWalker
                 local isWalter = ww ~= nil and ww.grandpa ~= nil and npc == ww.grandpa
+                -- While he's driving, "Visit" lands beside the moving TRUCK (his _wx/_wz are frozen).
+                if isWalter and ww._inTruck and ww._truck ~= nil and ww._truck.rootNode ~= nil
+                   and entityExists(ww._truck.rootNode) and type(self.teleportTo) == "function" then
+                    local tx, ty, tz = getWorldTranslation(ww._truck.rootNode)
+                    local rx, _, rz = localDirectionToWorld(ww._truck.rootNode, 1, 0, 0)  -- truck's right side
+                    if pcall(function() self:teleportTo(tx + rx * 3.0, ty, tz + rz * 3.0) end) then return end
+                end
                 if isWalter and ww._active and type(self.teleportTo) == "function" then
                     -- Land a couple meters in front of him (his facing), not inside his model.
                     local off = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.visitOffset) or 2.0
