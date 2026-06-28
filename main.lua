@@ -869,6 +869,90 @@ function VLConsole:walterBones()
         count, #hands)
 end
 
+-- vlPedSplinesShow: toggle a colored debug overlay over the base-game PEDESTRIAN walk splines (the
+-- `pedestrianSystem` group in mapUS.i3d, authored visibility=false). There is NO base-game command for
+-- this (only roads have gsAISplinesShow), so we mirror exactly how gsAISplinesShow draws the road net:
+-- a per-spline DebugSpline added to g_debugManager (AISystem.lua:658). Read-only — it only draws.
+-- The [PedSpline] log lines give each spline's name + start position + length so we can map a loop to a
+-- town location (e.g. pick the one nearest Walter's woodshop / Marta's office) for spline-driven routes.
+VLConsole.PED_SPLINE_DBG_GROUP = "VLPedestrianSplines"
+VLConsole._pedSplinesShown = false
+VLConsole._pedSplineNodes = nil
+VLConsole._pedSplineGroup = nil
+
+function VLConsole:pedSplinesShow()
+    -- toggle OFF
+    if VLConsole._pedSplinesShown then
+        pcall(function() g_debugManager:removeGroup(VLConsole.PED_SPLINE_DBG_GROUP) end)
+        for _, s in ipairs(VLConsole._pedSplineNodes or {}) do
+            if entityExists(s) then setVisibility(s, false) end
+        end
+        if VLConsole._pedSplineGroup ~= nil and entityExists(VLConsole._pedSplineGroup) then
+            setVisibility(VLConsole._pedSplineGroup, false)
+        end
+        VLConsole._pedSplinesShown = false
+        VLConsole._pedSplineNodes = nil
+        VLConsole._pedSplineGroup = nil
+        return "[ValleyLife] pedestrian splines: OFF"
+    end
+
+    -- find the 'pedestrianSystem' group by NAME from the scene root (node ids change every session)
+    local function findByName(node, name)
+        if node == nil or not entityExists(node) then return nil end
+        if getName(node) == name then return node end
+        for i = 0, getNumOfChildren(node) - 1 do
+            local f = findByName(getChildAt(node, i), name)
+            if f then return f end
+        end
+        return nil
+    end
+
+    local group = findByName(getRootNode(), "pedestrianSystem")
+    if group == nil then
+        return "[ValleyLife] Could not find the 'pedestrianSystem' group in the scene (map not loaded yet?)."
+    end
+
+    -- collect the spline children (filter by getIsSpline, fall back to a name match)
+    local splines = {}
+    for i = 0, getNumOfChildren(group) - 1 do
+        local child = getChildAt(group, i)
+        local isSpline = false
+        pcall(function() isSpline = I3DUtil.getIsSpline(child) end)
+        if not isSpline and (getName(child) or ""):find("[Ss]pline") then isSpline = true end
+        if isSpline then table.insert(splines, child) end
+    end
+    if #splines == 0 then
+        return "[ValleyLife] 'pedestrianSystem' found but it has no spline children."
+    end
+
+    -- the parent group is authored invisible → reveal it so the ribbon meshes can render too
+    pcall(function() setVisibility(group, true) end)
+
+    for _, spline in ipairs(splines) do
+        local r, g, b = 1, 1, 0
+        pcall(function() r, g, b = DebugUtil.getDebugColor(spline):unpack() end)
+        -- engine-blessed spline overlay — identical pattern to gsAISplinesShow (AISystem.lua:658)
+        pcall(function()
+            local ds = DebugSpline.new():createWithNode(spline):setColorRGBA(r, g, b):setClipDistance(250)
+            g_debugManager:addElement(ds, VLConsole.PED_SPLINE_DBG_GROUP)
+        end)
+        pcall(function() setVisibility(spline, true) end)
+
+        local nm = getName(spline) or "?"
+        local sx, _, sz, len = 0, 0, 0, 0
+        pcall(function() sx, _, sz = getSplinePosition(spline, 0) end)
+        pcall(function() len = getSplineLength(spline) end)
+        print(string.format("[PedSpline] %-26s start=(%.1f, %.1f)  len=%.1fm", nm, sx, sz, len))
+    end
+
+    VLConsole._pedSplineNodes = splines
+    VLConsole._pedSplineGroup = group
+    VLConsole._pedSplinesShown = true
+    return string.format(
+        "[ValleyLife] pedestrian splines: ON — %d splines overlaid (see [PedSpline] log for names/positions). Run again to hide.",
+        #splines)
+end
+
 -- vlWalterFlashlight: force Walter's flashlight ON/OFF, or 'auto' to resume the seasonal-dusk rule.
 function VLConsole:walterFlashlight(arg)
     local ww = g_valleyLife and g_valleyLife.walterWalker
@@ -3913,6 +3997,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterDump", "Dump GRANDPA NPC runtime state (spot, components, graphicsNode)", "dumpWalter", VLConsole)
     addConsoleCommand("vlAnimClips", "Dump animation clip names for a villager: vlAnimClips <npcId>", "dumpAnimClips", VLConsole)
     addConsoleCommand("vlWalk", "Force-start a walk loop: vlWalk <npcId> [loopName|index] (npcId: marta, grandpa, ...)", "forceWalk", VLConsole)
+    addConsoleCommand("vlPedSplinesShow", "Toggle a debug overlay over the base-game pedestrian walk splines (like gsAISplinesShow for roads)", "pedSplinesShow", VLConsole)
     addConsoleCommand("vlWalterYOffset", "Tune Walter's driven height offset (meters, +lowers): vlWalterYOffset <n>", "setWalterYOffset", VLConsole)
     addConsoleCommand("vlWalterStairLift", "Tune Walter's stair bow-lift on sloped segments: vlWalterStairLift <n>", "setWalterStairLift", VLConsole)
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)

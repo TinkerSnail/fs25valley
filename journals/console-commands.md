@@ -146,6 +146,7 @@ Full reference + the build recipe are in [walter-truck-driving.md](walter-truck-
 | `vlWalterAddWp` / `vlTruckParkAddWp` (+ List/Clear) | — | Point-by-point capture (alt to the recorder). |
 | `vlDumpTruck` / `vlDumpVehicle` / `vlDumpDriver` | — | Discovery probes (dormant dev tools). |
 | `gsAISplinesShow` | — | **Base-game**: toggle the AI road-spline overlay. |
+| `vlPedSplinesShow` | — | Toggle a colored debug overlay over the base-game PEDESTRIAN walk splines (the `pedestrianSystem` group; no base-game command exists, so we mirror `gsAISplinesShow`). Logs each spline's name/start-pos/length as `[PedSpline]`. Read-only. See [[npc-movement]] deep dive. |
 
 ## Appearance diagnostics
 
