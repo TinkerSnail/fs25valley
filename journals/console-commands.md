@@ -126,7 +126,7 @@ dusk hour (summer 19:00 / winter 17:00).
 | `vlWalterCows` | `vlWalterCows [reset]` | Force-play the one-time cow/husbandry handoff; `reset` clears the `walterCowsHandoff` flag to re-test the proximity trigger. |
 | `vlWalterDump` | `vlWalterDump` | Dump GRANDPA runtime state (spot, components, graphicsNode). |
 | `vlGrandpa` | `vlGrandpa` | Probe runtime paths to GRANDPA's rootNode (walk-loop research). |
-| `vlMoveGrandpa` | `vlMoveGrandpa <x> <z>` | Teleport GRANDPA to a world position (research). |
+| `vlMoveGrandpa` | `vlMoveGrandpa [x z]` | Teleport GRANDPA. **No args = "come to me"**: snaps him to your actual player/vehicle position (via `capturePose()`, same as `vlPos` — not the camera), grounded to terrain. With `x z`, teleports to those coords. Moves spot anchor + node AND syncs the WalterWalker cache (`_wx/_wy/_wz`) so it composes with a subsequent `vlWalk`/route instead of snapping him back. |
 | `vlNpcDump` | `vlNpcDump [name]` | Survey base-game NPC roster (GRANDPA/ANIMAL_DEALER/HELPER/...) for hookability — active? drivable rig? conversation surface? No arg = one-line survey of all; `<name>` (e.g. `katie`) = detail. |
 | `vlShimmy` | `vlShimmy <1\|0>` | R49 body diagnostic: logs `grn`/`Hips`/`pin`/`spot` each frame while Walter is talking, to see what's tugging him (the "flop"). Read `[Shimmy]` lines in `log.txt`. |
 

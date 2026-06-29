@@ -3917,28 +3917,39 @@ end
 -- vlMoveGrandpa with no args: teleport to player's current position.
 -- vlMoveGrandpa x z: teleport to explicit world coords.
 function VLConsole:moveGrandpa(x, z)
-    local px, pz
+    local px, pz, src
     if x == nil then
-        -- No args — use player position
-        local camera = getCamera()
-        if camera == nil then
-            return "[ValleyLife] No camera found."
+        -- No args — teleport him to ME. Use the actual player/vehicle node (same capture vlPos uses), not the
+        -- camera, so he lands at your feet rather than a few metres off behind a third-person camera.
+        local cx, _, cz, _, csrc = VLConsole.capturePose()
+        if cx == nil then
+            return "[ValleyLife] Couldn't find your player/vehicle position."
         end
-        px, _, pz = getWorldTranslation(camera)
+        px, pz, src = cx, cz, csrc
     else
         px, pz = tonumber(x), tonumber(z)
         if px == nil or pz == nil then
             return "[ValleyLife] Usage: vlMoveGrandpa [x z]"
         end
+        src = "coords"
     end
     local grandpa = g_npcManager and g_npcManager:getNPCByName("GRANDPA")
     if grandpa == nil then
         return "[ValleyLife] GRANDPA not found in g_npcManager."
     end
     local oldX, oldZ = grandpa.x, grandpa.z
+
+    -- Ground him to the terrain at the destination (more reliable than reusing his old y).
+    local py = grandpa.y or 47.0
+    pcall(function()
+        if g_currentMission and g_currentMission.terrainRootNode then
+            local ty = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, px, 0, pz)
+            if type(ty) == "number" then py = ty end
+        end
+    end)
+
     -- Move spot anchor and NPC node together using world coordinates so the
     -- NPC is already at the destination before the walk system can activate.
-    local py = grandpa.y or 47.0
     if grandpa.spot and grandpa.spot.node and entityExists(grandpa.spot.node) then
         setWorldTranslation(grandpa.spot.node, px, py, pz)
     end
@@ -3949,7 +3960,19 @@ function VLConsole:moveGrandpa(x, z)
     grandpa.y = py
     grandpa.z = pz
     grandpa.needPositionUpdate = true
-    local msg = string.format("[ValleyLife] GRANDPA moved (%.1f,%.1f) -> (%.1f,%.1f)", oldX, oldZ, px, pz)
+
+    -- Sync the WalterWalker's cached position so this composes with walking. The walker drives off _wx/_wz
+    -- (seeded ONCE in _acquireNode), so without this a subsequent vlWalk/route would snap him back to his old
+    -- cached spot. Also push the mesh translation now so he's consistent whether idle or mid-route.
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww ~= nil then
+        ww._wx, ww._wy, ww._wz = px, py, pz
+        if ww.graphicsNode and entityExists(ww.graphicsNode) then
+            pcall(function() setTranslation(ww.graphicsNode, px, py - (ww._yOffset or 0), pz) end)
+        end
+    end
+
+    local msg = string.format("[ValleyLife] GRANDPA moved (%.1f,%.1f) -> (%.1f,%.1f) [%s]", oldX, oldZ, px, pz, src)
     print(msg)
     return msg
 end
