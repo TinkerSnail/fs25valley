@@ -88,6 +88,12 @@ local function onMissionUpdate(mission, dt)
     end
     -- Pump the physical line-follower + path recorder + the daily truck schedule (all on the global VLConsole).
     if VLConsole ~= nil then
+        -- One-shot on the first frame after load (savegame items are loaded by now): ensure the mod's starter
+        -- world items (Bonnie's doghouse + Walter's truck) exist on a fresh game. Flag-guarded → once ever.
+        if VLConsole.spawnStarterItems ~= nil and not VLConsole._starterChecked then
+            VLConsole._starterChecked = true
+            pcall(VLConsole.spawnStarterItems)
+        end
         if VLConsole.driveTick ~= nil then pcall(VLConsole.driveTick, dt) end
         if VLConsole.recordTick ~= nil then pcall(VLConsole.recordTick, dt) end
         if VLConsole.marketScheduleTick ~= nil then pcall(VLConsole.marketScheduleTick, dt) end
@@ -1552,21 +1558,16 @@ function VLConsole:dumpVehicle()
     return string.format("[VL][Truck] done — filename=%s uid=%s pos=(%.1f,%.1f,%.1f)", filename, uid, x, y, z)
 end
 
+-- Forward-declared here so the truck-finder (defined lower, after the spawn helpers) is in scope for the
+-- probe commands above it. Match by MODEL not uniqueId — a truck SPAWNED on a fresh game gets a new uniqueId.
+local vlFindWalterTruck
+
 -- vlDumpTruck: probe spec_enterable, spec_aiDrivable, and spec_ikChains on Grandpa's truck.
--- Find the truck by uniqueId, then dump driver seat node, AI driver state, and IK chain info.
+-- Find the truck by model (series200) so it works on a freshly-spawned truck too.
 function VLConsole:dumpTruck()
-    local TRUCK_UID = "vehiclea0e0823360da9410fb4db3ebcbbfc489"
-    local truck = nil
-    pcall(function()
-        local vs = g_currentMission and g_currentMission.vehicleSystem
-        if vs and vs.vehicles then
-            for _, v in ipairs(vs.vehicles) do
-                if tostring(v.uniqueId) == TRUCK_UID then truck = v break end
-            end
-        end
-    end)
+    local truck = vlFindWalterTruck()
     if truck == nil then
-        return "[VL][Truck] truck not found — is it loaded? (uniqueId=" .. TRUCK_UID .. ")"
+        return "[VL][Truck] truck not found — is it loaded? (no series200 in vehicleSystem)"
     end
     print("[VL][Truck] found: " .. tostring(truck.configFileName or "?"))
 
@@ -1956,18 +1957,8 @@ end
 --   hide the standing GRANDPA. The IK is re-solved each frame by WalterWalker (it pumps vc:update while
 --   _inTruck, because Enterable only pumps it while a player is controlling the vehicle).
 function VLConsole:walterInTruck()
-    local TRUCK_UID = "vehiclea0e0823360da9410fb4db3ebcbbfc489"
-
-    -- Find the truck
-    local truck = nil
-    pcall(function()
-        local vs = g_currentMission and g_currentMission.vehicleSystem
-        if vs and vs.vehicles then
-            for _, v in ipairs(vs.vehicles) do
-                if tostring(v.uniqueId) == TRUCK_UID then truck = v break end
-            end
-        end
-    end)
+    -- Find the truck by model (series200), so this works on a freshly-spawned truck (new uniqueId) too.
+    local truck = vlFindWalterTruck()
     if truck == nil then return "[VL] truck not found" end
     if type(truck.setVehicleCharacter) ~= "function" then
         return "[VL] truck has no Enterable spec (setVehicleCharacter missing)"
@@ -2027,19 +2018,206 @@ function VLConsole:walterOutTruck()
     return "[VL][WalterTruck] driver removed, standing Walter revealed"
 end
 
--- Shared: find Walter's truck (International series200) by its uniqueId.
-local function vlFindWalterTruck()
+-- vlDog: READ-ONLY probe — find Bonnie's doghouse placeable (by uniqueId), locate the live dog, and dump what
+-- we can drive (spec_* keys, the dogHouse spec's fields, the dog object's fields + ALL methods, and any dog/
+-- follow methods on the placeable). Discovery for making Bonnie WALTER'S farm dog. Prints to console + log.
+function VLConsole:dogProbe()
+    local DOG_UID = "placeable38472a136110717a07d61f649fdd6f25"
+    local function L(s) print("[VL][Dog] " .. tostring(s)) end
+    local function dumpFields(label, t)
+        local keys = {}
+        for k in pairs(t) do keys[#keys + 1] = tostring(k) end
+        table.sort(keys)
+        L(label .. " fields (" .. #keys .. "):")
+        for _, k in ipairs(keys) do
+            local v = t[k]
+            L(string.format("    .%s = %s", k, type(v) == "table" and "table" or tostring(v)))
+        end
+    end
+    local function dumpMethods(label, obj, filter)
+        local mt  = getmetatable(obj)
+        local idx = mt and (type(mt.__index) == "table" and mt.__index or mt) or obj
+        if type(idx) ~= "table" then return end
+        local hits = {}
+        for k, v in pairs(idx) do
+            if type(v) == "function" and type(k) == "string" and (filter == nil or k:lower():find(filter)) then
+                hits[#hits + 1] = k
+            end
+        end
+        table.sort(hits)
+        L(string.format("%s methods%s (%d):", label, filter and (" ~'" .. filter .. "'") or "", #hits))
+        for _, k in ipairs(hits) do L("    :" .. k .. "()") end
+    end
+
+    local mission = g_currentMission
+    local placeables = mission and mission.placeableSystem and mission.placeableSystem.placeables
+    if type(placeables) ~= "table" then return "[VL][Dog] no placeableSystem.placeables" end
+    L(string.format("scanning %d placeables for the doghouse…", #placeables))
+
+    local dh
+    for _, p in ipairs(placeables) do
+        local uid; pcall(function() uid = p.uniqueId end)
+        if uid == DOG_UID then dh = p; break end
+        if dh == nil and p.spec_doghouse ~= nil then dh = p end
+    end
+    if dh == nil then return "[VL][Dog] doghouse NOT found (by uid or spec_doghouse)" end
+    L("doghouse: " .. tostring(dh.configFileName) .. "  uid=" .. tostring(dh.uniqueId))
+    pcall(function() local x, y, z = getWorldTranslation(dh.rootNode); L(string.format("  pos %.2f %.2f %.2f", x, y, z)) end)
+
+    L("placeable spec_* keys:")
+    for k in pairs(dh) do if type(k) == "string" and k:sub(1, 5) == "spec_" then L("    " .. k) end end
+
+    -- SPAWN API discovery (to recreate the doghouse on a fresh game): the placeable-loading class + the
+    -- placeable system's load/add methods + this doghouse's identity (configFileName, owner) to replicate it.
+    L("--- spawn API ---")
+    L("PlaceableLoadingData global: " .. type(PlaceableLoadingData))
+    if type(PlaceableLoadingData) == "table" then dumpMethods("PlaceableLoadingData", PlaceableLoadingData, nil) end
+    L("g_placeableSystem global: " .. type(g_placeableSystem))
+    dumpMethods("placeableSystem", mission.placeableSystem, "load")
+    dumpMethods("placeableSystem", mission.placeableSystem, "add")
+    dumpMethods("placeableSystem", mission.placeableSystem, "place")
+    L("doghouse configFileName: " .. tostring(dh.configFileName))
+    pcall(function() L("doghouse ownerFarmId: " .. tostring(dh:getOwnerFarmId())) end)
+    dumpMethods("doghouse", dh, "save")
+    dumpMethods("doghouse", dh, "owner")
+    dumpMethods("doghouse", dh, "dog")
+
+    -- TRUCK spawn API (Walter's truck must also exist on a fresh game, or the market drive is dead) — the
+    -- vehicle-loading class + vehicleSystem load methods + the truck's identity & configs to replicate.
+    L("--- TRUCK spawn API ---")
+    L("VehicleLoadingData global: " .. type(VehicleLoadingData))
+    if type(VehicleLoadingData) == "table" then dumpMethods("VehicleLoadingData", VehicleLoadingData, nil) end
+    dumpMethods("vehicleSystem", mission.vehicleSystem, "load")
+    dumpMethods("vehicleSystem", mission.vehicleSystem, "add")
     local TRUCK_UID = "vehiclea0e0823360da9410fb4db3ebcbbfc489"
-    local truck = nil
+    local truck
+    for _, v in ipairs((mission.vehicleSystem and mission.vehicleSystem.vehicles) or {}) do
+        local uid; pcall(function() uid = tostring(v.uniqueId) end)
+        if uid == TRUCK_UID then truck = v; break end
+    end
+    if truck == nil then
+        L("truck NOT found by uniqueId")
+    else
+        L("truck: " .. tostring(truck.configFileName) .. "  uid=" .. tostring(truck.uniqueId))
+        pcall(function() L("truck ownerFarmId: " .. tostring(truck:getOwnerFarmId())) end)
+        if type(truck.configurations) == "table" then
+            local keys = {}
+            for cn in pairs(truck.configurations) do keys[#keys + 1] = tostring(cn) end
+            table.sort(keys)
+            L("truck configurations (name=id → for VehicleLoadingData:setConfigurations):")
+            for _, cn in ipairs(keys) do L(string.format("    %s = %s", cn, tostring(truck.configurations[cn]))) end
+        else
+            L("truck.configurations type: " .. type(truck.configurations))
+        end
+        dumpMethods("truck", truck, "config")
+    end
+
+    local spec = dh.spec_doghouse
+    if spec == nil then return "[VL][Dog] done — no spec_doghouse (see spec_* list in log)" end
+    dumpFields("spec_doghouse", spec)
+
+    local dog = spec.dog or spec.dogObject or spec.animal
+    if dog == nil and type(dh.getDog) == "function" then pcall(function() dog = dh:getDog() end) end
+    if type(dog) ~= "table" then return "[VL][Dog] done — dog object not located (check spec_doghouse dump)" end
+    L("DOG OBJECT located:")
+    dumpFields("dog", dog)
+    dumpMethods("dog", dog, nil)
+    pcall(function()
+        local node = dog.rootNode or dog.node or dog.graphicsRootNode
+        local x, y, z = getWorldTranslation(node); L(string.format("dog pos %.2f %.2f %.2f", x, y, z))
+    end)
+    return "[VL][Dog] probe done — see log."
+end
+
+-- Shared: find Walter's truck (International series200) by its uniqueId.
+vlFindWalterTruck = function()
+    -- Match by MODEL (series200 configFileName), not the hardcoded uniqueId: a truck the mod SPAWNS on a fresh
+    -- game gets a NEW uniqueId, so a uniqueId match would miss it. Prefer farm 1; first series200 otherwise.
+    local truck, anySeries = nil, nil
     pcall(function()
         local vs = g_currentMission and g_currentMission.vehicleSystem
         if vs and vs.vehicles then
             for _, v in ipairs(vs.vehicles) do
-                if tostring(v.uniqueId) == TRUCK_UID then truck = v break end
+                local cf = v.configFileName
+                if type(cf) == "string" and cf:find("series200") then
+                    anySeries = anySeries or v
+                    local fid; pcall(function() fid = v.ownerFarmId or (v.getOwnerFarmId and v:getOwnerFarmId()) end)
+                    if fid == 1 then truck = v; break end
+                end
             end
         end
     end)
-    return truck
+    return truck or anySeries
+end
+
+-- ── Starter world items (spawn on a NEW game) ────────────────────────────────────────────────────────────
+-- A fresh player's save has neither the doghouse nor Walter's truck. Spawn them ONCE (free, owned by the farm)
+-- so the mod's world — Bonnie + the truck the market drive needs — is there moment one. Same LoadingData
+-- pattern as the flashlight loader (main.lua HoldFlash). Persisted flag (g_valleyLife) makes it once-ever, so a
+-- player who later sells/moves either isn't fought. Present-checks avoid duplicating an item that already exists.
+local function vlResolveData(raw)
+    local r = (Utils and Utils.getFilename) and Utils.getFilename(raw, nil) or raw
+    return r
+end
+
+local function vlSpawnDoghouse()
+    if PlaceableLoadingData == nil then print("[VL][Starter] PlaceableLoadingData missing"); return false end
+    local resolved = vlResolveData("$data/placeables/brandless/animalHusbandries/doghouse/doghouse.xml")
+    if not fileExists(resolved) then print("[VL][Starter] doghouse xml not found: " .. tostring(resolved)); return false end
+    local ps = g_currentMission and g_currentMission.placeableSystem
+    if ps and type(ps.getExistingPlaceableByXMLFilename) == "function" then
+        local existing; pcall(function() existing = ps:getExistingPlaceableByXMLFilename(resolved) end)
+        if existing ~= nil then print("[VL][Starter] doghouse already present — skip"); return false end
+    end
+    local data = PlaceableLoadingData.new()
+    data:setFilename(resolved)
+    pcall(function() data:setPosition(-746.353, 47.008, 80.009) end)
+    pcall(function() data:setRotation(0, math.rad(-20.21), 0) end)
+    pcall(function() data:setOwnerFarmId(1) end)
+    pcall(function() data:setConfigurations({ dogHouse = 8 }) end)   -- 8 = Border Collie Red/White (Bonnie's breed)
+    pcall(function() data:setIsSaved(true) end)
+    data:load(function(_, placeable, loadingState)
+        if placeable == nil then print("[VL][Starter] doghouse LOAD FAILED state=" .. tostring(loadingState)); return end
+        print("[VL][Starter] spawned Bonnie's doghouse.")
+        pcall(function() if placeable.spec_doghouse ~= nil then placeable.spec_doghouse.name = "Bonnie" end end)
+    end)
+    return true
+end
+
+local function vlSpawnStarterTruck()
+    if VehicleLoadingData == nil then print("[VL][Starter] VehicleLoadingData missing"); return false end
+    local resolved = vlResolveData("$data/vehicles/international/series200/series200.xml")
+    if not fileExists(resolved) then print("[VL][Starter] truck xml not found: " .. tostring(resolved)); return false end
+    if vlFindWalterTruck() ~= nil then print("[VL][Starter] truck already present — skip"); return false end
+    local data = VehicleLoadingData.new()
+    data:setFilename(resolved)
+    pcall(function() data:setPosition(-764.821, 46.891, 119.663) end)
+    pcall(function() data:setRotation(0, -1.5671, 0) end)
+    pcall(function() data:setOwnerFarmId(1) end)
+    pcall(function() data:setConfigurations({ baseColor = 37, rimColor = 38, design = 2, wheel = 1,
+        attacherJoint = 1, fillUnit = 1, folding = 1, motor = 1, tensionBelts = 2 }) end)
+    pcall(function() if VehiclePropertyState ~= nil then data:setPropertyState(VehiclePropertyState.OWNED) end end)
+    pcall(function() data:setIsSaved(true) end)
+    data:load(function(_, vehicles, loadingState)
+        print(string.format("[VL][Starter] spawned Walter's truck (state=%s).", tostring(loadingState)))
+    end)
+    return true
+end
+
+-- Orchestrator: once-ever (flag), spawn whatever's missing. `force` bypasses the flag (test command).
+VLConsole.spawnStarterItems = function(force)
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    if g_valleyLife == nil then return end
+    if not force and g_valleyLife:getFlag("starterItemsSpawned") then return end
+    print("[VL][Starter] ensuring Bonnie's doghouse + Walter's truck exist…")
+    pcall(vlSpawnDoghouse)
+    pcall(vlSpawnStarterTruck)
+    pcall(function() g_valleyLife:setFlag("starterItemsSpawned", true) end)
+end
+
+function VLConsole:spawnStarter()
+    VLConsole.spawnStarterItems(true)   -- force: spawn now regardless of the flag (skips items already present)
+    return "[VL][Starter] forced — see log."
 end
 
 -- Named drive destinations for vlWalterDrive (captured in-game with vlPos). `angle` = parked facing in
@@ -2146,6 +2324,16 @@ local function vlStartGoToLeg(truck, farmId, tx, tz, angle)
         local valid, vErr = job:validate(farmId)
         if not valid then error("validate: " .. tostring(vErr), 0) end
         g_currentMission.aiSystem:startJob(job, farmId)
+        -- R61 SAVE-HANG FIX: the base game's aiJobStarted just stashed this manually-constructed AIJobGoTo as
+        -- spec.lastJob — but AIJobGoTo.new() leaves jobTypeIndex nil, and AIJobVehicle:saveToXMLFile does
+        -- getJobTypeByIndex(lastJob.jobTypeIndex).name → indexes nil → CRASHES the savegame (it hangs). lastJob
+        -- is only the "repeat last job" memory (unused by our scripted drive), so drop it now. spec.job (the
+        -- ACTIVE job that steers the leg) is untouched, so the drive continues; the truck is save-safe even
+        -- mid-drive or if a leg gets stuck before dismount.
+        pcall(function()
+            local spec = truck.spec_aiJobVehicle
+            if spec ~= nil then spec.lastJob = nil end
+        end)
     end)
 end
 
@@ -2254,9 +2442,10 @@ end
 
 -- Clear the AI-control "job flag" we set to engage steering (so the real road AI can start clean later).
 local function vlDriveClearJob(d)
-    if d ~= nil and d.setJob and d.truck ~= nil and d.truck.spec_aiJobVehicle ~= nil then
-        pcall(function() d.truck.spec_aiJobVehicle.job = nil end)
-    end
+    if d == nil or d.truck == nil or d.truck.spec_aiJobVehicle == nil then return end
+    local spec = d.truck.spec_aiJobVehicle
+    if d.setJob then pcall(function() spec.job = nil end) end
+    pcall(function() spec.lastJob = nil end)   -- R61: lastJob (set by road legs) is unsaveable → always drop it
 end
 
 function VLConsole.driveStart(truck, farmId, wps, dest)
@@ -2312,6 +2501,13 @@ local function vlDismountAtTruck(truck, away)
     end
     local py = getTerrainHeightAtWorldPos(g_terrainNode, px, 300, pz)
     pcall(function() if type(truck.deleteVehicleCharacter) == "function" then truck:deleteVehicleCharacter() end end)
+    -- R61: scrub any leftover AI-job state so the parked truck never serializes our jobTypeIndex-less lastJob
+    -- (the base saveToXMLFile crash). Mirrors the deleteVehicleCharacter save-safety (R55) — both run on ANY
+    -- drive end, clean or stuck.
+    pcall(function()
+        local spec = truck.spec_aiJobVehicle
+        if spec ~= nil then spec.job = nil; spec.lastJob = nil end
+    end)
     pcall(function() walker:_dismountAt(px, py, pz, ry, away) end)
 end
 
@@ -4216,6 +4412,8 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterBones", "Dump GRANDPA's node/skeleton tree to find the hand bone (hand-prop research): vlWalterBones", "walterBones", VLConsole)
     addConsoleCommand("vlWalterRig", "Dump GRANDPA's model + carrier surface for the handtool-holder build: vlWalterRig", "walterRig", VLConsole)
     addConsoleCommand("vlNpcDump", "Survey base-game NPC roster for hookability (no arg) or detail one: vlNpcDump [katie|walter|ben|noah|ANIMAL_DEALER|...]", "npcDump", VLConsole)
+    addConsoleCommand("vlDog", "Probe the mod's starting world items: dump the SPAWN API for Bonnie's doghouse + Walter's truck (read-only)", "dogProbe", VLConsole)
+    addConsoleCommand("vlSpawnStarter", "Force-spawn the mod's starter items now (Bonnie's doghouse + Walter's truck) — for testing the spawn without a fresh game", "spawnStarter", VLConsole)
     addConsoleCommand("vlWalterHoldFlashlight", "PROBE: give Walter a REAL flashlight handtool via the game's loader + attach to his left hand: vlWalterHoldFlashlight", "walterHoldFlashlight", VLConsole)
     addConsoleCommand("vlWalterArmIK", "PROBE: load+drive the rightArm IK chain so his arm extends to hold a tool out: vlWalterArmIK <on|off>", "walterArmIK", VLConsole)
     addConsoleCommand("vlArmTarget", "Live-tune the arm IK target POSITION 5cm/tap: vlArmTarget <x+|x-|y+|y-|z+|z->", "armTarget", VLConsole)
