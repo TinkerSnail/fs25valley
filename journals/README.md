@@ -59,6 +59,25 @@ For project overview, install, and controls, see the root [README.md](../README.
   gotcha), build verifier, and which `log.txt` to read.
 - [dumps/](dumps/) - raw captured output from in-game diagnostic commands.
 
+## Where API knowledge lives (the capture pipeline)
+
+API findings flow through three tiers — there is no single monolithic API doc:
+
+1. **Raw dumps** → `dumps/api/` (decompiled GIANTS `.lua` + extracted config XML),
+   mapped by [dumps/api/INDEX.md](dumps/api/INDEX.md). **Local-only, gitignored —
+   GIANTS-copyrighted, never push.** Re-derivable anytime with the `fs-unpack` /
+   `fs-luau-decompile` toolchain in [game-files-and-xml.md](game-files-and-xml.md).
+2. **Distilled, committed reference** → [engine-api.md](engine-api.md): the
+   "cracking a sealed API" playbook plus the clean results (doors, lights, map
+   hotspots, teleport, handtool-holder, IK). This is the closest thing to a central
+   API doc — start here.
+3. **Applied details** → captured inline in the relevant feature journal as they're
+   discovered (e.g. `walter-truck-driving.md` for aiDrivable/AIJobGoTo,
+   `dialog-boxes.md` for `drawFilledRectRound`, `npc-movement.md`).
+
+So: **raw dump (indexed, gitignored) → distill into `engine-api.md` (committed) →
+apply into per-feature journals.**
+
 ## Conventions
 
 - Current mod version: **0.1.0.70** (check `modDesc.xml` / log line
