@@ -225,6 +225,10 @@ function WalterWalker:_acquireNode()
                         -- callback (_hipsLockPostAnim) immediately overwrites Hips back to the captured position,
                         -- neutralising the ConditionalAnimation walk blend at his non-home position.
                         if not walker._hipsCaptureDone then return end
+                        -- R63 probe: dump the params orig() is ABOUT to use (post-defaultAllParameters, this phase).
+                        if walker._shimmyProbe then walker:_logWrapperParams(self_pg) end
+                        -- R64 fix: kill the stuck face-player rotationVelocity that drives the head-turn bobblehead.
+                        walker:_zeroTurnParam(self_pg)
                         orig(self_pg, dt)
                         if walker._gripActive then walker:_applyHandPose() end
                         return
@@ -713,6 +717,64 @@ function WalterWalker:_logShimmy()
     print(string.format("[Shimmy] grn(%.3f,%.3f ry%.4f) dGrn(%.4f,%.4f) Hips(%.3f,%.3f) pin(%.3f,%.3f) spot(%.3f,%.3f) active=%s isNPC=%s idle=%s walk=%s spd=%s",
         gx, gz, gry, dx, dz, hx, hz, (g and g.x) or 0, (g and g.z) or 0, spx, spz, tostring(self._active),
         pNPC, pIdle, pWalk, pSpd))
+
+    -- R61: the Hips is pinned by the hips-lock, so locate the VISIBLE jitter in the bones ABOVE/around it.
+    -- Resolve a few key bones once, then log each one's per-frame world-pos delta (the oscillation signature:
+    -- a value that flips sign frame-to-frame = a clip fight on THAT bone). Torso vs hand vs foot tells us
+    -- whether it's ConditionalAnimation upper-body (→ skip orig, FIX-9) or a foot-IK fight (→ different fix).
+    if self._shimmyBones == nil then
+        self._shimmyBones, self._shimmyBoneLast = {}, {}
+        for _, name in ipairs({ "Spine2", "RightArm", "RightHand", "RightFoot", "Head" }) do
+            local n; pcall(function() n = self:_findNodeByName(grn, name) end)
+            if n then self._shimmyBones[name] = n end
+        end
+    end
+    local parts = {}
+    for _, name in ipairs({ "Spine2", "RightArm", "RightHand", "RightFoot", "Head" }) do
+        local n = self._shimmyBones[name]
+        if n and entityExists(n) then
+            local bx, bz = 0, 0
+            pcall(function() bx, _, bz = getWorldTranslation(n) end)
+            local last = self._shimmyBoneLast[name]
+            local ddx, ddz = 0, 0
+            if last then ddx = bx - last.x; ddz = bz - last.z end
+            self._shimmyBoneLast[name] = { x = bx, z = bz }
+            parts[#parts + 1] = string.format("%s d(%.4f,%.4f)", name, ddx, ddz)
+        end
+    end
+    if #parts > 0 then print("[ShimmyB] " .. table.concat(parts, " ")) end
+end
+
+-- R63 PROBE — read the ConditionalAnimation params INSIDE the wrapper, the instant BEFORE orig() runs.
+-- This is the only phase that reveals what orig() actually uses: NPC:update calls defaultAllParameters()
+-- (resets every param from defaultState, where isNPC=FALSE) immediately before our wrapper, and our own
+-- _setConversationParams() runs LATER (FSBaseMission phase) so it's already been wiped. The existing
+-- [Shimmy] line reads in OUR phase (after our write) → shows isNPC=true; this [ShimmyW] line reads what
+-- orig() truly sees. If isNPC=false here, defaultAllParameters is wiping us (R63). rotVel oscillating =
+-- the NPC:update face-player yaw fighting our setRotation (the position-dependent jitter suspect).
+function WalterWalker:_logWrapperParams(pg)
+    if pg == nil or type(pg.animationParameters) ~= "table"
+       or pg.animation == nil or type(pg.animation.parameters) ~= "table" then return end
+    local function getp(name)
+        local idx = pg.animationParameters[name]; if idx == nil then return "?" end
+        local pp = pg.animation.parameters[idx]
+        return (type(pp) == "table") and tostring(pp.value) or "?"
+    end
+    print(string.format("[ShimmyW pre-orig] isNPC=%s rotVel=%s absSpeed=%s idle=%s walk=%s mdir=(%s,%s)",
+        getp("isNPC"), getp("rotationVelocity"), getp("absSpeed"),
+        getp("isIdling"), getp("isWalking"), getp("movementDirX"), getp("movementDirZ")))
+end
+
+-- R64 FIX — zero the ConditionalAnimation rotationVelocity param the instant before orig() runs. Probe
+-- (R64) proved orig() already sees isNPC=true/idle=true/spd=0 at the market, BUT rotationVelocity is stuck
+-- at ~-0.15 every frame: NPC:update (NPC.lua:388) writes `rotationVelocity = difference` to turn him toward
+-- the player, and because we pin him the turn never completes → the value never settles → orig() plays a
+-- perpetual head-turn = the bobblehead. Forcing rotVel=0 here (our write is the last before orig() reads it)
+-- gives orig() a fully-idle input = stable head; the separate facial system still animates his mouth.
+function WalterWalker:_zeroTurnParam(pg)
+    if pg == nil or type(pg.animationParameters) ~= "table" or pg.animation == nil then return end
+    local id = pg.animationParameters.rotationVelocity
+    if id ~= nil then pcall(function() pg.animation:setParameter(id, 0) end) end
 end
 
 function WalterWalker:_resolveHipsNode()
@@ -721,11 +783,12 @@ function WalterWalker:_resolveHipsNode()
     return self._hipsNode
 end
 
--- POST-ANIMATION callback: stabilize Hips bone during an active-route conversation (Option A).
--- Two-phase: frame 0 (_hipsCaptureDone=false) — orig() was skipped so idle clip positioned Hips
--- cleanly; capture that world pos. Frame 1+ (_hipsCaptureDone=true) — orig() just ran and
--- ConditionalAnimation shimmied Hips; overwrite it back to the captured stable position.
--- Face/gesture bones are untouched; only the pelvis root is held steady.
+-- POST-ANIMATION callback: pin Walter's pelvis (Hips) WORLD position during a route/stroll conversation
+-- (R49 Option A). Two-phase: frame 0 (_hipsCaptureDone=false) — orig() was skipped, so the idle clip posed
+-- him cleanly; capture the Hips world pos. Frame 1+ — orig() just ran; overwrite the Hips back to that pos.
+-- R64 removed the R61 BODY_LOCK_BONES re-pinning: the bobblehead/limb shimmy was driven by a stuck
+-- rotationVelocity, now zeroed in the wrapper (`_zeroTurnParam`), so orig() produces a clean idle for the
+-- whole skeleton on its own — the body no longer needs freezing (it gets natural idle motion + talking).
 function WalterWalker:_hipsLockPostAnim(dt)
     local hips = self:_resolveHipsNode()
     if hips == nil then return end
