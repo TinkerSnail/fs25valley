@@ -963,6 +963,117 @@ function VLConsole:pedSplinesShow()
         #splines)
 end
 
+-- vlPedSpline <splineName> [stepMeters]: POC for Mechanism B (journals/npc-movement.md deep dive 2026-06-28) —
+-- SAMPLE a base-game pedestrian spline's geometry into waypoints and feed them to Walter's existing walker as a
+-- one-off route. No sealed PedestrianSystem API: we resolve the named `<Shape>` spline node and read its world
+-- positions with the public getSpline* primitives (same calls AISystem uses, dump lines 766–894). Run
+-- vlPedSplinesShow first to see the names/positions in the [PedSpline] log, then `vlPedSpline pedestrianSpline17Loop`.
+-- He walks from wherever he stands onto the spline, follows the samples, and idles at the far end (endOnArrival).
+function VLConsole:pedSpline(splineName, stepArg)
+    if g_valleyLife == nil then return "[ValleyLife] No active game." end
+    local ww = g_valleyLife.walterWalker
+    if ww == nil then return "[ValleyLife] WalterWalker unavailable." end
+    if splineName == nil then
+        return "[ValleyLife] Usage: vlPedSpline <splineName> [stepMeters]  (see [PedSpline] names from vlPedSplinesShow)"
+    end
+    if ww._wx == nil or ww._wz == nil then
+        return "[ValleyLife] Walter has no position yet (not spawned/acquired)."
+    end
+
+    -- Resolve the spline node BY NAME from the scene root (ids change every session) — same recursive
+    -- search vlPedSplinesShow uses to find the pedestrianSystem group.
+    local function findByName(node, name)
+        if node == nil or not entityExists(node) then return nil end
+        if getName(node) == name then return node end
+        for i = 0, getNumOfChildren(node) - 1 do
+            local f = findByName(getChildAt(node, i), name)
+            if f then return f end
+        end
+        return nil
+    end
+    local spline = findByName(getRootNode(), splineName)
+    if spline == nil then
+        return string.format("[ValleyLife] No node named '%s' in the scene. Run vlPedSplinesShow for valid names.", splineName)
+    end
+    local isSpline = false
+    pcall(function() isSpline = I3DUtil.getIsSpline(spline) end)
+    if not isSpline and not splineName:find("[Ss]pline") then
+        return string.format("[ValleyLife] '%s' exists but is not a spline.", splineName)
+    end
+
+    local len = 0
+    pcall(function() len = getSplineLength(spline) end)
+    if len == nil or len <= 0 then
+        return string.format("[ValleyLife] '%s' has zero/unknown length — can't sample.", splineName)
+    end
+
+    -- Sample at ~stepMeters spacing along the spline (default 2.5 m — our turn-then-walk handles corners).
+    -- Mirrors AISystem's loop: stepSize in spline-time = meters/length, clamp t to [0,1].
+    local stepMeters = tonumber(stepArg) or 2.5
+    if stepMeters < 0.5 then stepMeters = 0.5 end
+    local stepSize = stepMeters / len
+
+    -- First pass: collect the ordered points along the spline (getSplinePosition returns world XYZ).
+    local pts = {}
+    local t = 0
+    while t <= 1.0 + stepSize * 0.5 do
+        local ct = math.min(t, 1.0)
+        local wx, wy, wz = 0, 0, 0
+        pcall(function() wx, wy, wz = getSplinePosition(spline, ct) end)
+        table.insert(pts, { x = wx, y = wy, z = wz })
+        t = t + stepSize
+    end
+    local n = #pts
+    if n == 0 then
+        return string.format("[ValleyLife] '%s' produced no sample points.", splineName)
+    end
+
+    -- Snap Walter onto the NEAREST point of the spline (so he "steps onto" the closest sidewalk instead of
+    -- teleporting to the authored start or walking a diagonal across grass). The walker drives off its cached
+    -- _wx/_wz, so we set those + the mesh translation directly — same write _updateWalk does each frame.
+    local cx, cz = ww._wx, ww._wz
+    local bestI, bestD = 1, math.huge
+    for i = 1, n do
+        local dx, dz = pts[i].x - cx, pts[i].z - cz
+        local d = dx * dx + dz * dz
+        if d < bestD then bestD = d; bestI = i end
+    end
+    local startPt = pts[bestI]
+    -- Prefer terrain height for the snap (the walker terrain-snaps while walking anyway); fall back to the
+    -- spline's authored y, then his current y.
+    local sy = startPt.y or ww._wy
+    pcall(function()
+        if g_currentMission and g_currentMission.terrainRootNode then
+            local ty = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, startPt.x, 0, startPt.z)
+            if type(ty) == "number" then sy = ty end
+        end
+    end)
+    ww._wx, ww._wy, ww._wz = startPt.x, sy, startPt.z
+    if ww.graphicsNode and entityExists(ww.graphicsNode) then
+        pcall(function() setTranslation(ww.graphicsNode, ww._wx, ww._wy - (ww._yOffset or 0), ww._wz) end)
+    end
+
+    -- Build the circuit STARTING at the nearest point: wp[1] = where we just snapped him (so _beginLoop's
+    -- targetIdx=2 walks him to the next point), then the rest of the loop in order, wrapping around so he
+    -- covers the whole circuit and ends just before where he started. endOnArrival on the last so he idles.
+    local waypoints = { { name = string.format("s%d(start)", bestI), x = startPt.x, z = startPt.z } }
+    for off = 1, n - 1 do
+        local idx = ((bestI - 1 + off) % n) + 1
+        local p = pts[idx]
+        table.insert(waypoints, { name = string.format("s%d", idx), x = p.x, z = p.z })
+        print(string.format("[PedSpline] %s wp%d -> s%d =(%.1f, %.1f)", splineName, #waypoints, idx, p.x, p.z))
+    end
+    waypoints[#waypoints].endOnArrival = true
+
+    local loop = { name = "pedSpline:" .. splineName, waypoints = waypoints }
+    ww:_beginLoop(loop)
+    -- Avoid the 2-hour scheduler auto-firing a real loop the moment this one ends (same guard as forceWalkLoop).
+    ww._lastTick = math.floor((TimeHelper.getHour and TimeHelper.getHour() or 0) / 2)
+    return string.format(
+        "[ValleyLife] Walter snapped onto '%s' at point %d/%d and walking it: %d pts over %.0fm at %.1fm steps.",
+        splineName, bestI, n, n, len, stepMeters)
+end
+
 -- vlWalterFlashlight: force Walter's flashlight ON/OFF, or 'auto' to resume the seasonal-dusk rule.
 function VLConsole:walterFlashlight(arg)
     local ww = g_valleyLife and g_valleyLife.walterWalker
@@ -4072,6 +4183,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlAnimClips", "Dump animation clip names for a villager: vlAnimClips <npcId>", "dumpAnimClips", VLConsole)
     addConsoleCommand("vlWalk", "Force-start a walk loop: vlWalk <npcId> [loopName|index] (npcId: marta, grandpa, ...)", "forceWalk", VLConsole)
     addConsoleCommand("vlPedSplinesShow", "Toggle a debug overlay over the base-game pedestrian walk splines (like gsAISplinesShow for roads)", "pedSplinesShow", VLConsole)
+    addConsoleCommand("vlPedSpline", "Sample a pedestrian spline into waypoints and walk Walter along it: vlPedSpline <splineName> [stepMeters]", "pedSpline", VLConsole)
     addConsoleCommand("vlWalterYOffset", "Tune Walter's driven height offset (meters, +lowers): vlWalterYOffset <n>", "setWalterYOffset", VLConsole)
     addConsoleCommand("vlWalterStairLift", "Tune Walter's stair bow-lift on sloped segments: vlWalterStairLift <n>", "setWalterStairLift", VLConsole)
     addConsoleCommand("vlWalterShow", "Reveal Walter if he stepped inside (hidden): vlWalterShow", "walterShow", VLConsole)

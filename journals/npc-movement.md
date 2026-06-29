@@ -111,6 +111,23 @@ with the loop above, (3) drops debug markers / dumps the points, then (4) feeds 
 a one-off route. If the markers trace the sidewalk and Walter follows them, the hypothesis is proven and
 we generalize to a config knob (`workLoop = { splineName = "pedestrianSpline17Loop" }`).
 
+**POC BUILT (2026-06-29).** `vlPedSpline <splineName> [stepMeters]` ([[console-commands]]) is implemented in
+`main.lua` (`VLConsole:pedSpline`). It resolves the spline by name from `getRootNode()` (reusing the
+`vlPedSplinesShow` recursive `findByName`), confirms `I3DUtil.getIsSpline`, then samples with the AISystem loop
+(`stepSize = stepMeters/getSplineLength`, default 2.5 m, `getSplinePosition(spline, clamp(t,0,1))`). It builds a
+synthetic loop and calls `ww:_beginLoop(loop)` — the same synthetic-loop injection `_startReturnToTruck` uses.
+
+**Placement (2026-06-29, user chose "nearest point"):** the command does NOT require pre-positioning Walter,
+and `vlMoveGrandpa` does NOT combine with it — the walker drives off its cached `_wx/_wz` (seeded ONCE in
+`_acquireNode`, WalterWalker.lua:181), which `vlMoveGrandpa` (moves the engine GRANDPA node only) leaves stale,
+so the first walk frame snaps him back. Instead `vlPedSpline` finds the spline sample NEAREST his current
+`_wx/_wz`, sets `_wx/_wy/_wz` + `setTranslation` directly (terrain-height snap, the same write `_updateWalk`
+does), so he "steps onto" the closest sidewalk. The route then runs the circuit from that index, WRAPS around,
+and ends just before the start (`endOnArrival` → idle). Every wp logged `[PedSpline] <name> wpN -> sIDX =(x,z)`.
+
+**Not yet verified in-game** — next: `vlPedSplinesShow` → pick a loop near the woodshop → `vlPedSpline <that>`,
+watch him snap onto it and trace it; then promote to a `workLoop = { splineName = "pedestrianSpline17Loop" }` knob.
+
 ---
 
 ## Work loop overview

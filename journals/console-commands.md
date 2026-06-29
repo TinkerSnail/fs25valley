@@ -147,6 +147,7 @@ Full reference + the build recipe are in [walter-truck-driving.md](walter-truck-
 | `vlDumpTruck` / `vlDumpVehicle` / `vlDumpDriver` | — | Discovery probes (dormant dev tools). |
 | `gsAISplinesShow` | — | **Base-game**: toggle the AI road-spline overlay. |
 | `vlPedSplinesShow` | — | Toggle a colored debug overlay over the base-game PEDESTRIAN walk splines (the `pedestrianSystem` group; no base-game command exists, so we mirror `gsAISplinesShow`). Logs each spline's name/start-pos/length as `[PedSpline]`. Read-only. See [[npc-movement]] deep dive. |
+| `vlPedSpline` | `vlPedSpline <splineName> [stepMeters]` | **Mechanism B POC**: SAMPLE a named pedestrian spline's geometry (`getSplinePosition` at ~`stepMeters` spacing, default 2.5 m) into waypoints and walk **Walter** along it. **Snaps him onto the NEAREST point of the spline first** (no teleport-across-map, no diagonal across grass — he "steps onto" the closest sidewalk), then walks the full circuit from there, ending just before the start (`endOnArrival`, idles). Logs each waypoint as `[PedSpline] <name> wpN …`. Get spline names from `vlPedSplinesShow` first. Proves the authored-route walker before generalizing to a `workLoop.splineName` config knob. See [[npc-movement]]. |
 
 ## Appearance diagnostics
 
