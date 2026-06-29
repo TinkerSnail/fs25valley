@@ -51,6 +51,9 @@ deepest schedule + dialog by design; other villagers stay lighter.
       loop in its window; the rest of the day is the normal farm loops. `vlWalterSchedule [on|off|now|today <hr>]`,
       `vlWalterMarketReturn` (force the ending). Narrative = drop-off for Marta / bulletin board / stalls / mail
       a letter (the captured stroll). Tunable: the two days/hours, `loopsBeforeReturn` (1), pause lengths.
+- [ ] **Market stroll should start at Marta, not the parking lot** — when Walter arrives at the market he
+      currently begins the stroll from the parking-lot waypoint (`wp1 marketParkinglot`, by the truck);
+      he should head straight to Marta first. Address at some point (stroll-loop ordering / dismount spot).
 
 ## Cast — PRIORITIZE the base-game NPCs Walter introduces (user direction 2026-06-25)
 Build the characters the player canonically MEETS first: the base-game town NPCs Walter name-drops in
@@ -60,16 +63,38 @@ with a full base conversation + help/smalltalk tree to extend additively. See me
 `reference-basegame-npc-roster` + journal `map-riverbend-springs.md`.
 - [ ] **Ben (HELPER)** FIRST — Walter's explicit tutorial hand-off ("ask Ben… my most trusted helper").
       Confirm live + hookable (`vlNpcDump`), then layer our dialogue/role (the grain/teaching side).
+- [ ] **Extract + explore Ben's backstory** — mine his base-game conversation lines (extract `dataS2.gar`)
+      and build a character bible the way we did for **Katie** and **Dave** (see memory `project-katie-character`
+      / `project-david-character`). Grounds his characterization before we write his role.
+- [ ] **Extract + explore Noah's backstory** — same treatment as Ben/Katie/Dave: mine Noah (FORESTER)'s
+      base-game conversation lines and build a character bible before writing his role.
 - [ ] **Katie (ANIMAL_DEALER)** — research done; she already delivers the voiced cow tutorial. Hook her,
       point Walter/others to her, extend additively.
 - [ ] **Noah (FORESTER) / David (FARMER)** — the forestry + crops branches of the economy web.
 - [ ] **Great-uncle Paul** — weave the canon comic family figure (sugar-beet stand, B&B dreams) into
       lore; reconcile with our pinned debt-uncle (different generation — see `project-walter-story`).
+- [ ] **Town routes for Dave / Katie / Ben / Noah** — give each their own walk-around-town routes (the
+      Walter walker model applies to all base NPCs — same rig).
+- [ ] **Social visiting / co-presence** — have them occasionally visit the farm, and visit each other's
+      houses, to idle together for a while or take walks together (Katie references walks together in her
+      dialog). Makes the town feel alive; build on the route system + a light "who's where" scheduler.
+- [ ] **Basic business NPCs (ambient town life)** — create simple NPCs for each town business; even without
+      enterable interiors, show people coming and going from the business doors. Reuse the SAME door
+      spawn/despawn (hide/reveal-at-door) machinery used for Marta and Walter at their home doors.
 - [ ] **OPEN:** how do these base NPCs relate to our fabricated **Elara / Kenji / Marta**? Join them,
       or do the base NPCs become the core cast and the fabricated ones step back? (Decide before deep
       content — affects whose heart events we write.)
 
 ## Other (fabricated) villagers — Elara, Kenji, Marta
+- [ ] **Redo Kenji entirely** — he overlaps too much with base-game **Ben** (HELPER). Rethink Kenji from
+      scratch (role / personality / hook) so the two aren't redundant. Whole-character redo, at some point.
+- [ ] **Figure out the new Kenji story** — still TBD. One option: lean into the near-identical look and make
+      him **Ben's family member** (turn the resemblance into the hook) rather than fighting it.
+- [ ] **Marta's full schedule** — build out her complete daily schedule/routes (she currently has only
+      stop-and-face + a single loop).
+- [ ] **Rework Marta's dialog for the market setting** — her lines still read as if she works in a diner
+      (counter / kitchen), but the farmers market has neither. Rethink the diner-implying dialog so it fits
+      where she actually is (a market stall / vendor).
 - [ ] Lighter-but-real **schedules / routes** (Marta has stop-and-face + a loop; flesh out the rest).
 - [ ] **Casual dialogue + at least one heart event each** (vertical-slice target: 3–4 deep characters).
 - [ ] Time-of-day greeting pools for them too (the casual-dialogue axis is general now).
@@ -93,6 +118,16 @@ with a full base conversation + help/smalltalk tree to extend additively. See me
       when wiring doors/lights elsewhere (method in [engine-api.md](journals/engine-api.md)).
 
 ## Later / someday
+- [ ] **Research: do base-game child models exist?** The town has playgrounds but no kids. Dig through the
+      base-game character/i3d assets for any child/youth models — if they exist, ambient kids at the
+      playgrounds become possible. (Investigation first; populating is a later step.)
+- [ ] **Seasonal town events (Stardew-like, but more involved)** — recurring seasonal festivals/celebrations.
+      Decorate the WHOLE town seasonally (there's an existing seasonal-decor mod the user likes — go further
+      than it). Set-piece idea: **parades** where all the NPCs gather to watch other NPCs march down the town
+      streets. (Builds on the route system + a gathering/spectator scheduler; post vertical-slice.)
+- [ ] **Building interiors via GIANTS Editor** (pie-in-the-sky) — if feasible, use the GIANTS Editor to
+      refine the town buildings and add walk-in interiors for some of them. Big undertaking; depends on what
+      the editor allows for base-map buildings.
 - [ ] Festivals, marriage, expanded cast (post vertical-slice).
 - [ ] Multiplayer (deferred — singleplayer first).
 
