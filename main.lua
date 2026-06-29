@@ -2518,6 +2518,7 @@ function VLConsole.marketScheduleTick(dt)
     local hour = TimeHelper and TimeHelper.getHour and TimeHelper.getHour() or nil
     if hour == nil then return end
     local day   = (TimeHelper.getMonotonicDay and TimeHelper.getMonotonicDay()) or 0
+    if day < ((VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.scheduleStartDay) or 2) then return end  -- no trips on day 1 (tutorial day)
     local wd    = (TimeHelper.getWeekday and TimeHelper.getWeekday()) or -1
     local today = sch.days and sch.days[wd] or nil
 

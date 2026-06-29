@@ -141,6 +141,7 @@ VLConfig.WALTER_WALK = {
     yOffset      = 0,       -- meters subtracted from his driven height (fixes float; tune live with vlWalterYOffset)
     stairLift    = 0.15,    -- bow-lift on sloped segments to clear step noses; tune live with vlWalterStairLift
     dayStartHour = 5,       -- he "starts his day" at 5am: fires once per day (edge-triggered) to reappear at home if he stepped inside last evening
+    scheduleStartDay = 2,   -- his CUSTOM routes + market trips begin on this monotonic day; day 1 = the base-game tutorial day, he idles at home like vanilla (no wandering off mid-tutorial)
     nightWoodshopHour   = 22,  -- hour after which the OCCASIONAL "couldn't sleep" woodshop visit may trigger (once per night, only while he's hidden/asleep inside)
     nightWoodshopChance = 0.4, -- deterministic per-night probability he actually goes (0..1) — keeps it occasional but stable across save/reload
     -- Hand prop: the BASE-GAME flashlight, held + lit while he's out walking after the seasonal dusk

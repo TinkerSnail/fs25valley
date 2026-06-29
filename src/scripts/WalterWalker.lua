@@ -1409,6 +1409,16 @@ function WalterWalker:update(dt)
     if not self:_acquireNode() then return end
     self:_tryResolveAnim()
 
+    -- DAY 1 = the base-game tutorial day: keep OUR routes + market OFF for all of it and let the base game run
+    -- Walter (the guided tour, then idle at home) exactly like vanilla. His custom schedule begins the NEXT
+    -- morning (day 2). Keyed on monotonicDay — robust, no fragile guided-tour-instance timing (that gate missed
+    -- the pre-tour window). Only gates while he's idle; tunable via WALTER_WALK.scheduleStartDay.
+    if not self._inTruck and not self._active and not self._away then
+        local day      = (TimeHelper.getMonotonicDay and TimeHelper.getMonotonicDay()) or 1
+        local startDay = (VLConfig.WALTER_WALK and VLConfig.WALTER_WALK.scheduleStartDay) or 2
+        if (day or 1) < startDay then return end
+    end
+
     -- Seated in the truck: the vehicleCharacter (its own HumanModel) is the visible driver, posed by
     -- SPINE_ROTATION + IK. Enterable only pumps vc:update() while a player controls the vehicle, so we
     -- pump it ourselves to keep the hands-on-wheel IK solved. Suppress all route/greeting/flashlight logic.
