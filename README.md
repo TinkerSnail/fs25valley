@@ -113,6 +113,7 @@ setup (`idle animation: … (direct track)`), and errors.
 
 Early development. Heart events exist for all three villagers; camera takeover
 during events is still a stub. Birthday → leisure-all-day is not implemented yet.
+Walter (the base-game Grandpa) is being wired up for daily town life.
 
 ## License
 
