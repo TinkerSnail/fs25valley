@@ -481,6 +481,64 @@ function WalterWalker:_syncFollowers()
     end
 end
 
+-- Live talk target for the unified NPC chooser (NPCDialog): where Walter's body currently
+-- is, or nil when he isn't talkable — not spawned/active, stepped inside (_hidden), or
+-- already mid-conversation. ADDITIVE: this only advertises him to our chooser; his own
+-- base-game "press to talk" conversation is left fully intact.
+function WalterWalker:getTalkTarget()
+    if not self:_acquireNode() then return nil end
+    local g = self.grandpa
+    if g == nil or not g.isActive then return nil end
+    if self._hidden or g.isInConversation then return nil end
+
+    -- Prefer his actual body (graphicsRootNode); fall back to his driven point, then the
+    -- base NPC position the game keeps parked on him.
+    local x, y, z
+    if self.graphicsNode ~= nil and entityExists(self.graphicsNode) then
+        x, y, z = getWorldTranslation(self.graphicsNode)
+    end
+    if x == nil and self._wx ~= nil then x, y, z = self._wx, self._wy, self._wz end
+    if x == nil and g.x ~= nil then x, y, z = g.x, g.y, g.z end
+    if x == nil then return nil end
+    return { x = x, y = y, z = z, name = "Walter" }
+end
+
+-- Start Walter's BASE-GAME GRANDPA conversation on demand (when the player picks him in our
+-- chooser and presses the talk key). CONFIRMED from decompiled source (2026-07-01, R66): the native
+-- "press to talk" prompt is `NPCActivatable:run()` = `self.npc:requestConversation(g_localPlayer)`
+-- (dataS/scripts/ai/npcs/NPCActivatable.lua:37 → NPC:requestConversation, NPC.lua:783). That auto-
+-- selects the right conversation (FIRST_CONTACT → INTRO → DEFAULT) and, on the SP host (isServer),
+-- starts it directly. We mirror the native call verbatim, so this is his REAL base dialogue (never a
+-- doppelganger, [[project_walter_constraint]]). Fire-and-forget like run(): the conversation UI comes
+-- up via NPCConversationStartEvent, so isInConversation may not be set synchronously — don't gate on it.
+function WalterWalker:startBaseConversation()
+    if not self:_acquireNode() then
+        print("[ValleyLife][WalterTalk] GRANDPA not acquired (spawned/active?).")
+        return false
+    end
+    local g = self.grandpa
+    if g.isInConversation then return true end
+    if type(g.requestConversation) ~= "function" then
+        print("[ValleyLife][WalterTalk] requestConversation missing on GRANDPA.")
+        return false
+    end
+    local ok, err = pcall(function() g:requestConversation(g_localPlayer) end)
+    if not ok then
+        print("[ValleyLife][WalterTalk] requestConversation failed: " .. tostring(err))
+        return false
+    end
+    return true
+end
+
+-- His base-game NPCActivatable (the object that drives the native "START CONVERSATION"
+-- prompt). We remove it from g_currentMission.activatableObjectsSystem while he's a target
+-- in our chooser so only our "Press R to talk" prompt shows (and R never ambiguously talks
+-- to Walter when Marta is the selected target). Returns nil if GRANDPA isn't acquired yet.
+function WalterWalker:getActivatable()
+    local g = self.grandpa
+    return g ~= nil and g.activatable or nil
+end
+
 -- Resolve + cache the woodshop placeable (tinyShed01 nearest the configured point). Both the door
 -- and the lights live on it. Re-resolves if the cached placeable is gone.
 function WalterWalker:_resolveShed()

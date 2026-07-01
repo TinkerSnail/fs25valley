@@ -159,6 +159,31 @@ set. Both tear down on `closeReply` / `closeSpeech`. Mission unload calls
 
 ---
 
+## Choosing between overlapping NPCs (VL_CYCLE cycle-target)
+
+Interaction used to pick a **single nearest** NPC (`getNearestNPC`), so two villagers
+standing together hid each other — you could only ever talk to whoever was a centimetre
+closer. Replaced with a **cycle-target chooser** (2026-06-30):
+
+- **`VLNPCSystem:getNearbyNPCs(maxDist)`** (`NPCSystem.lua`) returns every talkable target in
+  range, nearest-first, as `{ kind, name, npc|walker, dist }` records. It folds in **Walter**
+  (base-game GRANDPA, not in `self.npcs`) via **`WalterWalker:getTalkTarget()`** — his live
+  body position, `nil` while hidden/in-conversation.
+- **`VLNPCDialog:update`** keeps a **stable selection** (`selectedKey`, via `targetKey`) so the
+  pick doesn't snap around as the list re-sorts each frame. Shows one `Press R to talk to <name>`
+  (VL_INTERACT) prompt for the selected target, plus a `Press X to switch to <name>` (**VL_CYCLE**,
+  `KEY_x`, rebindable) hint whenever 2+ are in range. `onCycleInput` advances the selection.
+- **Talk hand-off:** `onInteractInput` opens our conversation for a fabricated NPC; for Walter it
+  calls **`WalterWalker:startBaseConversation()`** — ADDITIVE, never overrides his base dialog.
+
+⚠️ **Walter's `startBaseConversation` is still a DISCOVERY PROBE.** The mod-callable call that
+starts a base-game NPC conversation lives in sealed `.gar` (the tour fires it via
+`npcStartConversation`) and is **not yet confirmed**. The method inventories his conversation
+surface + tries candidate calls under `pcall` with `[WalterTalk]` logging; **`vlWalterTalk`** fires
+it from the console for controlled testing. Once the log shows which candidate flips
+`isInConversation`, bake that single call and strip the probe. See memory
+`project_npc_chooser_walter_talk`. Until then, pressing R on Walter's slot just runs the probe.
+
 ## Integration points
 
 - **Heart events:** `NPCEventSequencer` → `VLNPCDialog:showEventDialogue(step, sequencer)`

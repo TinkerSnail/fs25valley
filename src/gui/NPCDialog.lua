@@ -18,6 +18,7 @@ VLNPCDialog = {}
 VLNPCDialog.__index = VLNPCDialog
 
 VLNPCDialog.INPUT_ACTION = "VL_INTERACT"
+VLNPCDialog.CYCLE_ACTION  = "VL_CYCLE"
 
 local modGui = (g_currentModDirectory or "") .. "gui/"
 
@@ -586,8 +587,12 @@ function VLNPCDialog.new(npcSystem)
     local self = setmetatable({}, VLNPCDialog)
     self.npcSystem      = npcSystem
     self.activeNPC      = nil
+    self.activeTarget   = nil   -- currently-selected chooser entry (kind=npc|walter, see getNearbyNPCs)
+    self.selectedKey    = nil   -- stable id of the selection so it survives list reordering
     self.actionEventId  = nil
-    self.promptName     = nil   -- name currently shown in the action prompt
+    self.promptName     = nil   -- name currently shown in the TALK (VL_INTERACT) prompt
+    self.cycleEventId   = nil
+    self.cyclePromptName = nil  -- name currently shown in the SWITCH (VL_CYCLE) prompt
     self.reply          = nil   -- active reply-selector state (see showReplySelector)
     self.speech         = nil   -- active narration panel (see showSpeechBox)
     return self
@@ -855,6 +860,7 @@ end
 
 function VLNPCDialog:removeInput()
     self:unregisterActionEvent()
+    self:unregisterCycleEvent()
 end
 
 function VLNPCDialog:registerActionEvent(name)
@@ -896,6 +902,32 @@ function VLNPCDialog:unregisterActionEvent()
     end
 end
 
+-- Register the VL_CYCLE "switch villager" prompt, mirroring registerActionEvent. Shown
+-- only when 2+ talkable villagers are in range so the player can pick between them.
+function VLNPCDialog:registerCycleEvent(name)
+    if not self.inputAvailable then return end
+    if InputAction == nil or InputAction.VL_CYCLE == nil then return end
+    self:unregisterCycleEvent()
+    local success, eventId = g_inputBinding:registerActionEvent(
+        InputAction.VL_CYCLE, self, VLNPCDialog.onCycleInput,
+        false, true, false, true)
+    if success then
+        self.cycleEventId = eventId
+        local label = string.format(g_i18n:getText("vl_cycle_prompt"), name)
+        g_inputBinding:setActionEventText(eventId, label)
+        g_inputBinding:setActionEventTextVisibility(eventId, true)
+        g_inputBinding:setActionEventTextPriority(eventId, GS_PRIO_NORMAL or GS_PRIO_HIGH)
+        g_inputBinding:setActionEventActive(eventId, true)
+    end
+end
+
+function VLNPCDialog:unregisterCycleEvent()
+    if self.cycleEventId and g_inputBinding then
+        g_inputBinding:removeActionEvent(self.cycleEventId)
+        self.cycleEventId = nil
+    end
+end
+
 function VLNPCDialog:restoreInputContextIfStuck()
     if not self._inReplyContext or g_inputBinding == nil then return end
     if self.reply ~= nil then return end
@@ -926,8 +958,10 @@ function VLNPCDialog:delete()
     self:closeReply()
     self:closeSpeech()
     self:unregisterActionEvent()
+    self:unregisterCycleEvent()
     self:restoreInputContextIfStuck()
     self:unlockMovement()
+    self:restoreWalterNative()
 end
 
 function VLNPCDialog:update(dt)
@@ -943,7 +977,8 @@ function VLNPCDialog:update(dt)
 
     -- Don't offer interaction while an event is playing.
     if self.npcSystem.sequencer.active then
-        self:setPrompt(nil)
+        self:setInteractPrompt(nil)
+        self:setCyclePrompt(nil)
         return
     end
 
@@ -954,19 +989,112 @@ function VLNPCDialog:update(dt)
         self:closeReply()
     end
 
-    local nearest, dist = self.npcSystem:getNearestNPC()
-    if nearest and dist <= VLConfig.INTERACT_DISTANCE then
-        self.activeNPC = nearest
-        self:setPrompt(nearest.name)
+    -- All talkable targets in range, nearest-first (our NPCs + base-game Walter).
+    local targets = self.npcSystem:getNearbyNPCs(VLConfig.INTERACT_DISTANCE)
+    self.targets  = targets
+
+    -- Suppress Walter's native "START CONVERSATION" prompt while he's one of our chooser
+    -- targets: our R (VL_INTERACT) handles him via requestConversation, verified in-game
+    -- (R66, 2026-07-01). This also fixes the R-ambiguity where the native prompt always
+    -- talked to Walter even when Marta was the selected target (both were bound to R).
+    local walterTarget = nil
+    for _, t in ipairs(targets) do
+        if t.kind == "walter" then walterTarget = t; break end
+    end
+    self:suppressWalterNative(walterTarget)
+
+    if #targets == 0 then
+        self.selectedKey  = nil
+        self.activeTarget = nil
+        self.activeNPC    = nil
+        self:setInteractPrompt(nil)
+        self:setCyclePrompt(nil)
+        return
+    end
+
+    -- Keep the player's current selection if it's still in range; otherwise default to
+    -- the nearest. This is what lets two villagers stand together and still be chosen
+    -- between — the pick no longer snaps to whoever is a centimetre closer each frame.
+    local sel = self:findTargetByKey(self.selectedKey)
+    if sel == nil then
+        sel = targets[1]
+        self.selectedKey = VLNPCDialog.targetKey(sel)
+    end
+    self.activeTarget = sel
+    self.activeNPC    = (sel.kind == "npc") and sel.npc or nil
+
+    self:setInteractPrompt(sel.name)
+
+    -- Offer the switch key only when there's actually more than one target to pick from.
+    if #targets >= 2 then
+        local nextT = self:targetAfter(sel)
+        self:setCyclePrompt(nextT and nextT.name or nil)
     else
-        self.activeNPC = nil
-        self:setPrompt(nil)
+        self:setCyclePrompt(nil)
+    end
+end
+
+-- Stable identity for a chooser entry so a selection survives the list re-sorting each
+-- frame: our NPCs key on their id, Walter on a fixed tag.
+function VLNPCDialog.targetKey(t)
+    if t == nil then return nil end
+    if t.kind == "walter" then return "walter" end
+    return "npc:" .. tostring(t.npc and t.npc.id or t.name)
+end
+
+function VLNPCDialog:findTargetByKey(key)
+    if key == nil or self.targets == nil then return nil end
+    for _, t in ipairs(self.targets) do
+        if VLNPCDialog.targetKey(t) == key then return t end
+    end
+    return nil
+end
+
+-- The next target after `sel` in the (distance-sorted) list, wrapping around.
+function VLNPCDialog:targetAfter(sel)
+    local list = self.targets
+    if list == nil or #list == 0 then return nil end
+    local i = 1
+    for idx, t in ipairs(list) do
+        if VLNPCDialog.targetKey(t) == VLNPCDialog.targetKey(sel) then i = idx; break end
+    end
+    return list[(i % #list) + 1]
+end
+
+-- Remove Walter's native "START CONVERSATION" activatable while he's a chooser target, so
+-- only our prompts show. We deliberately DON'T re-add it when he leaves range: the base game
+-- removes it on interaction-trigger leave and re-adds it on the next trigger enter, so simply
+-- forgetting it keeps us in sync and avoids duplicate/stray entries. delete() restores it if
+-- we're still suppressing at teardown, so disabling the mod never leaves Walter unreachable.
+function VLNPCDialog:suppressWalterNative(walterTarget)
+    local sys = g_currentMission and g_currentMission.activatableObjectsSystem
+    if sys == nil or type(sys.removeActivatable) ~= "function" then return end
+    if walterTarget ~= nil then
+        local walker = walterTarget.walker
+        local act = walker and type(walker.getActivatable) == "function" and walker:getActivatable() or nil
+        if act ~= nil then
+            pcall(function() sys:removeActivatable(act) end)
+            self._suppressedWalterActivatable = act
+        end
+    else
+        self._suppressedWalterActivatable = nil
+    end
+end
+
+-- Put Walter's native activatable back (mod teardown / cleanup) if we're still suppressing it.
+function VLNPCDialog:restoreWalterNative()
+    local act = self._suppressedWalterActivatable
+    if act == nil then return end
+    self._suppressedWalterActivatable = nil
+    local sys = g_currentMission and g_currentMission.activatableObjectsSystem
+    if sys ~= nil and type(sys.addActivatable) == "function" then
+        pcall(function() sys:addActivatable(act) end)
     end
 end
 
 -- Show/hide the "Press R to talk to <name>" prompt by (re)registering the action
 -- event in the active gameplay context when the player enters/leaves range.
-function VLNPCDialog:setPrompt(name)
+function VLNPCDialog:setInteractPrompt(name)
     if name == self.promptName then return end
     self.promptName = name
     if name then
@@ -976,10 +1104,45 @@ function VLNPCDialog:setPrompt(name)
     end
 end
 
+-- Show/hide the "Press X to switch to <name>" prompt (VL_CYCLE), mirroring setInteractPrompt.
+function VLNPCDialog:setCyclePrompt(name)
+    if name == self.cyclePromptName then return end
+    self.cyclePromptName = name
+    if name then
+        self:registerCycleEvent(name)
+    else
+        self:unregisterCycleEvent()
+    end
+end
+
 -- Input callback (also reachable directly for testing).
 function VLNPCDialog:onInteractInput()
+    local sel = self.activeTarget
+    if sel == nil then return end
+    if sel.kind == "walter" then
+        -- Hand off to Walter's own base-game conversation (never overridden).
+        if sel.walker ~= nil and type(sel.walker.startBaseConversation) == "function" then
+            sel.walker:startBaseConversation()
+        end
+        return
+    end
+    -- Our fabricated NPCs.
     if not self.activeNPC or self.activeNPC.isTalking then return end
     self:openConversation(self.activeNPC)
+end
+
+-- Cycle the selected target to the next in-range villager.
+function VLNPCDialog:onCycleInput()
+    if self.targets == nil or #self.targets < 2 then return end
+    local nextT = self:targetAfter(self.activeTarget)
+    if nextT == nil then return end
+    self.selectedKey = VLNPCDialog.targetKey(nextT)
+    -- Refresh prompts immediately so the label tracks the new selection this frame.
+    self.activeTarget = nextT
+    self.activeNPC    = (nextT.kind == "npc") and nextT.npc or nil
+    self:setInteractPrompt(nextT.name)
+    local afterNext = self:targetAfter(nextT)
+    self:setCyclePrompt(afterNext and afterNext.name or nil)
 end
 
 function VLNPCDialog:openConversation(npc)

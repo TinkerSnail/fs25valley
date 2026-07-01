@@ -325,6 +325,46 @@ function VLNPCSystem:getNearestNPC()
     return nearest, bestDist
 end
 
+-- Every talkable target within maxDist of the player, nearest-first. Each entry is a
+-- lightweight { kind, name, npc, walker, dist } record so the dialog can present one
+-- unified chooser over BOTH our fabricated NPCs and the base-game GRANDPA (Walter).
+-- Walter is folded in via WalterWalker.getTalkTarget (his live driven position), so two
+-- villagers standing together no longer hide each other behind a single-nearest pick.
+function VLNPCSystem:getNearbyNPCs(maxDist)
+    maxDist = maxDist or VLConfig.INTERACT_DISTANCE
+    local out = {}
+    local px, _, pz = self:getPlayerPosition()
+    if px == nil then return out end
+
+    for _, npc in pairs(self.npcs) do
+        if npc.isLoaded then
+            local nx, _, nz = npc:getWorldPosition()
+            local dx, dz = nx - px, nz - pz
+            local d = math.sqrt(dx*dx + dz*dz)
+            if d <= maxDist then
+                out[#out + 1] = { kind = "npc", name = npc.name, npc = npc, dist = d }
+            end
+        end
+    end
+
+    -- Walter (base-game GRANDPA) is driven separately (not in self.npcs). Fold his live
+    -- position in when he's talkable so the same chooser covers him. ADDITIVE — selecting
+    -- him hands off to his own base conversation; we never override it.
+    if self.walterWalker ~= nil and type(self.walterWalker.getTalkTarget) == "function" then
+        local wt = self.walterWalker:getTalkTarget()
+        if wt ~= nil then
+            local dx, dz = wt.x - px, wt.z - pz
+            local d = math.sqrt(dx*dx + dz*dz)
+            if d <= maxDist then
+                out[#out + 1] = { kind = "walter", name = wt.name or "Walter", walker = self.walterWalker, dist = d }
+            end
+        end
+    end
+
+    table.sort(out, function(a, b) return a.dist < b.dist end)
+    return out
+end
+
 -- Save / load
 
 -- FS25's object XMLFile API requires a registered schema before setValue/getValue

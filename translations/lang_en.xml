@@ -2,10 +2,12 @@
 <l10n>
     <texts>
         <text name="input_VL_INTERACT" text="Talk to villager" />
+        <text name="input_VL_CYCLE" text="Switch villager" />
         <text name="input_VL_UP" text="Previous reply" />
         <text name="input_VL_DOWN" text="Next reply" />
 
         <text name="vl_interact_prompt" text="Press R to talk to %s" />
+        <text name="vl_cycle_prompt" text="Press X to switch to %s" />
         <text name="vl_dialog_continue_or" text="or" />
         <text name="vl_dialog_continue_suffix" text="to continue" />
         <text name="vl_dialog_continue_fallback" text="Press Enter or left click to continue" />
