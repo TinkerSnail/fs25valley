@@ -2,8 +2,16 @@
 
 **This is the central directory of every `vl*` command** the mod registers (source of
 truth: the `addConsoleCommand` calls in `main.lua` / `VLConsole`). Open the console with
-**`~`** and type a command. Most print to the console **and**
+**`~`** (the key left of **1**) and type a command. Most print to the console **and**
 `~/Library/Application Support/FarmingSimulator2025/log.txt`.
+
+**Enabling the console (per-machine, one-time):** the `~` key does nothing until developer
+controls are on. Fully quit FS25 (it rewrites `game.xml` on exit and will clobber the edit),
+then set `<development><controls>true</controls></development>` in `game.xml`
+(Windows: `Documents\My Games\FarmingSimulator2025\game.xml`; macOS:
+`~/Library/Application Support/FarmingSimulator2025/game.xml`), relaunch, press `~`. Note
+`<console enable="true"/>` under `<logging>` is a *different* flag (log output) and is not
+enough on its own. This setting is per-machine and does NOT sync via git.
 
 After code changes, run `./repack.sh` from the project root, then **fully quit
 and relaunch** FS25. Confirm the log shows the expected mod version.

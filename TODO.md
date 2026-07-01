@@ -78,6 +78,21 @@ with a full base conversation + help/smalltalk tree to extend additively. See me
 - [ ] **Social visiting / co-presence** — have them occasionally visit the farm, and visit each other's
       houses, to idle together for a while or take walks together (Katie references walks together in her
       dialog). Makes the town feel alive; build on the route system + a light "who's where" scheduler.
+- [ ] **Joint conversation dialog when two NPCs are together** (Stardew-like; user request 2026-06-30) —
+      when you talk to an NPC who's hanging out next to another (e.g. Walter + Marta), offer a short
+      **group line** that acknowledges the pair instead of the usual solo line. Doesn't need to be long or
+      branching — a beat or two of the two of them riffing / reacting to each other. The NPC **chooser
+      already knows who's co-present** (`getNearbyNPCs` returns every talkable target in range — see
+      `dialog-boxes.md` §"Choosing between overlapping NPCs"), so the plumbing to detect a pair is in
+      place; this is mostly a small content system (per-pair or generic "two people" pools + a pick rule).
+      **It's a one-off beat, not a mode:** once the joint line finishes, both NPCs go straight back to
+      normal 1-on-1 conversations with the player (and the cycle-target chooser) as usual — nothing stays
+      locked. So the group line is just an alternate pick inside `openConversation` when a neighbour is
+      present; it must not disable/latch either character's regular solo dialogue afterward.
+      **HARD CONSTRAINT (additive rule):** never block or replace the **base-game** characters' native
+      in-game conversation. For base NPCs (Walter, and later Ben/Katie/Noah/David) the joint beat must
+      layer on top and always leave their normal "press to talk" dialog fully reachable — same principle
+      as the whole mod (see `dialog-boxes.md` top + `project_walter_constraint`).
 - [ ] **Basic business NPCs (ambient town life)** — create simple NPCs for each town business; even without
       enterable interiors, show people coming and going from the business doors. Reuse the SAME door
       spawn/despawn (hide/reveal-at-door) machinery used for Marta and Walter at their home doors.
@@ -92,9 +107,9 @@ with a full base conversation + help/smalltalk tree to extend additively. See me
       him **Ben's family member** (turn the resemblance into the hook) rather than fighting it.
 - [ ] **Marta's full schedule** — build out her complete daily schedule/routes (she currently has only
       stop-and-face + a single loop).
-- [ ] **Rework Marta's dialog for the market setting** — her lines still read as if she works in a diner
-      (counter / kitchen), but the farmers market has neither. Rethink the diner-implying dialog so it fits
-      where she actually is (a market stall / vendor).
+- [x] **Rework Marta's dialog for the market setting** (2026-07-01) — removed the last diner holdovers
+      ("kitchen"/"counter") from her heart events + casual greetings and wove in the sunflower farm she
+      runs out back of the market (feeds the oil chain). See `src/content/Marta.lua`.
 - [ ] Lighter-but-real **schedules / routes** (Marta has stop-and-face + a loop; flesh out the rest).
 - [ ] **Casual dialogue + at least one heart event each** (vertical-slice target: 3–4 deep characters).
 - [ ] Time-of-day greeting pools for them too (the casual-dialogue axis is general now).
