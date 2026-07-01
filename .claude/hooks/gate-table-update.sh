@@ -11,6 +11,9 @@
 # Exit 2 = block the tool call and feed the message back to the model.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/_common.sh"
+
 INPUT="$(cat)"
 FILE="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')"
 
@@ -19,8 +22,9 @@ case "$FILE" in
   *) exit 0 ;;
 esac
 
-HIST="/Users/christina/.claude/projects/-Users-christina-Dropbox-Mac-Documents-FS25Valley/memory/walter_walker_history.md"
-LOG="$HOME/Library/Application Support/FarmingSimulator2025/log.txt"
+PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$HERE/../.." && pwd)}"
+HIST="$PROJ/memory/walter_walker_history.md"     # memory now lives in-repo (syncs via git)
+LOG="$(fs25_base)/log.txt"
 
 [ -f "$HIST" ] || exit 0          # no table yet → allow
 [ -f "$LOG" ]  || exit 0          # no running/last session info → allow (nothing tested)
@@ -30,8 +34,8 @@ load_line="$(grep -m1 'Load mod: FS25_ValleyLife' "$LOG" 2>/dev/null || true)"
 [ -n "$load_line" ] || exit 0     # mod not loaded in current session yet → allow
 
 load_ts="$(printf '%s' "$load_line" | cut -c1-19)"                       # 2026-06-21 03:34:36
-load_epoch=$(date -j -f '%Y-%m-%d %H:%M:%S' "$load_ts" +%s 2>/dev/null || echo 0)
-hist_mtime=$(stat -f %m "$HIST")
+load_epoch=$(to_epoch "$load_ts")
+hist_mtime=$(mtime "$HIST")
 
 if [ "$load_epoch" -gt "$hist_mtime" ]; then
   echo "BLOCKED: FS25 loaded/tested a build at $load_ts, but walter_walker_history.md has not been updated since." >&2

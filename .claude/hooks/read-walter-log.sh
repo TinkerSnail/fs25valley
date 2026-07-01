@@ -10,7 +10,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-LOG="$HOME/Library/Application Support/FarmingSimulator2025/log.txt"
+. "$HERE/_common.sh"
+LOG="$(fs25_base)/log.txt"
 PATTERN="${1:-\[ValleyLife\]\[Walter\]}"
 TAIL="${2:-25}"
 

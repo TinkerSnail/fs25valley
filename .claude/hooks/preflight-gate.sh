@@ -12,6 +12,9 @@
 # Exit 2 = block and feed the message back to the model.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/_common.sh"
+
 INPUT="$(cat)"
 FILE="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')"
 
@@ -21,16 +24,16 @@ case "$FILE" in
   *) exit 0 ;;
 esac
 
-PROJ="${CLAUDE_PROJECT_DIR:-/Users/christina/Dropbox/Mac/Documents/FS25Valley}"
+PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$HERE/../.." && pwd)}"
 START="$PROJ/.claude/.session-start"
 PRE="$PROJ/.claude/.preflight"
 
 # No session marker → cannot anchor the check; allow rather than block work spuriously.
 [ -f "$START" ] || exit 0
 
-start_m=$(stat -f %m "$START")
+start_m=$(mtime "$START")
 pre_m=0
-[ -f "$PRE" ] && pre_m=$(stat -f %m "$PRE")
+[ -f "$PRE" ] && pre_m=$(mtime "$PRE")
 
 if [ "$pre_m" -lt "$start_m" ]; then
   echo "BLOCKED: session preflight not done. Before editing mod code this session you must:" >&2

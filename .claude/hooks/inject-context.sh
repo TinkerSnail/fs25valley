@@ -6,8 +6,13 @@
 # gate keys off (you cannot edit code until you've written a .preflight note this session).
 set -euo pipefail
 
-MEM="/Users/christina/.claude/projects/-Users-christina-Dropbox-Mac-Documents-FS25Valley/memory"
-PROJ="${CLAUDE_PROJECT_DIR:-/Users/christina/Dropbox/Mac/Documents/FS25Valley}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/_common.sh"
+
+# Repo root: prefer the env Claude Code sets, else derive from this script's location (.claude/hooks).
+PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$HERE/../.." && pwd)}"
+# Memory now lives IN the repo so it syncs across machines via git (was ~/.claude on the Mac).
+MEM="$PROJ/memory"
 JRN="$PROJ/journals"
 
 emit() {
@@ -37,5 +42,10 @@ mkdir -p "$PROJ/.claude"
 date +%s > "$PROJ/.claude/.session-start" 2>/dev/null || true
 
 # Wrap as SessionStart additionalContext so it is injected, not just printed.
-jq -n --arg ctx "$BODY" \
+# Pass via a file (--rawfile), not --arg: the journals can exceed the command-line
+# argument-length limit on Windows (Git Bash), which fails with "Argument list too long".
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+printf '%s' "$BODY" > "$TMP"
+jq -n --rawfile ctx "$TMP" \
   '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'

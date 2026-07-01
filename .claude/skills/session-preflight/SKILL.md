@@ -33,10 +33,9 @@ Work through these in order. Steps 0–3 are research; step 4 writes the note.
    - The `.claude` failsafes / gates themselves → `development-process.md`.
 
 ### Step 1 — Memory
-1. Read `MEMORY.md` (path:
-   `/Users/christina/.claude/projects/-Users-christina-Dropbox-Mac-Documents-FS25Valley/memory/MEMORY.md`).
-2. Read the individual memory files whose index line is relevant to the task. For NPC
-   work, `walter_walker_history.md` (the R-table attempt log) is almost always relevant.
+1. Read `memory/MEMORY.md` (the in-repo memory index — syncs across machines via git).
+2. Read the individual `memory/*.md` files whose index line is relevant to the task. For NPC
+   work, `memory/walter_walker_history.md` (the R-table attempt log) is almost always relevant.
 
 ### Step 2 — Find relevant prior sessions
 ```
@@ -45,8 +44,9 @@ mcp__ccd_session_mgmt__list_sessions
 Scan titles/summaries for sessions touching this task or a sibling feature.
 
 ### Step 3 — Read the transcripts that matter
-Files live at
-`~/.claude/projects/-Users-christina-Dropbox-Mac-Documents-FS25Valley/<cliSessionId>.jsonl`.
+Files live in your **global** Claude projects dir, under this repo's slug (the repo path with
+separators replaced) — Mac: `~/.claude/projects/-Users-…-FS25Valley/<cliSessionId>.jsonl`,
+Windows: `~/.claude/projects/C--Users-…-fs25valley/<cliSessionId>.jsonl`.
 Parse with:
 ```python
 python3 -c "

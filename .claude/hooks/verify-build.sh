@@ -9,15 +9,18 @@
 # false STALE on 2026-06-20/21. This script reads log.txt.
 set -euo pipefail
 
-BASE="$HOME/Library/Application Support/FarmingSimulator2025"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/_common.sh"
+
+BASE="$(fs25_base)"
 ZIP="$BASE/mods/FS25_ValleyLife.zip"
 LOG="$BASE/log.txt"
 
 [ -f "$LOG" ] || { echo "STALE: live log.txt not found — is FS25 running?"; exit 1; }
 
 # zip pack time (epoch)
-zip_epoch=$(stat -f %m "$ZIP")
-zip_human=$(stat -f '%Sm' -t '%H:%M:%S' "$ZIP")
+zip_epoch=$(mtime "$ZIP")
+zip_human=$(mtime_human "$ZIP")
 
 # mod-load timestamp from inside the log: "YYYY-MM-DD HH:MM:SS ... Load mod: FS25_ValleyLife"
 load_line="$(grep -m1 'Load mod: FS25_ValleyLife' "$LOG" || true)"
@@ -26,9 +29,9 @@ if [ -z "$load_line" ]; then
   exit 1
 fi
 load_ts="$(printf '%s' "$load_line" | cut -c1-19)"          # 2026-06-21 02:24:33
-load_epoch=$(date -j -f '%Y-%m-%d %H:%M:%S' "$load_ts" +%s 2>/dev/null || echo 0)
+load_epoch=$(to_epoch "$load_ts")
 
-echo "live log:     log.txt (mtime $(stat -f '%Sm' -t '%H:%M:%S' "$LOG"))"
+echo "live log:     log.txt (mtime $(mtime_human "$LOG"))"
 echo "mod loaded:   $load_ts"
 echo "zip packed:   $zip_human"
 
