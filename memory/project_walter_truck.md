@@ -44,6 +44,23 @@ yard). Recorder slots: exit/marketexit/homepark/park (all dump points to log on 
   clears in `vlDriveClearJob` and `vlDismountAtTruck`. GOTCHA: never leave a manually-`new`'d AI job as
   spec.job/lastJob on a vehicle at save — clear it, or build via `aiJobTypeManager:createJob` for a valid
   jobTypeIndex.** See [[walter-walker-history]] R62.
+
+## 2026-07-01 — REGRESSION: `AIJobGoTo.new()` now crashes on `.title`, corrupts Active Workers + blocks hiring
+The truck drive that worked 2026-06-27/28 now BREAKS (likely an FS25 game patch tightened AIJob). Confirmed
+from log.txt: `vlWalterDrive farmersMarket` → road leg `start=FAIL dataS/scripts/ai/jobs/AIJob.lua:329:
+attempt to index nil with 'title'`. Our `vlStartGoToLeg` builds the job with `AIJobGoTo.new(true)` (no
+jobType/title/name) → AIJob.lua:329 throws; a malformed "AI worker **Unknown**" still registers → the ESC-map
+**Active Workers** list crashes every frame (`SmoothListElement.lua:873: attempt to compare nil < number`),
+rendering a corrupted giant glyph, AND the player can't start a new hire. **Three symptoms, one bug.** FIX
+DIRECTION (same as the R62 note): build the GoTo job via `g_currentMission.aiJobTypeManager:createJob(...)`
+so it has a valid jobTypeIndex + title + name, NOT `AIJobGoTo.new()`. Confirmed via computer-use: I can drive
+FS25 + the GIANTS Editor on the Windows PC directly.
+**FIXED — R65 (2026-07-01):** re-extracted the Jun-29 dataS.gar here (prebuilt `fs-utils-windows-x64` binaries
+in scratchpad) → confirmed AIJob.lua:329 = `getJobTypeByIndex(jobTypeIndex).title` and AIJobTypeManager.lua:68
+`createJob` sets `job.jobTypeIndex`. Added `vlNewGoToJob()` in main.lua (`getJobTypeIndexByName("GOTO")` →
+`createJob`) used at BOTH GoTo build sites (road leg + manual-drive flag job). Repacked. Also retro-cures the
+R61/R62 save-hang. PENDING in-game verify (start=ok / Active Workers renders / hire works while driving). Full
+detail: journals/walter-truck-driving.md → "REGRESSION (2026-07-01)". See [[walter_walker_history]] R65.
 - **OTHER NPCs JITTERED FIXED** (user: "ben and dave dont jitter anymore"): WalterWalker's `playerGraphics:update`
   patch is CLASS-shared; its `_inTruck` skip-orig() had no per-NPC guard → it starved Ben/Dave/Katie's animation
   whenever Walter drove. Fix: guard with `self_pg == walker.grandpa.playerGraphics`. (See [[walter-walker-history]] R55.)

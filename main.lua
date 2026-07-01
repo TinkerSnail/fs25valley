@@ -2310,10 +2310,35 @@ local function vlReassertWalterDriver(truck)
     pcall(function() walker:_hide() end)
 end
 
+-- R65 (2026-07-01): build the GoTo job the way the BASE GAME does — via the job-type manager — so it
+-- carries a valid jobTypeIndex. A bare AIJobGoTo.new() leaves jobTypeIndex nil, and since the Jun-2026 FS25
+-- patch AIJob:getDescription() (AIJob.lua:329) does aiJobTypeManager:getJobTypeByIndex(jobTypeIndex).title →
+-- "index nil with 'title'". That crash corrupted the ESC-map Active Workers list (SmoothListElement errored
+-- every frame → garbled render) AND blocked the player's own hires. AIJobTypeManager:createJob() sets
+-- jobTypeIndex for us (confirmed in decompiled AIJobTypeManager.lua:createJob). See journals/walter-truck-driving.md.
+local function vlNewGoToJob()
+    local jtm = g_currentMission and g_currentMission.aiJobTypeManager
+    if jtm ~= nil and type(jtm.getJobTypeIndexByName) == "function" and type(jtm.createJob) == "function" then
+        local idx = jtm:getJobTypeIndexByName("GOTO")
+        local job = idx ~= nil and jtm:createJob(idx) or nil
+        if job ~= nil then return job end
+    end
+    -- Fallback (manager unavailable / older build): bare job, but stamp jobTypeIndex by hand so getDescription
+    -- still resolves. AIJobType is the global name→index table AIJobTypeManager publishes.
+    local job = AIJobGoTo.new(true)
+    pcall(function()
+        if job.jobTypeIndex == nil then
+            job.jobTypeIndex = (jtm and jtm.getJobTypeIndexByName and jtm:getJobTypeIndexByName("GOTO"))
+                or (AIJobType and AIJobType.GOTO) or nil
+        end
+    end)
+    return job
+end
+
 -- Start ONE Go-To leg to (tx,tz); angle = parked facing (rad) or nil to face the approach. Returns ok, err.
 local function vlStartGoToLeg(truck, farmId, tx, tz, angle)
     return pcall(function()
-        local job = AIJobGoTo.new(true)  -- isServer
+        local job = vlNewGoToJob()  -- R65: via aiJobTypeManager → valid jobTypeIndex (not bare AIJobGoTo.new)
         job:applyCurrentState(truck, g_currentMission, farmId, true)
         local cx, _, cz = getWorldTranslation(truck.rootNode)
         local a = angle or MathUtil.getYRotationFromDirection(tx - cx, tz - cz)
@@ -2324,12 +2349,11 @@ local function vlStartGoToLeg(truck, farmId, tx, tz, angle)
         local valid, vErr = job:validate(farmId)
         if not valid then error("validate: " .. tostring(vErr), 0) end
         g_currentMission.aiSystem:startJob(job, farmId)
-        -- R61 SAVE-HANG FIX: the base game's aiJobStarted just stashed this manually-constructed AIJobGoTo as
-        -- spec.lastJob — but AIJobGoTo.new() leaves jobTypeIndex nil, and AIJobVehicle:saveToXMLFile does
-        -- getJobTypeByIndex(lastJob.jobTypeIndex).name → indexes nil → CRASHES the savegame (it hangs). lastJob
-        -- is only the "repeat last job" memory (unused by our scripted drive), so drop it now. spec.job (the
-        -- ACTIVE job that steers the leg) is untouched, so the drive continues; the truck is save-safe even
-        -- mid-drive or if a leg gets stuck before dismount.
+        -- R61 SAVE-HANG FIX (now DEFENSIVE — R65 fixed the root cause): aiJobStarted stashes our job as
+        -- spec.lastJob. Historically our bare AIJobGoTo.new() left jobTypeIndex nil, so AIJobVehicle:saveToXMLFile's
+        -- getJobTypeByIndex(lastJob.jobTypeIndex).name indexed nil → save hang. As of R65 vlNewGoToJob() stamps a
+        -- valid jobTypeIndex, so that no longer crashes — but lastJob is only the unused "repeat last job" memory,
+        -- so we still drop it (belt-and-suspenders; keeps spec.job, the ACTIVE steering job, untouched).
         pcall(function()
             local spec = truck.spec_aiJobVehicle
             if spec ~= nil then spec.lastJob = nil end
@@ -2458,7 +2482,7 @@ function VLConsole.driveStart(truck, farmId, wps, dest)
     pcall(function()
         local spec = truck.spec_aiJobVehicle
         if spec ~= nil and spec.job == nil and AIJobGoTo ~= nil then
-            local j = AIJobGoTo.new(true)
+            local j = vlNewGoToJob()  -- R65: valid jobTypeIndex, so this flag-job never crashes getDescription/save
             pcall(function() j:applyCurrentState(truck, g_currentMission, farmId, true) end)
             spec.job = j
             setJob = true
@@ -4173,6 +4197,18 @@ function VLConsole:moveGrandpa(x, z)
     return msg
 end
 
+-- vlWalterTalk: PROBE the sealed "start Walter's base conversation" call for the unified
+-- NPC chooser. Delegates to WalterWalker:startBaseConversation (candidate calls + logging).
+-- Confirm which candidate flips isInConversation, then bake it into that method.
+function VLConsole:walterTalk()
+    local ww = g_valleyLife and g_valleyLife.walterWalker
+    if ww == nil or type(ww.startBaseConversation) ~= "function" then
+        return "[ValleyLife] WalterWalker unavailable."
+    end
+    local ok = ww:startBaseConversation()
+    return string.format("[ValleyLife] vlWalterTalk fired — startBaseConversation returned %s. Read the [WalterTalk] log block.", tostring(ok))
+end
+
 -- vlWalterDump: dump everything about the GRANDPA NPC at runtime — spot fields,
 -- graphicsComponent, components, and all scalar fields. Run after load to see
 -- whether spot.node is populated and which child nodes carry animCharSets.
@@ -4412,6 +4448,7 @@ if addConsoleCommand ~= nil then
     addConsoleCommand("vlWalterBones", "Dump GRANDPA's node/skeleton tree to find the hand bone (hand-prop research): vlWalterBones", "walterBones", VLConsole)
     addConsoleCommand("vlWalterRig", "Dump GRANDPA's model + carrier surface for the handtool-holder build: vlWalterRig", "walterRig", VLConsole)
     addConsoleCommand("vlNpcDump", "Survey base-game NPC roster for hookability (no arg) or detail one: vlNpcDump [katie|walter|ben|noah|ANIMAL_DEALER|...]", "npcDump", VLConsole)
+    addConsoleCommand("vlWalterTalk", "PROBE: discover + fire the base-game call that starts Walter's conversation (for the unified NPC chooser). Run near or away from him and read the [WalterTalk] log.", "walterTalk", VLConsole)
     addConsoleCommand("vlDog", "Probe the mod's starting world items: dump the SPAWN API for Bonnie's doghouse + Walter's truck (read-only)", "dogProbe", VLConsole)
     addConsoleCommand("vlSpawnStarter", "Force-spawn the mod's starter items now (Bonnie's doghouse + Walter's truck) — for testing the spawn without a fresh game", "spawnStarter", VLConsole)
     addConsoleCommand("vlWalterHoldFlashlight", "PROBE: give Walter a REAL flashlight handtool via the game's loader + attach to his left hand: vlWalterHoldFlashlight", "walterHoldFlashlight", VLConsole)

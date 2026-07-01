@@ -202,6 +202,50 @@ if valid then g_currentMission.aiSystem:startJob(job, farmId) end   -- server-si
   On stop the spec restores the prior vehicleCharacter (`restoreVehicleCharacter`).
 - `farmId` = `truck:getOwnerFarmId()` (fallback to the player's farm).
 
+### ⚠️ REGRESSION (2026-07-01) — `AIJobGoTo.new()` now crashes on `.title`; corrupts Active Workers + blocks hiring
+
+**Symptom (user):** while Walter drives to market, the ESC-map **Active Workers** tab renders a corrupted
+giant glyph instead of the worker list, AND the player can't start a new AI job (hire a worker). The truck
+drive that WORKED on 2026-06-27/28 now fails.
+
+**Confirmed from `log.txt` (2026-07-01):**
+```
+[VL][WalterDrive] leg 1/1 → (398.3,-709.0) reachable=true start=FAIL
+    dataS/scripts/ai/jobs/AIJob.lua:329: attempt to index nil with 'title'
+...
+Error: Running LUA method 'update' / 'mouseEvent'.
+    dataS/scripts/gui/elements/SmoothListElement.lua:873: attempt to compare nil < number   (repeats every frame)
+...
+[VL][WalterDrive] AI job STOPPED — reason: nil — AI worker Unknown has ... (success=…)
+```
+
+**Root cause:** `vlStartGoToLeg` builds the road-leg job with `AIJobGoTo.new(true)` — a MANUALLY-constructed
+job with **no jobType metadata** (no jobTypeIndex, no title/name). Current FS25 `AIJob.lua:329` indexes a
+`.title` that our bare job lacks → the leg's `startJob` throws (caught by our pcall → `start=FAIL`), but a
+malformed "**AI worker Unknown**" entry still lands in the active-workers system. The Active Workers GUI list
+(`SmoothListElement.lua:873`) then errors every frame comparing a nil field → the corrupted render. The wedged
+worker list also blocks the player's own hire flow. **All three symptoms = one bug.** Almost certainly a
+GAME-PATCH regression (AIJob got stricter about job type/title since late June).
+
+**CONFIRMED FROM PATCHED SOURCE (re-extracted 2026-07-01 from this machine's Jun-29 dataS.gar via the
+prebuilt `fs-utils-windows-x64` binaries — fs-unpack + fs-luau-decompile):**
+- `AIJob.lua:329` = `AIJob:getDescription()` → `g_currentMission.aiJobTypeManager:getJobTypeByIndex(self.jobTypeIndex).title`.
+  With `jobTypeIndex == nil`, `getJobTypeByIndex(nil)` returns nil → `.title` throws. `AIJobGoTo:getDescription()`
+  (AIJobGoTo.lua:182) calls that superclass method, so the Active Workers list crashes rendering our worker.
+- `AIJobTypeManager:createJob(typeIndex)` (AIJobTypeManager.lua:68) = `jobType.classObject.new(self.isServer)`
+  then **`job.jobTypeIndex = typeIndex`** — i.e. it does the ONE thing bare `AIJobGoTo.new()` omits. Get the
+  index via `aiJobTypeManager:getJobTypeIndexByName("GOTO")` (or the global `AIJobType.GOTO` name→index table).
+- Bonus: `AIJobGoTo:getIsStartable` (AIJobGoTo.lua:195) gates on `aiSystem:getAILimitedReached()` →
+  `START_ERROR_LIMIT_REACHED` — the second symptom (blocked player hire) when a leaked/malformed job holds a slot.
+
+**FIX APPLIED — R65 (2026-07-01), main.lua:** new `vlNewGoToJob()` helper builds the job via
+`aiJobTypeManager:getJobTypeIndexByName("GOTO")` → `:createJob(idx)` (fallback: bare `AIJobGoTo.new()` +
+hand-stamp `jobTypeIndex`). Used at BOTH construction sites — the real road leg in `vlStartGoToLeg` and the
+manual-drive "flag job" in `driveStart`. This also retro-cures the R61/R62 save-hang (same nil-jobTypeIndex
+root cause), so the `spec.lastJob = nil` scrubs are now belt-and-suspenders. **PENDING in-game verify:** road
+leg logs `start=ok`; Active Workers renders normally; player hire works while Walter drives. If a pre-fix save
+already baked a corrupted worker, may still need a one-time cleanup.
+
 ### Drive-to task states (for debugging)
 
 `AITaskDriveTo`: `prepareForAIDriving()` → STATE_PREPARE_DRIVING → `getIsAIReadyToDrive()` →
