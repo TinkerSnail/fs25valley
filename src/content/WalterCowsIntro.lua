@@ -14,9 +14,9 @@ local FLAG    = "walterCowsHandoff"
 local SPEAKER = "Walter"
 
 local LINES = {
-    "Those cattle here came with the land — three head of Angus. Beef stock, not milkers, so don't go looking for a pail. They're yours now.",
+    "Those cattle here came with the land, three head of Angus. Beef stock, not milkers, so don't go looking for a pail. They're yours now.",
     "I'll be straight with you: I learned the wood, never quite learned the animals. Kept 'em more out of habit than know-how.",
-    "Katie's your woman for that. Animal farmer, down the way — knows livestock better than I ever did. Go on and introduce yourself, and tell her I sent you.",
+    "Katie's your woman for that. Animal farmer, down the way, knows livestock better than I ever did. Go on and introduce yourself, and tell her I sent you.",
 }
 
 -- Resolve the cow barn/pen by configFileName + nearest to its preplaced point, and fire when the player

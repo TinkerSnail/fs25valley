@@ -21,8 +21,8 @@ local FLAG = "walterMentionedMarket"
 -- Shown one box at a time in our bottom panel. Speaker is a raw string ("Walter") -
 -- he isn't a VL villager, and showSpeechBox accepts a plain speaker label.
 local LINES = {
-    "Oh - one more thing before I let you get to it. Ben'll see you right in the fields, but he's not the only friendly face in Riverbend.",
-    "There's a farmers market in town, and Marta runs it. Good woman, salt of the earth. You can sell your produce right to her stand - same as the grain elevator, just closer to home.",
+    "Oh, one more thing before I let you get to it. Ben'll see you right in the fields, but he's not the only friendly face in Riverbend.",
+    "There's a farmers market in town, and Marta runs it. Good woman, salt of the earth. You can sell your produce right to her stand, same as the grain elevator, just closer to home.",
     "Truth is, her shelves could use the help. Go introduce yourself when you get the chance, and tell her I sent you. She'll look after you.",
 }
 

@@ -29,7 +29,7 @@ VLEventSequencer.registerEvent({
         { type = "camera",   x = 0, y = 2, z = -5, lookAt = { x = 0, y = 1, z = 0 } },
 
         { type = "dialogue", speaker = "elara",
-          text = "Oh - hey. You're quiet. I didn't hear you till you were right there." },
+          text = "Oh, hey. You're quiet. I didn't hear you till you were right there." },
         { type = "dialogue", speaker = "elara",
           text = "*she closes a little book against her knee, too fast* It's nothing. Just... watching the light go." },
 
@@ -37,7 +37,7 @@ VLEventSequencer.registerEvent({
           text = "*she tucks the book out of sight behind her knee* Anyway. Did you need something, farmer, or are you just here to watch me work?",
           choices = {
             { label = "What were you drawing in that book?", next = "curious" },
-            { label = "Sorry - didn't mean to pry.",         next = "polite" },
+            { label = "Sorry, didn't mean to pry.",         next = "polite" },
           }
         },
         -- (unreached: a choice always jumps to a branch)
@@ -79,7 +79,7 @@ VLEventSequencer.registerEvent({
         { type = "dialogue", speaker = "elara",
           text = "Not 'bad week' doesn't work. 'Doesn't work' doesn't work. There's a number in the city with my name next to it and it's a lot bigger than this one." },
         { type = "dialogue", speaker = "elara",
-          text = "Why am I telling you this. *laughs* Because you don't say much. It's restful. And because you'd get it - you came back for your grandad's farm when your own dad ran the other way. I bolted from the city. Different roads, same stubborn hunt for a place that fits." },
+          text = "Why am I telling you this. *laughs* Because you don't say much. It's restful. And because you'd get it; you came back for your grandad's farm when your own dad ran the other way. I bolted from the city. Different roads, same stubborn hunt for a place that fits." },
         { type = "dialogue", speaker = "elara",
           text = "So. Be honest with a fellow transplant.",
           choices = {
@@ -179,11 +179,11 @@ VLEventSequencer.registerEvent({
 -- Daily greetings (Press R when no heart event is pending)
 -- ---------------------------------------------------------------------------
 VLCasualDialogue.register("elara", {
-    firstMeet = "You must be Walter's grandkid - the new farmer. I'm Elara. I run the produce stand down the road.",
+    firstMeet = "You must be Walter's grandkid, the new farmer. I'm Elara. I run the produce stand down the road.",
 
     stranger = {
         "Morning, farmer. Tomatoes are looking decent if you're interested.",
-        "Don't mind me - just watching the light on the fields. Old habit.",
+        "Don't mind me, just watching the light on the fields. Old habit.",
         "You're out early. Out here that counts for something.",
         "The stand's open if you need anything. Fair warning: the margins are optimistic.",
         "City people always look lost the first week. You'll find your rhythm.",
@@ -220,7 +220,7 @@ VLCasualDialogue.register("elara", {
     alreadyTalked = {
         "We already talked today, farmer. Go check the cows.",
         "I'm still here. Same as this morning.",
-        "Save it for tomorrow - I might actually have news by then.",
+        "Save it for tomorrow; I might actually have news by then.",
     },
 
     afterEvent = {
