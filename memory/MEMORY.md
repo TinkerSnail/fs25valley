@@ -4,6 +4,7 @@
 - [Project Overview](project_overview.md) — Stardew-like social/narrative mod for FS25; solo dev; vertical slice scope. CORE MOTIVATION: untapped base-game potential — "the parts are right there for the taking"; COMPLETE the half-built (reuse GIANTS' capable raw material) rather than fabricate/fight the engine. This IS the working method everywhere.
 - [Open Decisions](project_open_decisions.md) — Unresolved design questions blocking heavy build work
 - [Repack after edits](feedback_repack.md) — Now ENFORCED by a PostToolUse hook (`.claude/settings.json`); fires `./repack.sh` automatically on every `.lua` edit
+- [No Claude commit trailers](feedback_no_claude_commit_trailers.md) — This repo disables Claude attribution; never add Co-Authored-By/Claude lines to commits or PR bodies (overrides the default). Remote strips them (commit 0357618).
 - [Process failsafes](process_failsafes.md) — Hooks in `.claude/` that enforce repack, session-start context, R-table updates, and stale-build detection mechanically
 - [Rigor over speed](feedback_rigor_over_speed.md) — User wants slow, evidence-grounded correctness; quick wrong fixes waste whole days. Take the time.
 - [Use the internet for observable behavior](feedback_use_internet_for_observable_behavior.md) — For what players SEE / behavior locked in sealed .gar, WebSearch is the authority; don't present a local-file inference as fact. "No clip" ≠ "no pose" (IK is invisible to the clip dump).
