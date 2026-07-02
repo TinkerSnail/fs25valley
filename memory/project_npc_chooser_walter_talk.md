@@ -53,5 +53,10 @@ in-game, the suppression is live:
 Clean end state: one **PRESS R TO TALK TO \<selected\>** (+ one **PRESS X TO SWITCH TO \<other\>** when 2+ in
 range), no stray base prompt.
 
+**✅ FULLY CONFIRMED IN-GAME 2026-07-01** (user "everything looks good"): near Walter the native
+"START CONVERSATION" prompt is gone, only our R-to-talk (+ X-to-switch) remain, R opens his real base
+dialogue and respects the chooser selection (Marta ≠ Walter). Chooser + `requestConversation` bake +
+suppression all verified and shipped to `main`.
+
 **REUSABLE:** `npc:requestConversation(g_localPlayer)` is THE mod-callable way to start ANY base-game NPC's
 conversation (applies to Katie/[[reference_basegame_npc_roster]] too). See [[reference_npc_conversation_format]].
